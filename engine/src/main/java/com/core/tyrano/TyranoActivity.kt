@@ -215,7 +215,13 @@ class TyranoActivity : Activity() {
             }
             val modHtml = if (rpgMakerModEnabled) buildRpgMakerModHtml() else ""
             Log.i(TAG, "asset loaded ${hookAsset ?: "none"} bytes=${hook.size} scriptAppends=${scriptAppends.keys}")
-            val injectBeforeBody = webGameType == WebGameType.RPG_MV || webGameType == WebGameType.RPG_MZ
+            // Tyrano 与 RPG 一样注入到 </body> 之前：部分 TyranoStudio/Electron 导出的 index.html
+            // 在第一个 </head> 之前并未加载 jQuery（jQuery 在 body 中经 <script src> 引入）。
+            // 若仍注入首个 </head> 前，hook 顶层的 $.setStorage/$.getStorage 会因 $ 未定义抛错，
+            // 存档桥接失效并连锁导致游戏卡在加载。注入到 </body> 前仍早于 tyrano 的 $(ready) 初始化。
+            val injectBeforeBody = webGameType == WebGameType.RPG_MV ||
+                webGameType == WebGameType.RPG_MZ ||
+                webGameType == WebGameType.TYRANO
             localServer = if (gameUsesAsar) {
                 TyranoLocalHttpServer(
                     contentRoot, asarArchive, hook, injectBeforeBody, scriptAppends, modHtml, modResources, preferredPort,
