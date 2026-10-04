@@ -212,6 +212,28 @@ _Avoid_: 液态玻璃 2.0、增强玻璃
 主界面四个 Tab（首页 / 游戏 / 引擎 / 设置）常驻组合、隐藏页置 alpha=0 保留节点，切换仅做水平 alpha 动画避免重建列表。
 _Avoid_: 懒加载页、Fragment
 
+## 游戏内提取与制卡
+
+**提取面板（剧情文本框）**:
+游戏运行时叠加在画面上的实时提取面板（engine `com.core.ons.OnsExtractPanel`）：当前句栏（词元可点查义）、配对语音、翻译行、历史列表、听力模式与制卡/复制/播放操作；由 `ExtractFacade` 接口解耦宿主（ONS/Web/Artemis/KRKR 各自实现事件源），手柄 RB 呼出。
+_Avoid_: 悬浮字幕、控制台
+
+**右缘按键组**:
+游戏画面右缘固定竖排的 40dp 图标键列（engine `com.core.ons.OnsSideButtons`）：文本框开关/截图/存档/设置/音量（百分比滑条）/点击模式/回主页（确认弹窗），顶部折叠键常驻；左右侧贴系统栏 inset 排布，风格对齐左侧虚拟按键列。
+_Avoid_: 悬浮球（可拖动 chip 语义）、工具栏
+
+**虚拟鼠标模式**:
+用手柄 D-pad/左摇杆移动覆盖层光标、A 键注入点击的操控模式（`OnsVirtualMouse`），与触摸直传模式经右缘按键切换；仅 ONS 宿主提供。
+_Avoid_: 触控模拟（触摸注入路径的统称）
+
+**查词典**:
+提取面板句栏词元（标点/空格切分）点按后经本地词典查询释义：最长前缀递减 + `OnsDeinflector` 词形还原分层；词典来源 Yomichan zip / MDX jsonl（SAF 导入 SQLite `ons_dict.db`，多词典管理、当前词典优先）。
+_Avoid_: 在线翻译（翻译是另一条线）
+
+**制卡（Anki）**:
+把当前句/查词结果一键写入 AnkiDroid（vendored 官方 API，`AnkiDroidHelper`）：词卡（Word/Reading/Meaning/Sentence）与句卡（Front=当前句，Back=截图+语音+整页），牌组/模型 `TyranorNext` 自动创建。
+_Avoid_: 导出卡片（无中间文件）
+
 ## 架构约定
 
 **三层架构**:
