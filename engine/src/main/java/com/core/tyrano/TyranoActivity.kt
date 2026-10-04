@@ -643,13 +643,15 @@ class TyranoActivity : Activity() {
     }
 
     override fun dispatchKeyEvent(event: KeyEvent): Boolean {
+        // 手柄按键重映射（手柄→键盘/其他手柄键），先于面板/游戏链路
+        val mapped = com.core.engine.GamepadRemap.apply(event)
         // 提取面板按键路由（webgametxt 语义：RB 呼出；展开时消费手柄/键盘）
-        if (extractPanel?.handleKey(event) == true) return true
-        if (event.keyCode == KeyEvent.KEYCODE_BACK) {
-            if (event.action == KeyEvent.ACTION_UP) handleBackRequest()
+        if (extractPanel?.handleKey(mapped) == true) return true
+        if (mapped.keyCode == KeyEvent.KEYCODE_BACK) {
+            if (mapped.action == KeyEvent.ACTION_UP) handleBackRequest()
             return true
         }
-        return super.dispatchKeyEvent(event)
+        return super.dispatchKeyEvent(mapped)
     }
 
     private fun handleBackRequest() {
@@ -688,6 +690,7 @@ class TyranoActivity : Activity() {
     override fun onResume() {
         PlayTimeTracker.onForeground(this, gameRootFile?.absolutePath ?: gameDir ?: "")
         super.onResume()
+        com.core.engine.GamepadRemap.refresh(this)
         enterFullscreen()
         if (firstResume) firstResume = false else {
             runCatching { webView?.loadUrl("javascript:if(window._tyrano_player){_tyrano_player.resumeAllAudio();}") }

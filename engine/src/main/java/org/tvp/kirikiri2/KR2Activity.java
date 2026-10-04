@@ -410,6 +410,7 @@ public class KR2Activity extends Cocos2dxActivity {
 
     @Override public void onResume() {
         super.onResume();
+        com.core.engine.GamepadRemap.refresh(this);
         resumeSdlAudioAfterBackground();
         doSetSystemUiVisibility();
     }
@@ -486,6 +487,8 @@ public class KR2Activity extends Cocos2dxActivity {
     }
 
     @Override public boolean dispatchKeyEvent(KeyEvent event) {
+        // 手柄按键重映射（手柄→键盘/其他手柄键），先于游戏按键链路
+        event = com.core.engine.GamepadRemap.apply(event);
         // BACK 不经视图层：首按直接透传给游戏（同原版模拟器，native 侧映射为 ESC），
         // 双击退出仅作兜底；文本输入激活时放行，让 KrTextInputView.onKeyPreIme 优先收起键盘。
         if (event != null && event.getKeyCode() == KeyEvent.KEYCODE_BACK && !isTextInputActive()) {

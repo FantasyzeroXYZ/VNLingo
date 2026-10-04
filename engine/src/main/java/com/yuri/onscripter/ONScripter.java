@@ -136,6 +136,7 @@ public class ONScripter extends SDLActivity {
 
     @Override public void onResume() {
         super.onResume();
+        com.core.engine.GamepadRemap.refresh(this);
         if (gameRoot != null) com.core.engine.PlayTimeTracker.onForeground(this, gameRoot);
         fullscreen();
         // 播片期间切后台会暂停解码，回到前台必须恢复，否则视频停在暂停帧。
@@ -155,6 +156,8 @@ public class ONScripter extends SDLActivity {
     }
 
     @Override public boolean dispatchKeyEvent(KeyEvent event) {
+        // 手柄按键重映射（手柄→键盘/其他手柄键），先于面板/虚拟鼠标/游戏链路
+        event = com.core.engine.GamepadRemap.apply(event);
         // 提取面板按键（webgametxt 语义）：面板收起只认 RB 呼出；展开时消费全部按键
         // （手柄不再注入游戏），故置于虚拟鼠标之前
         if (extractPanel != null && extractPanel.handleKey(event)) return true;

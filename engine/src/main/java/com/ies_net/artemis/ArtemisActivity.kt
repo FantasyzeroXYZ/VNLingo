@@ -78,8 +78,10 @@ open class ArtemisActivity : NativeActivity() {
     }
 
     override fun dispatchKeyEvent(event: KeyEvent): Boolean {
-        val keyCode = event.keyCode
-        if (event.action == 0) {
+        // 手柄按键重映射（手柄→键盘/其他手柄键），先于内核按键映射链路
+        val mapped = com.core.engine.GamepadRemap.apply(event)
+        val keyCode = mapped.keyCode
+        if (mapped.action == 0) {
             when (keyCode) {
                 66 -> EmulateKeyEvent(13, 2)
                 59, 60 -> EmulateKeyEvent(115, 2)
@@ -114,10 +116,10 @@ open class ArtemisActivity : NativeActivity() {
                 105 -> EmulateKeyEvent(124, 2)
                 106 -> EmulateKeyEvent(143, 2)
             }
-        } else if (event.action == 1 && keyCode == 101) {
+        } else if (mapped.action == 1 && keyCode == 101) {
             EmulateKeyEvent(140, 0)
         }
-        return super.dispatchKeyEvent(event)
+        return super.dispatchKeyEvent(mapped)
     }
 
     override fun onActivityResult(requestCode: Int, resultCode: Int, intent: Intent?) {
@@ -138,6 +140,11 @@ open class ArtemisActivity : NativeActivity() {
         val newPath = intent.getStringExtra(LaunchContract.PATH)
         if (oldPath == null || oldPath == newPath || newPath == null) return
         Toast.makeText(this, getString(R.string.engine_another_game_running), Toast.LENGTH_SHORT).show()
+    }
+
+    override fun onResume() {
+        super.onResume()
+        com.core.engine.GamepadRemap.refresh(this)
     }
 
     override fun onWindowFocusChanged(hasFocus: Boolean) {
