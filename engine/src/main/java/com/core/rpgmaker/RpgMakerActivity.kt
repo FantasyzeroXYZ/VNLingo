@@ -26,7 +26,6 @@ import android.widget.FrameLayout
 import android.widget.Toast
 import com.core.ons.OnsExtractPanel
 import com.core.ons.WebSaveArchive
-import com.core.ons.OnsSavePanel
 import com.core.ons.WebExtractBridge
 import com.core.ons.WebExtractFacade
 import com.core.engine.PlayTimeTracker
@@ -68,7 +67,6 @@ class RpgMakerActivity : Activity() {
     private var asarArchive: AsarArchive? = null
     private var firstResume = true
     private var extractPanel: OnsExtractPanel? = null
-    private var savePanelRef: OnsSavePanel? = null
     private var extractFacade: WebExtractFacade? = null
 
     /** 提取钩子脚本（懒加载缓存；见 assets/__tn_extract.js）。 */
@@ -374,12 +372,6 @@ class RpgMakerActivity : Activity() {
         val extract = OnsExtractPanel(extractFacadeLocal)
         extract.install(root, null, null)
         extractPanel = extract
-        val savePanel = OnsSavePanel(extractFacadeLocal)
-        // 存档入口走右缘固定存档键（不再装「存」悬浮球）
-        savePanel.setEntryChipVisible(false)
-        savePanel.install(root)
-        savePanelRef = savePanel
-        extract.setSavesToggle(savePanel::toggle)
         // PIXI legacy 兼容渲染（?android-legacy=1，__rpg_v12.js 的既定开关）：
         // 由设置页开关经 rpgLegacyRenderer extra 控制，规避部分 Android GPU
         // 上 WebGL 正常初始化却整屏渲染为黑的问题；默认关闭不影响既有行为。
@@ -722,8 +714,6 @@ class RpgMakerActivity : Activity() {
     override fun onDestroy() {
         extractPanel?.release()
         extractPanel = null
-        savePanelRef?.release()
-        savePanelRef = null
         WebExtractBridge.get().detach()
         EngineSessionRegistry.clear(this, EngineSessionRegistry.HOST_RPGMAKER)
         DoubleBackExit.clear(this)

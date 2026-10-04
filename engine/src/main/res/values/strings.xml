@@ -63,8 +63,6 @@
     <string name="engine_ons_extract_anki_failed">制卡失败</string>
     <string name="engine_ons_extract_tts_toggle">TTS</string>
     <string name="engine_ons_extract_auto_toggle">自动</string>
-    <string name="engine_ons_extract_save_export">导出存档</string>
-    <string name="engine_ons_extract_save_import">导入存档</string>
     <string name="engine_ons_extract_export_done">存档已导出（%1$d 个文件）</string>
     <string name="engine_ons_extract_import_done">存档已导入（%1$d 个文件）</string>
     <string name="engine_ons_extract_history">历史</string>
@@ -104,15 +102,6 @@
     <string name="engine_ons_extract_cloud_hint_dir">远程目录（默认 TyranorNext/saves）</string>
     <string name="engine_ons_extract_cloud_upload">上传</string>
     <string name="engine_ons_extract_cloud_download">下载</string>
-    <string name="engine_ons_extract_cloud_uploaded">存档已上传</string>
-    <string name="engine_ons_extract_cloud_downloaded">已下载并导入（%1$d 个文件）</string>
-    <string name="engine_ons_extract_cloud_not_found">云端没有该游戏的存档</string>
-    <string name="engine_ons_extract_cloud_failed">云同步失败：%1$s</string>
-    <string name="engine_ons_save_chip">存</string>
-    <string name="engine_ons_save_panel_desc">存档管理</string>
-    <string name="engine_ons_save_title">存档（%1$s）</string>
-    <string name="engine_ons_save_empty">暂无存档</string>
-    <string name="engine_ons_save_delete">删除</string>
     <string name="engine_ons_extract_chip">文</string>
     <string name="engine_ons_side_text_frame">剧情文本框</string>
     <string name="engine_ons_side_screenshot">截图</string>
@@ -162,25 +151,12 @@
     <string name="engine_ons_translate_model_download">下载</string>
     <string name="engine_ons_translate_src_set">原文语言：%1$s</string>
     <!-- 右缘按键组（存档/音量/主页）与存档面板多选 -->
-    <string name="engine_ons_side_save">存档面板</string>
     <string name="engine_ons_side_volume">音量</string>
     <string name="engine_ons_side_home">回到主页（退出游戏）</string>
-    <string name="engine_ons_save_refresh">刷新</string>
-    <string name="engine_ons_save_select_all">全选</string>
-    <string name="engine_ons_save_delete_selected">删除选中</string>
-    <string name="engine_ons_save_delete_selected_fmt">删除选中（%1$d）</string>
-    <string name="engine_ons_save_delete_selected_confirm">删除选中的 %1$d 个存档？</string>
-    <string name="engine_ons_save_deleted_multi">已删除 %1$d 个存档</string>
-    <string name="engine_ons_save_deleted_partial">已删除 %1$d/%2$d 个存档</string>
     <string name="engine_ons_side_toggle">折叠/展开按键组</string>
     <string name="engine_ons_side_volume_pct">音量：%1$d%%</string>
     <string name="engine_ons_side_home_confirm">退出游戏并回到软件主页？</string>
     <string name="engine_ons_side_home_ok">回到主页</string>
-    <string name="engine_ons_save_export_one">下载</string>
-    <string name="engine_ons_save_downloaded">已保存到 Download/%1$s</string>
-    <string name="engine_ons_save_download_failed">下载失败：%1$s</string>
-    <string name="engine_ons_save_delete_confirm">删除存档「%1$s」？</string>
-    <string name="engine_ons_save_deleted">已删除</string>
     <string name="engine_ons_side_click_mode">切换点击模式（虚拟鼠标/触摸）</string>
 </resources>
 

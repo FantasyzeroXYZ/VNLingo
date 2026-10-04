@@ -63,8 +63,6 @@
     <string name="engine_ons_extract_anki_failed">Card creation failed</string>
     <string name="engine_ons_extract_tts_toggle">TTS</string>
     <string name="engine_ons_extract_auto_toggle">Auto</string>
-    <string name="engine_ons_extract_save_export">Export saves</string>
-    <string name="engine_ons_extract_save_import">Import saves</string>
     <string name="engine_ons_extract_export_done">Exported (%1$d files)</string>
     <string name="engine_ons_extract_import_done">Imported (%1$d files)</string>
     <string name="engine_ons_extract_history">History</string>
@@ -104,15 +102,6 @@
     <string name="engine_ons_extract_cloud_hint_dir">Remote dir (default TyranorNext/saves)</string>
     <string name="engine_ons_extract_cloud_upload">Upload</string>
     <string name="engine_ons_extract_cloud_download">Download</string>
-    <string name="engine_ons_extract_cloud_uploaded">Saves uploaded</string>
-    <string name="engine_ons_extract_cloud_downloaded">Downloaded and imported (%1$d files)</string>
-    <string name="engine_ons_extract_cloud_not_found">No cloud saves for this game</string>
-    <string name="engine_ons_extract_cloud_failed">Cloud sync failed: %1$s</string>
-    <string name="engine_ons_save_chip">S</string>
-    <string name="engine_ons_save_panel_desc">Save manager</string>
-    <string name="engine_ons_save_title">Saves (%1$s)</string>
-    <string name="engine_ons_save_empty">No saves yet</string>
-    <string name="engine_ons_save_delete">Delete</string>
     <string name="engine_ons_extract_chip">T</string>
     <string name="engine_ons_side_text_frame">Story text</string>
     <string name="engine_ons_side_screenshot">Screenshot</string>
@@ -160,25 +149,12 @@
     <string name="engine_ons_translate_model_download">Download</string>
     <string name="engine_ons_translate_src_set">Source language: %1$s</string>
     <!-- Side buttons (save/volume/home) and save panel multi-select -->
-    <string name="engine_ons_side_save">Save panel</string>
     <string name="engine_ons_side_volume">Volume</string>
     <string name="engine_ons_side_home">Home (exit game)</string>
-    <string name="engine_ons_save_refresh">Refresh</string>
-    <string name="engine_ons_save_select_all">Select all</string>
-    <string name="engine_ons_save_delete_selected">Delete selected</string>
-    <string name="engine_ons_save_delete_selected_fmt">Delete selected (%1$d)</string>
-    <string name="engine_ons_save_delete_selected_confirm">Delete %1$d selected saves?</string>
-    <string name="engine_ons_save_deleted_multi">Deleted %1$d saves</string>
-    <string name="engine_ons_save_deleted_partial">Deleted %1$d/%2$d saves</string>
     <string name="engine_ons_side_toggle">Toggle button group</string>
     <string name="engine_ons_side_volume_pct">Volume: %1$d%%</string>
     <string name="engine_ons_side_home_confirm">Exit the game and return to the app home?</string>
     <string name="engine_ons_side_home_ok">Go home</string>
-    <string name="engine_ons_save_export_one">Download</string>
-    <string name="engine_ons_save_downloaded">Saved to Download/%1$s</string>
-    <string name="engine_ons_save_download_failed">Download failed: %1$s</string>
-    <string name="engine_ons_save_delete_confirm">Delete save \"%1$s\"?</string>
-    <string name="engine_ons_save_deleted">Deleted</string>
     <string name="engine_ons_side_click_mode">Switch click mode (virtual mouse / touch)</string>
 </resources>
 

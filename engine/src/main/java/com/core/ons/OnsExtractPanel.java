@@ -164,8 +164,6 @@ public class OnsExtractPanel {
     private TextView opacityToggle;
     private LinearLayout actionsRow;
     private android.widget.HorizontalScrollView actionsScrollView;
-    /** 右缘存档键的开合回调（宿主接 OnsSavePanel.toggle；见 setSavesToggle）。 */
-    private Runnable savesToggle;
     public OnsExtractPanel(ExtractFacade facade) {
         this.facade = facade;
         this.activity = facade.getActivity();
@@ -190,26 +188,16 @@ public class OnsExtractPanel {
         this.sideButtonsWindowMode = window;
     }
 
-    /** 存档面板开合回调（右缘存档键用；宿主装好存档面板后设置，安装按键组前后的设置均生效）。 */
-    public void setSavesToggle(Runnable r) {
-        this.savesToggle = r;
-    }
-
-    /** 在宿主覆盖层内安装右缘按键组（文本框开关/截图/存档/设置/音量/点击模式/主页）与剧情文本框面板。 */
+    /** 在宿主覆盖层内安装右缘按键组（文本框开关/截图/设置/音量/点击模式/主页）与剧情文本框面板。 */
     public void install(android.view.ViewGroup overlay,
                         Runnable onMouseModeToggle, java.util.function.Supplier<Boolean> mouseMode) {
-        // 存档键回调懒读取：宿主可在 install 之后才把存档面板接进来
-        Runnable savesAction = () -> {
-            Runnable r = savesToggle;
-            if (r != null) r.run();
-        };
         if (sideButtonsWindowMode) {
             sideButtons = OnsSideButtons.installAsWindow(activity, this::togglePanel,
-                    this::captureScreenshot, savesAction, this::showSettingsDialog,
+                    this::captureScreenshot, this::showSettingsDialog,
                     onMouseModeToggle, mouseMode);
         } else {
             sideButtons = OnsSideButtons.install(overlay, this::togglePanel,
-                    this::captureScreenshot, savesAction, this::showSettingsDialog,
+                    this::captureScreenshot, this::showSettingsDialog,
                     onMouseModeToggle, mouseMode);
         }
 

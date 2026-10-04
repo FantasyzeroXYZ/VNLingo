@@ -40,7 +40,6 @@ import com.core.engine.R
 import java.io.ByteArrayInputStream
 import com.core.ons.OnsExtractPanel
 import com.core.ons.WebSaveArchive
-import com.core.ons.OnsSavePanel
 import com.core.ons.WebExtractBridge
 import com.core.ons.WebExtractFacade
 import java.io.File
@@ -65,7 +64,6 @@ class TyranoActivity : Activity() {
     private var webGameType = WebGameType.TYRANO
     private var asarPath: String? = null
     private var extractPanel: OnsExtractPanel? = null
-    private var savePanelRef: OnsSavePanel? = null
     private var extractFacade: WebExtractFacade? = null
 
     /** 提取钩子脚本（懒加载缓存；见 assets/__tn_extract.js）。 */
@@ -303,12 +301,6 @@ class TyranoActivity : Activity() {
         val extract = OnsExtractPanel(extractFacadeLocal)
         extract.install(root, null, null)
         extractPanel = extract
-        val savePanel = OnsSavePanel(extractFacadeLocal)
-        // 存档入口走右缘固定存档键（不再装「存」悬浮球）
-        savePanel.setEntryChipVisible(false)
-        savePanel.install(root)
-        savePanelRef = savePanel
-        extract.setSavesToggle(savePanel::toggle)
         val server = requireNotNull(localServer)
         if (server.usedFallbackPort) {
             Toast.makeText(

@@ -63,8 +63,6 @@
     <string name="engine_ons_extract_anki_failed">カード作成に失敗しました</string>
     <string name="engine_ons_extract_tts_toggle">TTS</string>
     <string name="engine_ons_extract_auto_toggle">自動</string>
-    <string name="engine_ons_extract_save_export">セーブ書き出し</string>
-    <string name="engine_ons_extract_save_import">セーブ読み込み</string>
     <string name="engine_ons_extract_export_done">書き出し完了（%1$d 件）</string>
     <string name="engine_ons_extract_import_done">読み込み完了（%1$d 件）</string>
     <string name="engine_ons_extract_history">履歴</string>
@@ -104,15 +102,6 @@
     <string name="engine_ons_extract_cloud_hint_dir">リモート DIR（既定 TyranorNext/saves）</string>
     <string name="engine_ons_extract_cloud_upload">アップロード</string>
     <string name="engine_ons_extract_cloud_download">ダウンロード</string>
-    <string name="engine_ons_extract_cloud_uploaded">セーブをアップロードしました</string>
-    <string name="engine_ons_extract_cloud_downloaded">ダウンロードして反映（%1$d 件）</string>
-    <string name="engine_ons_extract_cloud_not_found">クラウドにこのゲームのセーブがありません</string>
-    <string name="engine_ons_extract_cloud_failed">クラウド同期に失敗：%1$s</string>
-    <string name="engine_ons_save_chip">セ</string>
-    <string name="engine_ons_save_panel_desc">セーブ管理</string>
-    <string name="engine_ons_save_title">セーブ（%1$s）</string>
-    <string name="engine_ons_save_empty">セーブはまだありません</string>
-    <string name="engine_ons_save_delete">削除</string>
     <string name="engine_ons_extract_chip">文</string>
     <string name="engine_ons_side_text_frame">テキストパネル</string>
     <string name="engine_ons_side_screenshot">スクリーンショット</string>
@@ -129,16 +118,8 @@
     <string name="engine_ons_settings_dict_none">辞書未導入</string>
     <string name="engine_ons_extract_multi_tts">MultiTTS</string>
     <!-- 右缘按键组（存档/音量/主页）与存档面板多选 -->
-    <string name="engine_ons_side_save">セーブパネル</string>
     <string name="engine_ons_side_volume">音量</string>
     <string name="engine_ons_side_home">ホームへ戻る（ゲームを終了）</string>
-    <string name="engine_ons_save_refresh">更新</string>
-    <string name="engine_ons_save_select_all">すべて選択</string>
-    <string name="engine_ons_save_delete_selected">選択を削除</string>
-    <string name="engine_ons_save_delete_selected_fmt">選択を削除（%1$d）</string>
-    <string name="engine_ons_save_delete_selected_confirm">選択した%1$d件のセーブを削除しますか？</string>
-    <string name="engine_ons_save_deleted_multi">%1$d件のセーブを削除しました</string>
-    <string name="engine_ons_save_deleted_partial">%1$d/%2$d件のセーブを削除しました</string>
 
     <!-- 词典管理（多词典，对齐 anki 参考） -->
     <string name="engine_ons_dict_manager">辞書管理</string>
@@ -177,11 +158,6 @@
     <string name="engine_ons_side_volume_pct">音量：%1$d%%</string>
     <string name="engine_ons_side_home_confirm">ゲームを終了してアプリのホームに戻りますか？</string>
     <string name="engine_ons_side_home_ok">ホームへ戻る</string>
-    <string name="engine_ons_save_export_one">ダウンロード</string>
-    <string name="engine_ons_save_downloaded">Download/%1$s に保存しました</string>
-    <string name="engine_ons_save_download_failed">ダウンロードに失敗：%1$s</string>
-    <string name="engine_ons_save_delete_confirm">セーブ「%1$s」を削除しますか？</string>
-    <string name="engine_ons_save_deleted">削除しました</string>
     <string name="engine_ons_side_click_mode">クリックモード切替（仮想マウス／タッチ）</string>
 </resources>
 

@@ -37,7 +37,6 @@ import com.core.engine.R;
 import com.core.ons.OnsExtractBridge;
 import com.core.ons.OnsExtractPanel;
 import com.core.ons.OnsLibLoader;
-import com.core.ons.OnsSavePanel;
 import com.core.ons.OnsSettings;
 import com.core.ons.OnsVideoOverlay;
 import com.core.ons.OnsVirtualMouse;
@@ -73,7 +72,6 @@ public class ONScripter extends SDLActivity {
     private OnsVideoOverlay videoOverlay;
     /** [ONS-BRIDGE] 对话/语音提取面板。 */
     private OnsExtractPanel extractPanel;
-    private OnsSavePanel savePanel;
     /** 手柄方向键虚拟鼠标。 */
     private OnsVirtualMouse virtualMouse;
     private native int nativeInitJavaCallbacks();
@@ -133,13 +131,6 @@ public class ONScripter extends SDLActivity {
             extractPanel = new OnsExtractPanel(new com.core.ons.OnsExtractFacade(this));
             extractPanel.install(onsOverlay, this::toggleVirtualMouseMode, this::isVirtualMouseMode);
         } catch (Throwable t) { Log.w(TAG, "extract panel install failed", t); }
-        try {
-            savePanel = new OnsSavePanel(new com.core.ons.OnsExtractFacade(this));
-            // 存档入口走右缘固定存档键（不再装「存」悬浮球）
-            savePanel.setEntryChipVisible(false);
-            savePanel.install(onsOverlay);
-            if (extractPanel != null) extractPanel.setSavesToggle(savePanel::toggle);
-        } catch (Throwable t) { Log.w(TAG, "save panel install failed", t); }
         fullscreen();
     }
 
@@ -871,10 +862,6 @@ public class ONScripter extends SDLActivity {
         if (extractPanel != null) {
             extractPanel.release();
             extractPanel = null;
-        }
-        if (savePanel != null) {
-            savePanel.release();
-            savePanel = null;
         }
         OnsExtractBridge.get().detach();
         // ONS runs in a dedicated process. SDL native teardown can destroy

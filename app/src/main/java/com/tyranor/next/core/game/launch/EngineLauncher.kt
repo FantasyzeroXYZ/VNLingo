@@ -721,14 +721,7 @@ object EngineLauncher {
                 args.add(if (path.endsWith("/")) "${path}default.ttf" else "$path/default.ttf")
                 args.add(if (ons.stretchFull) "--fullscreen2" else "--fullscreen")
                 if (ons.disableVideo) args.add("--no-video")
-                // 编码：auto 时按游戏目录探测（日文 SJIS / 中文 GBK / UTF-8），
-                // 探测失败回退 gbk（历史默认，保证既有中文游戏不受影响）。
-                val onsEnc = EngineSettingsStore.normalizeEncoding(ons.encoding)
-                args.add(
-                    "--enc:" + if (onsEnc == "auto") {
-                        com.core.ons.OnsEncodingDetect.detect(path) ?: "gbk"
-                    } else onsEnc,
-                )
+                args.add("--enc:" + EngineSettingsStore.normalizeEncoding(ons.encoding))
                 val saveDir = if (ons.scopedSaveDir) {
                     val external = context.getExternalFilesDir(null) ?: context.filesDir
                     File(File(external, "save"), File(path).name)

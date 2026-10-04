@@ -19,7 +19,7 @@ import java.util.function.Supplier;
 
 /**
  * 游戏右缘固定竖排按键组（独立于可拖动悬浮球）：
- * 顶部折叠键（折叠后仍在最顶端）+ 剧情文本框开/关、截图、存档面板、游戏设置、
+ * 顶部折叠键（折叠后仍在最顶端）+ 剧情文本框开/关、截图、游戏设置、
  * 音量（百分比滑条）、点击模式切换（虚拟鼠标/触摸，宿主未提供回调时不显示）、
  * 回到主页（确认后退出游戏回软件主页面）。
  * 尺寸/底色/描边/图标色对齐左侧虚拟按键列（40dp、深色半透明底 + 白色图标），
@@ -42,13 +42,12 @@ public class OnsSideButtons {
 
     /** 安装到覆盖层右缘。返回按键组根视图（光标命中用）。 */
     public static android.view.View install(ViewGroup overlay, Runnable onToggleTextFrame,
-                                            Runnable onScreenshot, Runnable onSaves,
-                                            Runnable onSettings,
+                                            Runnable onScreenshot, Runnable onSettings,
                                             Runnable onMouseModeToggle,
                                             Supplier<Boolean> mouseMode) {
         Activity activity = (Activity) overlay.getContext();
         LinearLayout container = buildContainer(activity, onToggleTextFrame, onScreenshot,
-                onSaves, onSettings, onMouseModeToggle, mouseMode);
+                onSettings, onMouseModeToggle, mouseMode);
         FrameLayout.LayoutParams lp = new FrameLayout.LayoutParams(
                 FrameLayout.LayoutParams.WRAP_CONTENT,
                 FrameLayout.LayoutParams.WRAP_CONTENT,
@@ -68,12 +67,11 @@ public class OnsSideButtons {
      * 其余触摸全部穿透给游戏；返回按键组根视图。
      */
     public static android.view.View installAsWindow(Activity activity, Runnable onToggleTextFrame,
-                                                    Runnable onScreenshot, Runnable onSaves,
-                                                    Runnable onSettings,
+                                                    Runnable onScreenshot, Runnable onSettings,
                                                     Runnable onMouseModeToggle,
                                                     Supplier<Boolean> mouseMode) {
         LinearLayout container = buildContainer(activity, onToggleTextFrame, onScreenshot,
-                onSaves, onSettings, onMouseModeToggle, mouseMode);
+                onSettings, onMouseModeToggle, mouseMode);
         android.view.WindowManager.LayoutParams lp = new android.view.WindowManager.LayoutParams(
                 android.view.ViewGroup.LayoutParams.WRAP_CONTENT,
                 android.view.ViewGroup.LayoutParams.WRAP_CONTENT,
@@ -139,7 +137,7 @@ public class OnsSideButtons {
 
     /** 容器 = 顶部折叠键 + 按键列（折叠只藏按键列，折叠键常驻最顶端）。 */
     private static LinearLayout buildContainer(Activity activity, Runnable onToggleTextFrame,
-                                               Runnable onScreenshot, Runnable onSaves,
+                                               Runnable onScreenshot,
                                                Runnable onSettings, Runnable onMouseModeToggle,
                                                Supplier<Boolean> mouseMode) {
         LinearLayout container = new LinearLayout(activity);
@@ -153,8 +151,6 @@ public class OnsSideButtons {
                 R.string.engine_ons_side_text_frame, onToggleTextFrame));
         column.addView(button(activity, R.drawable.ic_camera,
                 R.string.engine_ons_side_screenshot, onScreenshot));
-        column.addView(button(activity, R.drawable.ic_save,
-                R.string.engine_ons_side_save, onSaves));
         column.addView(button(activity, R.drawable.ic_settings,
                 R.string.engine_ons_side_settings, onSettings));
         column.addView(button(activity, R.drawable.ic_volume,

@@ -74,7 +74,6 @@ public abstract class KirikiroidLauncherBaseActivity extends KR2Activity {
     /** 游玩时长统计的游戏标识（LaunchContract.PATH）。 */
     private volatile String playTimeKey;
     /** 存档管理面板（存档球）：存档检测/导出/导入/云同步。 */
-    private volatile com.core.ons.OnsSavePanel savePanel;
     private volatile com.core.ons.ExtractFacade krkrFacade;
     private volatile boolean firstFrameRendered;
     private volatile boolean launchDispatched;
@@ -215,11 +214,6 @@ public abstract class KirikiroidLauncherBaseActivity extends KR2Activity {
             com.core.ons.KrkrExtractFacade facade =
                     new com.core.ons.KrkrExtractFacade(this, path, saveDir);
             krkrFacade = facade;
-            runOnUiThread(() -> {
-                com.core.ons.OnsSavePanel panel = new com.core.ons.OnsSavePanel(facade);
-                panel.install(mFrameLayout);
-                savePanel = panel;
-            });
         }
         if (path != null && path.length() != 0) {
             requestGameLaunch(path, false);

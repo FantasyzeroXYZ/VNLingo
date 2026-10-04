@@ -98,23 +98,16 @@ public abstract class ArtemisLauncherBaseActivity extends com.ies_net.artemis.Ar
             facade = new com.core.ons.ArtemisExtractFacade(this, path);
 
             com.core.ons.WindowOverlayHost helper = new com.core.ons.WindowOverlayHost(this);
-            com.core.ons.OnsSavePanel savePanel = new com.core.ons.OnsSavePanel(facade);
-            // 存档入口走右缘固定存档键（不再装「存」悬浮窗）
-            savePanel.setEntryChipVisible(false);
-            savePanel.install(helper.overlay());
             com.core.ons.OnsExtractPanel extractPanel = new com.core.ons.OnsExtractPanel(facade);
-            // 右缘按键组同理走独立小窗；全屏覆盖层只承载两块面板本体
+            // 右缘按键组走独立小窗；全屏覆盖层只承载面板本体
             extractPanel.setSideButtonsWindowMode(true);
             extractPanel.install(helper.overlay(), null, null);
-            extractPanel.setSavesToggle(savePanel::toggle);
 
             // 面板开合（含面板内 ✕/收起）都会改动可见性：布局变化即同步触摸放行
             android.view.View.OnLayoutChangeListener sync =
-                    (v, a, b, c, d, e, f, g, h) -> helper.syncTouchability(
-                            savePanel.panelView(), extractPanel.panelView());
-            savePanel.panelView().addOnLayoutChangeListener(sync);
+                    (v, a, b, c, d, e, f, g, h) -> helper.syncTouchability(extractPanel.panelView());
             extractPanel.panelView().addOnLayoutChangeListener(sync);
-            helper.syncTouchability(savePanel.panelView(), extractPanel.panelView());
+            helper.syncTouchability(extractPanel.panelView());
         } catch (Throwable t) {
             Log.w("YukiArtemis", "installPanels failed", t);
         }
