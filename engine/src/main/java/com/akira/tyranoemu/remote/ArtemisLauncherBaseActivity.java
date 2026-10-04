@@ -17,7 +17,10 @@ public abstract class ArtemisLauncherBaseActivity extends com.ies_net.artemis.Ar
     private static final String KEY_ARTEMIS_ENGINE_SUCCESS_PREFIX = "artemis_engine_success.";
     private long createdAtElapsed;
     private boolean userRequestedFinish;
-    /** Loads the revision-specific Artemis native library (e.g. libartemis.so). Called once from onCreate. */
+    /** 存档/提取面板门面（游戏路径存在时安装，见 installPanels）。 */
+    private com.core.ons.ArtemisExtractFacade facade;
+    private boolean panelsInstalled;
+    /** 加载 revision-specific 的 Artemis native 库（如 libartemis.so），onCreate 一次性调用。 */
     public abstract void loadEngineLibrary();
 
     @Override
@@ -37,10 +40,84 @@ public abstract class ArtemisLauncherBaseActivity extends com.ies_net.artemis.Ar
     @Override
     public final void onCreate(Bundle bundle) {
         Log.i("YukiArtemis", "onCreate enter pid=" + android.os.Process.myPid());
+        // 提取语音缓存目录须在 super.onCreate 前提供（内核 ANativeActivity_onCreate
+        // 阶段会反向经 ArtemisActivity.getExtractCacheDir 拉取）
+        String extractPath = getIntent() == null ? null : getIntent().getStringExtra(LaunchContract.PATH);
+        if (extractPath != null && !extractPath.trim().isEmpty()) {
+            if (extractPath.startsWith("file://")) extractPath = extractPath.substring("file://".length());
+            com.ies_net.artemis.ArtemisActivity.setExtractCacheDirOverride(
+                    extractPath + "/artemis_extract/voice/");
+        }
         super.onCreate(bundle);
         createdAtElapsed = SystemClock.elapsedRealtime();
         Log.i("YukiArtemis", "onCreate path=" + (getIntent() == null ? null : getIntent().getStringExtra(LaunchContract.PATH)) + " scoped=" + (getIntent() != null && getIntent().getBooleanExtra(LaunchContract.SCOPED_SAVE_DIR, false)) + " saveName=" + (getIntent() == null ? null : getIntent().getStringExtra(LaunchContract.SCOPED_SAVE_NAME)));
         loadEngineLibrary();
+    }
+
+    @Override
+    public void onWindowFocusChanged(boolean hasFocus) {
+        super.onWindowFocusChanged(hasFocus);
+        if (hasFocus) {
+            maybeInstallPanels();
+        }
+    }
+
+    /**
+     * NativeActivity 的内容根在 onCreate 阶段不跑布局（后加视图 bounds 全 0）；
+     * 且游戏 onResume 才切横屏，刚转屏时 decor 尺寸/insets 还是旧值（悬浮窗
+     * 会锚错位置）——等 decor 宽与当前屏宽一致（旋转稳定）再安装，未稳定则重试。
+     */
+    private void maybeInstallPanels() {
+        if (panelsInstalled) return;
+        // 竖屏转横屏未稳定时 decor 高 ≥ 宽；稳定（横屏）后宽 > 高即安装。
+        // 注意 dm.widthPixels 是应用可见区（2274），与 decor 全屏宽（2400）永不相等。
+        int decorWidth = getWindow().getDecorView().getWidth();
+        int decorHeight = getWindow().getDecorView().getHeight();
+        Log.i("YukiArtemis", "maybeInstallPanels decor=" + decorWidth + "x" + decorHeight);
+        if (decorWidth > decorHeight) {
+            panelsInstalled = true;
+            installPanels();
+            return;
+        }
+        new android.os.Handler(android.os.Looper.getMainLooper())
+                .postDelayed(this::maybeInstallPanels, 500);
+    }
+
+    /**
+     * 覆盖层面板安装（NativeActivity 窗口 surface 被游戏独占，Java 视图不参与
+     * 合成——addContentView 的视图 bounds 恒为 0），全部走 WindowManager 悬浮窗：
+     * 「存」球小窗 + 全屏覆盖窗（存档面板 / 提取面板与右缘按键组）。
+     * 覆盖窗在无可见面板时置 FLAG_NOT_TOUCHABLE，触摸穿透给游戏。
+     * 提取数据源待内核文本钩子（见 ArtemisExtractFacade 注释），先接入框架。
+     */
+    private void installPanels() {
+        try {
+            String path = getIntent() == null ? null : getIntent().getStringExtra(LaunchContract.PATH);
+            if (path == null || path.trim().isEmpty()) return;
+            if (path.startsWith("file://")) path = path.substring("file://".length());
+            facade = new com.core.ons.ArtemisExtractFacade(this, path);
+
+            com.core.ons.WindowOverlayHost helper = new com.core.ons.WindowOverlayHost(this);
+            com.core.ons.OnsSavePanel savePanel = new com.core.ons.OnsSavePanel(facade);
+            // 存档入口走右缘固定存档键（不再装「存」悬浮窗）
+            savePanel.setEntryChipVisible(false);
+            savePanel.install(helper.overlay());
+            com.core.ons.OnsExtractPanel extractPanel = new com.core.ons.OnsExtractPanel(facade);
+            // 右缘按键组同理走独立小窗；全屏覆盖层只承载两块面板本体
+            extractPanel.setSideButtonsWindowMode(true);
+            extractPanel.install(helper.overlay(), null, null);
+            extractPanel.setSavesToggle(savePanel::toggle);
+
+            // 面板开合（含面板内 ✕/收起）都会改动可见性：布局变化即同步触摸放行
+            android.view.View.OnLayoutChangeListener sync =
+                    (v, a, b, c, d, e, f, g, h) -> helper.syncTouchability(
+                            savePanel.panelView(), extractPanel.panelView());
+            savePanel.panelView().addOnLayoutChangeListener(sync);
+            extractPanel.panelView().addOnLayoutChangeListener(sync);
+            helper.syncTouchability(savePanel.panelView(), extractPanel.panelView());
+        } catch (Throwable t) {
+            Log.w("YukiArtemis", "installPanels failed", t);
+        }
     }
 
     @Override
@@ -59,8 +136,18 @@ public abstract class ArtemisLauncherBaseActivity extends com.ies_net.artemis.Ar
 
     @Override
     public boolean dispatchKeyEvent(KeyEvent event) {
+        // 注：面板手柄拦截（OnsExtractPanel.handleKey）在 NativeActivity 下
+        // 输入走 native 队列，此处不保证到达；内核文本钩子落地后再评估接入点
         if (DoubleBackExit.dispatchBackKey(this, event, this::exitFromBack)) return true;
         return super.dispatchKeyEvent(event);
+    }
+
+    @Override
+    public void onActivityResult(int requestCode, int resultCode, Intent data) {
+        super.onActivityResult(requestCode, resultCode, data);
+        if (facade != null) {
+            facade.onActivityResult(requestCode, resultCode, data);
+        }
     }
 
     @Override

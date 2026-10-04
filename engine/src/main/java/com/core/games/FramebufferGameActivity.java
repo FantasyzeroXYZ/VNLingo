@@ -268,12 +268,14 @@ public final class FramebufferGameActivity extends AppCompatActivity
     @Override
     protected void onResume() {
         super.onResume();
+        if (gameRoot != null) com.core.engine.PlayTimeTracker.onForeground(this, gameRoot);
         applyImmersive();
         maybeStartFrameLoop();
     }
 
     @Override
     protected void onPause() {
+        if (gameRoot != null) com.core.engine.PlayTimeTracker.onBackground(gameRoot);
         stopFrameLoop();
         super.onPause();
     }

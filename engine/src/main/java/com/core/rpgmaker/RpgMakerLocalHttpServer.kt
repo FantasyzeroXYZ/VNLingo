@@ -297,7 +297,31 @@ internal class RpgMakerLocalHttpServer(
                 if (indexBytes != null) return ResolvedFile(null, indexBytes)
             }
         }
-        return ResolvedFile(resolveCaseInsensitive(uri), null)
+        val caseMatched = resolveCaseInsensitive(uri)
+        if (caseMatched != null) return ResolvedFile(caseMatched, null)
+        // 按游戏语言的文件名编码回退（SJIS↔GBK、cp1251↔cp866 等损坏链）
+        val encodingMatched = resolveEncodingFallback(uri)
+        if (encodingMatched != null) return ResolvedFile(encodingMatched, null)
+        // Windows 拷贝链路常见的尾下划线损坏名（如 Cursor.png_）回退
+        val underscore = resolveCaseInsensitive(uri + "_")
+        if (underscore != null) {
+            Log.i(TAG, "resource fallback trailing-underscore $uri")
+            return ResolvedFile(underscore, null)
+        }
+        return ResolvedFile(null, null)
+    }
+
+    /** 游戏语言懒检测（data 文本特征，见 GameLanguageDetector）。 */
+    private val detectedLanguage: GameLanguage? by lazy {
+        runCatching { GameLanguageDetector.detect(root) }.getOrNull()
+    }
+
+    /** 按游戏语言的文件名编码回退（通用实现见 EncodedFileNameResolver）。 */
+    private fun resolveEncodingFallback(uri: String): File? {
+        val lang = detectedLanguage ?: return null
+        val matched = EncodedFileNameResolver.resolve(root, uri, lang) ?: return null
+        Log.i(TAG, "resource fallback encoding($lang) $uri -> ${matched.path}")
+        return matched
     }
 
     private fun canonicalIfValid(uri: String?): File? {

@@ -30,6 +30,7 @@ import android.widget.FrameLayout
 import android.widget.LinearLayout
 import android.widget.TextView
 import android.widget.Toast
+import com.core.engine.PlayTimeTracker
 import com.core.engine.DoubleBackExit
 import com.core.engine.EnginePrefs
 import com.core.engine.EngineSessionRegistry
@@ -37,6 +38,11 @@ import com.core.engine.EngineThemeColors
 import com.core.engine.LaunchContract
 import com.core.engine.R
 import java.io.ByteArrayInputStream
+import com.core.ons.OnsExtractPanel
+import com.core.ons.WebSaveArchive
+import com.core.ons.OnsSavePanel
+import com.core.ons.WebExtractBridge
+import com.core.ons.WebExtractFacade
 import java.io.File
 import java.util.Locale
 import java.util.concurrent.atomic.AtomicBoolean
@@ -58,6 +64,14 @@ class TyranoActivity : Activity() {
     private var gameUsesAsar = false
     private var webGameType = WebGameType.TYRANO
     private var asarPath: String? = null
+    private var extractPanel: OnsExtractPanel? = null
+    private var savePanelRef: OnsSavePanel? = null
+    private var extractFacade: WebExtractFacade? = null
+
+    /** 提取钩子脚本（懒加载缓存；见 assets/__tn_extract.js）。 */
+    private val extractJs: String by lazy {
+        runCatching { loadAsset(EXTRACT_ASSET).toString(Charsets.UTF_8) }.getOrDefault("")
+    }
     private var asarArchive: AsarArchive? = null
     private var firstResume = true
     private var localServer: TyranoLocalHttpServer? = null
@@ -193,7 +207,10 @@ class TyranoActivity : Activity() {
                 } else {
                     ByteArray(0)
                 }
-            val hook = (hookAsset?.let { assets.open(it).buffered().use { input -> input.readBytes() } } ?: ByteArray(0)) +
+            // 提取钩子拼在引擎 hook 最前（</head> 处，先于游戏脚本执行——
+            // Howl.init 等构造钩必须早于任何音频实例创建）
+            val hook = extractJs.toByteArray(Charsets.UTF_8) +
+                (hookAsset?.let { assets.open(it).buffered().use { input -> input.readBytes() } } ?: ByteArray(0)) +
                 touchPad
             val scriptAppends = mutableMapOf<String, ByteArray>()
             if (webGameType == WebGameType.RPG_MZ) {
@@ -278,6 +295,20 @@ class TyranoActivity : Activity() {
             WebGameType.TYRANO -> browser.addJavascriptInterface(TyranoJsBridge(saves), JS_BRIDGE_NAME)
             WebGameType.VN, WebGameType.WEB_OTHER -> Unit
         }
+        // TyranorNext 提取面板（剧情文本/查词/制卡/翻译/TTS + 存档管理）：全类型通用
+        browser.addJavascriptInterface(WebExtractBridge.JsBridge(), EXTRACT_BRIDGE_NAME)
+        WebExtractBridge.get().attach(gameRootFile, localServer?.port ?: 0)
+        val extractFacadeLocal = WebExtractFacade(this, saveDirectory, gameRootFile?.name ?: "web")
+        extractFacade = extractFacadeLocal
+        val extract = OnsExtractPanel(extractFacadeLocal)
+        extract.install(root, null, null)
+        extractPanel = extract
+        val savePanel = OnsSavePanel(extractFacadeLocal)
+        // 存档入口走右缘固定存档键（不再装「存」悬浮球）
+        savePanel.setEntryChipVisible(false)
+        savePanel.install(root)
+        savePanelRef = savePanel
+        extract.setSavesToggle(savePanel::toggle)
         val server = requireNotNull(localServer)
         if (server.usedFallbackPort) {
             Toast.makeText(
@@ -358,6 +389,10 @@ class TyranoActivity : Activity() {
             override fun onPageFinished(view: WebView?, url: String?) {
                 super.onPageFinished(view, url)
                 Log.i(TAG, "onPageFinished url=$url")
+                // 提取钩子（幂等重注入；原型/Observer 钩子晚装同样生效）
+                if (view != null) {
+                    runCatching { view.evaluateJavascript(extractJs, null) }
+                }
                 // 虚拟鼠标合成事件 API（幂等，页面每次加载后重新注入）
                 if (virtualMouseLayer != null && view != null) {
                     runCatching { view.evaluateJavascript(mouseJs, null) }
@@ -616,6 +651,8 @@ class TyranoActivity : Activity() {
     }
 
     override fun dispatchKeyEvent(event: KeyEvent): Boolean {
+        // 提取面板按键路由（webgametxt 语义：RB 呼出；展开时消费手柄/键盘）
+        if (extractPanel?.handleKey(event) == true) return true
         if (event.keyCode == KeyEvent.KEYCODE_BACK) {
             if (event.action == KeyEvent.ACTION_UP) handleBackRequest()
             return true
@@ -638,7 +675,18 @@ class TyranoActivity : Activity() {
         }
     }
 
+    override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
+        if (extractFacade?.onActivityResult(requestCode, resultCode, data) == true) return
+        if (requestCode == WebSaveArchive.REQ_IMPORT_DICT && resultCode == RESULT_OK
+            && data?.data != null) {
+            extractPanel?.onDictImportPicked(data.data)
+            return
+        }
+        super.onActivityResult(requestCode, resultCode, data)
+    }
+
     override fun onPause() {
+        PlayTimeTracker.onBackground(gameRootFile?.absolutePath ?: gameDir ?: "")
         virtualMouseLayer?.reset()
         runCatching { webView?.loadUrl("javascript:if(window._tyrano_player){_tyrano_player.pauseAllAudio();}") }
         runCatching { webView?.onPause() }
@@ -646,6 +694,7 @@ class TyranoActivity : Activity() {
     }
 
     override fun onResume() {
+        PlayTimeTracker.onForeground(this, gameRootFile?.absolutePath ?: gameDir ?: "")
         super.onResume()
         enterFullscreen()
         if (firstResume) firstResume = false else {
@@ -1039,6 +1088,8 @@ class TyranoActivity : Activity() {
         private const val RPG_MAKER_MOD_CSS_ASSET = "__rpgmaker_mod.css"
         private const val RPG_MAKER_MOD_ICON_ASSET = "__rpgmaker_mod_icon.png"
         private const val VIRTUAL_MOUSE_ASSET = "__tyranor_mouse.js"
+        private const val EXTRACT_ASSET = "__tn_extract.js"
+        private const val EXTRACT_BRIDGE_NAME = "tnExtractBridge"
         private const val RPG_MAKER_MOD_CORE_PATH = "__tyranor__/rpgmaker_mod_core.js"
         private const val RPG_MAKER_MOD_UI_PATH = "__tyranor__/rpgmaker_mod_ui.js"
         private const val RPG_MAKER_MOD_CSS_PATH = "__tyranor__/rpgmaker_mod.css"

@@ -13,7 +13,36 @@ open class ArtemisActivity : NativeActivity() {
         init {
             System.loadLibrary("artemis_audio_bridge")
         }
+
+        /**
+         * 内核提取观测桥上行（libartemis-clean 的 extract_bridge 发射器调用，
+         * 引擎线程）：转发 ArtemisExtractBridge 单例，主线程分发给监听者。
+         * 官方 revision 内核从不调用，无兼容影响。
+         */
+        @JvmStatic
+        fun onArtemisExtract(text: String, voiceName: String, voiceCached: String) {
+            com.core.ons.ArtemisExtractBridge.dispatch(text, voiceName, voiceCached)
+        }
+
+        /**
+         * 提取语音缓存目录（宿主在 super.onCreate 前按游戏内路径设置）。
+         * 内核 extract_bridge 在 ANativeActivity_onCreate 阶段经
+         * [getExtractCacheDir] 反向拉取——dlopen 与 System.load 两份镜像的
+         * 全局状态相互独立，JNI 直写会落在引擎读不到的那份镜像上。
+         */
+        @Volatile
+        @JvmStatic
+        var extractCacheDirOverride: String = ""
+
+        @JvmStatic
+        fun getExtractCacheDir(): String = extractCacheDirOverride
     }
+
+    /**
+     * 注册提取语音缓存目录（clean 内核导出；官方内核无此导出，
+     * UnsatisfiedLinkError 由调用方捕获后静默降级为无提取）。
+     */
+    external fun nativeSetExtractCacheDir(path: String)
 
     external fun nativePauseAllSound(): Boolean
     external fun nativeResumeAllSound(): Boolean

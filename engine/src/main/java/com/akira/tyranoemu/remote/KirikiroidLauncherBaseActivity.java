@@ -71,6 +71,11 @@ public abstract class KirikiroidLauncherBaseActivity extends KR2Activity {
     private ProgressBar loadingSpinner;
     private volatile boolean nativeBridgeInitialized;
     private volatile boolean destroyed;
+    /** 游玩时长统计的游戏标识（LaunchContract.PATH）。 */
+    private volatile String playTimeKey;
+    /** 存档管理面板（存档球）：存档检测/导出/导入/云同步。 */
+    private volatile com.core.ons.OnsSavePanel savePanel;
+    private volatile com.core.ons.ExtractFacade krkrFacade;
     private volatile boolean firstFrameRendered;
     private volatile boolean launchDispatched;
     private volatile boolean launchSucceeded;
@@ -181,6 +186,41 @@ public abstract class KirikiroidLauncherBaseActivity extends KR2Activity {
         this.mFrameLayout.addView(launchMask);
         NativeBridge.setKrkrGameReadyListener(this::revealGame);
         String path = getIntent().getStringExtra(LaunchContract.PATH);
+        playTimeKey = path;
+        // [KRKR-EXTRACT] krkr2-main 内核提取桥（libkrkr2.so 导出）：
+        // 对话/语音事件 → OnsExtractBridge 既有管线。旧 libgame.so 无
+        // nativeSetExtractSink 导出时静默降级为无提取。
+        try {
+            java.io.File voiceCache = new java.io.File(getFilesDir(), "krkr_voice_cache");
+            if (!voiceCache.isDirectory() && !voiceCache.mkdirs()) voiceCache = null;
+            org.tvp.kirikiri2.KR2Activity.setExtractListener((type, payload) ->
+                    com.core.ons.OnsExtractBridge.get().onEvent(
+                            ("dialogue".equals(type)
+                                    ? "{\"type\":\"dialogue\",\"payload\":{\"b64\":\""
+                                    + android.util.Base64.encodeToString(
+                                            payload.getBytes(java.nio.charset.StandardCharsets.UTF_8),
+                                            android.util.Base64.NO_WRAP)
+                                    + "\"}}"
+                                    : "{\"type\":\"voice\",\"payload\":{\"name\":\""
+                                    + org.json.JSONObject.quote(payload)
+                                    + "\"}}").getBytes(java.nio.charset.StandardCharsets.UTF_8)),
+                    voiceCache == null ? "" : voiceCache.getAbsolutePath());
+            Log.i(TAG, "krkr2 extract sink armed");
+        } catch (Throwable t) {
+            Log.w(TAG, "krkr2 extract sink unavailable (stock kernel?): " + t);
+        }
+        if (path != null && path.length() != 0) {
+            java.io.File gameRoot = new java.io.File(path).getParentFile();
+            java.io.File saveDir = gameRoot == null ? null : new java.io.File(gameRoot, "savedata");
+            com.core.ons.KrkrExtractFacade facade =
+                    new com.core.ons.KrkrExtractFacade(this, path, saveDir);
+            krkrFacade = facade;
+            runOnUiThread(() -> {
+                com.core.ons.OnsSavePanel panel = new com.core.ons.OnsSavePanel(facade);
+                panel.install(mFrameLayout);
+                savePanel = panel;
+            });
+        }
         if (path != null && path.length() != 0) {
             requestGameLaunch(path, false);
         } else {
@@ -815,8 +855,14 @@ public abstract class KirikiroidLauncherBaseActivity extends KR2Activity {
     }
 
     @Override
+    public void onActivityResult(int requestCode, int resultCode, Intent data) {
+        if (krkrFacade != null && krkrFacade.onActivityResult(requestCode, resultCode, data)) return;
+        super.onActivityResult(requestCode, resultCode, data);
+    }
+
     public void onResume() {
         super.onResume();
+        if (playTimeKey != null) com.core.engine.PlayTimeTracker.onForeground(this, playTimeKey);
         applyKrkrRequestedOrientation();
     }
 

@@ -310,6 +310,40 @@ public class KR2Activity extends Cocos2dxActivity {
 
     private static native void initDump(String path);
     private static native void nativeOnLowMemory();
+
+    // ---------------------- [KRKR-EXTRACT] krkr2-main 内核提取桥 ----------------------
+    // libkrkr2.so（krkr2-main 内核）导出 nativeSetExtractSink；现役 libgame.so
+    // （Kirikiroid2 1.3.9）没有该导出。这里用反射容错：有导出的内核正常注册，
+    // 无导出的内核静默跳过（UnsatisfiedLinkError 由 setExtractListener 捕获）。
+
+    /** 宿主提取事件监听（引擎线程回调，实现方自行切线程）。 */
+    public interface ExtractListener { void onExtract(String type, String payload); }
+
+    @SuppressLint("StaticFieldLeak")
+    private static volatile ExtractListener sExtractListener;
+
+    /** 内核提取桥上行入口（引擎线程，勿阻塞）；仅 libkrkr2.so 内核会调用。 */
+    @SuppressWarnings("unused")
+    static void onKrkr2Extract(String type, String payload) {
+        ExtractListener listener = sExtractListener;
+        if (listener != null) listener.onExtract(type, payload);
+    }
+
+    /**
+     * 注册提取监听与语音缓存目录。旧内核无 nativeSetExtractSink 时静默降级
+     * （保持与原版一致的无提取行为）。
+     */
+    public static void setExtractListener(ExtractListener listener, String voiceCacheDir) {
+        sExtractListener = listener;
+        try {
+            nativeSetExtractSink(KR2Activity.class, voiceCacheDir);
+        } catch (Throwable t) {
+            android.util.Log.w("KR2Activity", "extract sink unavailable (stock kernel): " + t);
+        }
+    }
+
+    private static native void nativeSetExtractSink(Class<?> callback, String cacheDir);
+    // ---------------------------------------------------------------------------------
     private static native boolean nativeGetHideSystemButton();
     public static native void nativeCharInput(int ch);
     public static native void nativeCommitText(String text, int newCursorPosition);

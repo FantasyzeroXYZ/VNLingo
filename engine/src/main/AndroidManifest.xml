@@ -7,6 +7,14 @@
         android:maxSdkVersion="30" />
     <uses-permission android:name="android.permission.BLUETOOTH_CONNECT" />
     <uses-permission android:name="android.permission.RECORD_AUDIO" />
+    <!-- AnkiDroid 制卡：读写 AnkiDroid 牌组/笔记（ContentProvider 访问授权） -->
+    <uses-permission android:name="com.ichi2.anki.permission.READ_WRITE_DATABASE" />
+
+    <!-- AnkiDroid 包可见性（安装检测 / 授权跳转 / 拉起应用） -->
+    <queries>
+        <package android:name="com.ichi2.anki" />
+    </queries>
+
 
     <application>
 

@@ -42,6 +42,94 @@ object NativeBridge {
         listener?.run()
     }
 
+    /**
+     * [KRKR-EXTRACT] libkrkr_bridge_v2 的 cocos2d Label::setString 钩子上报的文本
+     * （已按 CJK/长度启发式过滤）。直接转成 ONS 提取桥的 dialogue 事件，
+     * 复用既有面板/Anki 管线。
+     */
+    @JvmStatic
+    private fun onKrkrText(text: String?) {
+        if (text.isNullOrBlank()) return
+        Log.i("NativeBridge", "krkr text: $text")
+        try {
+            val b64 = android.util.Base64.encodeToString(
+                text.toByteArray(Charsets.UTF_8), android.util.Base64.NO_WRAP)
+            val payload = "{\"type\":\"dialogue\",\"payload\":{\"b64\":\"$b64\"}}"
+            com.core.ons.OnsExtractBridge.get().onEvent(payload.toByteArray(Charsets.UTF_8))
+        } catch (t: Throwable) {
+            Log.w("NativeBridge", "onKrkrText failed", t)
+        }
+    }
+
+    /**
+     * [KRKR-EXTRACT] libkrkr_bridge_v2 检测到游戏内提取钩子（patch.tjs）以写模式打开
+     * __tn_extract.txt 时上行事件。此处读取文件内容并转成 ONS 提取桥的 dialogue
+     * 语义，复用既有面板/Anki 管线。写入方（TJS saveStructure）在打开之后才落盘，
+     * 因此延迟一拍再读，避免读到上一句的旧内容。
+     */
+    @JvmStatic
+    private fun onKrkrExtract(path: String?) {
+        try {
+            val target = KrPathUtils.normalizeFilePath(path) ?: return
+            val handler = android.os.Handler(android.os.Looper.getMainLooper())
+            handler.postDelayed({
+                try {
+                    val file = File(target)
+                    if (!file.isFile) return@postDelayed
+                    val text = file.readText(Charsets.UTF_8)
+                    if (text.isBlank()) return@postDelayed
+                    // 优先解析 TJS saveStructure 单字段结构：%[ "t" => "..." ]
+                    val line = extractStructureField(text)
+                        ?: text.trimEnd().lineSequence().lastOrNull()?.takeIf { it.isNotBlank() }
+                        ?: return@postDelayed
+                    val b64 = android.util.Base64.encodeToString(line.toByteArray(Charsets.UTF_8),
+                        android.util.Base64.NO_WRAP)
+                    val payload = "{\"type\":\"dialogue\",\"payload\":{\"b64\":\"$b64\"}}"
+                    com.core.ons.OnsExtractBridge.get().onEvent(payload.toByteArray(Charsets.UTF_8))
+                } catch (t: Throwable) {
+                    Log.w("NativeBridge", "onKrkrExtract deferred failed path=$path", t)
+                }
+            }, 120L)
+        } catch (t: Throwable) {
+            Log.w("NativeBridge", "onKrkrExtract failed path=$path", t)
+        }
+    }
+
+    /** 提取 TJS saveStructure 输出中 "t" => "..." 的字段值并反转义 TJS 字符串字面量。 */
+    private fun extractStructureField(text: String): String? {
+        val match = Regex("\"t\"\\s*=>\\s*\"((?:\\\\.|[^\"\\\\])*)\"").find(text) ?: return null
+        val raw = match.groupValues[1]
+        if (raw.isEmpty()) return null
+        val sb = StringBuilder(raw.length)
+        var i = 0
+        while (i < raw.length) {
+            val c = raw[i]
+            if (c != '\\') { sb.append(c); i++; continue }
+            if (i + 1 >= raw.length) break
+            when (val n = raw[i + 1]) {
+                'n' -> sb.append(' ')
+                'r' -> { }
+                't' -> sb.append(' ')
+                '"' -> sb.append('"')
+                '\\' -> sb.append('\\')
+                'x' -> {
+                    val hex = raw.drop(i + 2).take(2)
+                    hex.toIntOrNull(16)?.let { sb.append(it.toChar()) }
+                    i += hex.length
+                }
+                'u' -> {
+                    val hex = raw.drop(i + 2).take(4)
+                    hex.toIntOrNull(16)?.let { sb.append(it.toChar()) }
+                    i += hex.length
+                }
+                else -> sb.append(n)
+            }
+            i += 2
+        }
+        val out = sb.toString().trim()
+        return out.ifEmpty { null }
+    }
+
     @JvmStatic
     fun setKrkrGameReadyListener(listener: Runnable?) {
         krkrGameReadyListener = listener

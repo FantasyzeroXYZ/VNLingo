@@ -24,6 +24,12 @@ import android.webkit.WebView
 import android.webkit.WebViewClient
 import android.widget.FrameLayout
 import android.widget.Toast
+import com.core.ons.OnsExtractPanel
+import com.core.ons.WebSaveArchive
+import com.core.ons.OnsSavePanel
+import com.core.ons.WebExtractBridge
+import com.core.ons.WebExtractFacade
+import com.core.engine.PlayTimeTracker
 import com.core.engine.DoubleBackExit
 import com.core.engine.EnginePrefs
 import com.core.engine.EngineSessionRegistry
@@ -61,6 +67,14 @@ class RpgMakerActivity : Activity() {
     private var asarPath: String? = null
     private var asarArchive: AsarArchive? = null
     private var firstResume = true
+    private var extractPanel: OnsExtractPanel? = null
+    private var savePanelRef: OnsSavePanel? = null
+    private var extractFacade: WebExtractFacade? = null
+
+    /** 提取钩子脚本（懒加载缓存；见 assets/__tn_extract.js）。 */
+    private val extractJs: String by lazy {
+        runCatching { loadAsset(EXTRACT_ASSET).toString(Charsets.UTF_8) }.getOrDefault("")
+    }
 
     // WebView 回调线程（shouldInterceptRequest）会读取这两项，onCreate 主线程写入
     @Volatile
@@ -249,7 +263,9 @@ class RpgMakerActivity : Activity() {
                 v12Session -> RPG_MV_V12_HOOK_ASSET
                 else -> RPG_MV_HOOK_ASSET
             }
-            val lateHook = (loadAssetOrNull(hookAsset) ?: ByteArray(0)) + touchPad
+            // 提取钩子拼在引擎 hook 最前（先于游戏脚本执行，见 TyranoActivity 同注）
+            val lateHook = extractJs.toByteArray(Charsets.UTF_8) +
+                (loadAssetOrNull(hookAsset) ?: ByteArray(0)) + touchPad
             val scriptAppends = if (webGameType == WebGameType.RPG_MZ) {
                 mapOf(
                     "js/rmmz_core.js" to loadAsset(RPG_MZ_CORE_HOOK_ASSET),
@@ -349,6 +365,21 @@ class RpgMakerActivity : Activity() {
                 RPG_MAKER_MOD_BRIDGE_NAME,
             )
         }
+        // TyranorNext 提取面板（剧情文本/查词/制卡/翻译/TTS + 存档管理）
+        browser.addJavascriptInterface(WebExtractBridge.JsBridge(), EXTRACT_BRIDGE_NAME)
+        val gameName = gameDir?.let { File(it).name } ?: "web"
+        WebExtractBridge.get().attach(gameDir?.let { File(it) }, localServer?.port ?: 0)
+        val extractFacadeLocal = WebExtractFacade(this, saveDirectory, gameName)
+        extractFacade = extractFacadeLocal
+        val extract = OnsExtractPanel(extractFacadeLocal)
+        extract.install(root, null, null)
+        extractPanel = extract
+        val savePanel = OnsSavePanel(extractFacadeLocal)
+        // 存档入口走右缘固定存档键（不再装「存」悬浮球）
+        savePanel.setEntryChipVisible(false)
+        savePanel.install(root)
+        savePanelRef = savePanel
+        extract.setSavesToggle(savePanel::toggle)
         // PIXI legacy 兼容渲染（?android-legacy=1，__rpg_v12.js 的既定开关）：
         // 由设置页开关经 rpgLegacyRenderer extra 控制，规避部分 Android GPU
         // 上 WebGL 正常初始化却整屏渲染为黑的问题；默认关闭不影响既有行为。
@@ -427,6 +458,10 @@ class RpgMakerActivity : Activity() {
             override fun onPageFinished(view: WebView?, url: String?) {
                 super.onPageFinished(view, url)
                 Log.i(TAG, "onPageFinished url=$url")
+                // 提取钩子（幂等重注入；原型/Observer 钩子晚装同样生效）
+                if (view != null) {
+                    runCatching { view.evaluateJavascript(extractJs, null) }
+                }
                 // 虚拟鼠标合成事件 API（幂等，页面每次加载后重新注入）
                 if (virtualMouseLayer != null && view != null) {
                     runCatching { view.evaluateJavascript(mouseJs, null) }
@@ -618,6 +653,8 @@ class RpgMakerActivity : Activity() {
     }
 
     override fun dispatchKeyEvent(event: KeyEvent): Boolean {
+        // 提取面板按键路由（webgametxt 语义：RB 呼出；展开时消费手柄/键盘）
+        if (extractPanel?.handleKey(event) == true) return true
         if (event.keyCode == KeyEvent.KEYCODE_BACK) {
             if (event.action == KeyEvent.ACTION_UP) handleBackRequest()
             return true
@@ -641,6 +678,7 @@ class RpgMakerActivity : Activity() {
     }
 
     override fun onPause() {
+        PlayTimeTracker.onBackground(gameDir ?: "")
         virtualMouseLayer?.reset()
         // MV/MZ 的 WebAudio 主上下文挂起（WebView.onPause 不暂停 WebAudio，切后台会继续出声；
         // Html5Audio/视频旁路无法全局枚举，引擎主路径已覆盖）。v0 宿主的 _tyrano_player 挂起
@@ -656,6 +694,7 @@ class RpgMakerActivity : Activity() {
     }
 
     override fun onResume() {
+        PlayTimeTracker.onForeground(this, gameDir ?: "")
         super.onResume()
         enterFullscreen()
         if (firstResume) firstResume = false else {
@@ -670,7 +709,22 @@ class RpgMakerActivity : Activity() {
         runCatching { webView?.onResume() }
     }
 
+    override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
+        if (extractFacade?.onActivityResult(requestCode, resultCode, data) == true) return
+        if (requestCode == WebSaveArchive.REQ_IMPORT_DICT && resultCode == RESULT_OK
+            && data?.data != null) {
+            extractPanel?.onDictImportPicked(data.data)
+            return
+        }
+        super.onActivityResult(requestCode, resultCode, data)
+    }
+
     override fun onDestroy() {
+        extractPanel?.release()
+        extractPanel = null
+        savePanelRef?.release()
+        savePanelRef = null
+        WebExtractBridge.get().detach()
         EngineSessionRegistry.clear(this, EngineSessionRegistry.HOST_RPGMAKER)
         DoubleBackExit.clear(this)
         runCatching {
@@ -902,6 +956,8 @@ class RpgMakerActivity : Activity() {
         private const val RPG_MAKER_MOD_CSS_ASSET = "__rpgmaker_mod.css"
         private const val RPG_MAKER_MOD_ICON_ASSET = "__rpgmaker_mod_icon.png"
         private const val VIRTUAL_MOUSE_ASSET = "__tyranor_mouse.js"
+        private const val EXTRACT_ASSET = "__tn_extract.js"
+        private const val EXTRACT_BRIDGE_NAME = "tnExtractBridge"
         private const val RPG_MV_V1_PREFIX = "rpgmaker/rpgmv-v1"
         private val RPG_MV_V1_FILES = arrayOf(
             "js/rpg_core.js",

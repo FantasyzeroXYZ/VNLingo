@@ -51,5 +51,7 @@ dependencies {
     implementation libs.appcompat
     implementation libs.androidx.documentfile
     implementation libs.kotlin.stdlib
+    // ML Kit on-device 翻译（ONS 提取面板「本地翻译引擎」，对齐 anki 参考）
+    implementation 'com.google.mlkit:translate:17.0.2'
     testImplementation libs.junit
 }

@@ -12,7 +12,9 @@ class OnsSettings {
     @JvmField var sharpness = false
     @JvmField var sharpnessValue = "2"
     @JvmField var disableVideo = false
-    @JvmField var encoding = "gbk"
+
+    /** "auto"（按游戏目录探测）/ "gbk" / "sjis" / "utf8"。 */
+    @JvmField var encoding = "auto"
     @JvmField var scopedSaveDir = true
     @JvmField var allowEditArgs = true
 
@@ -35,7 +37,9 @@ class OnsSettings {
                     val isUpgradeFromLegacy = sp.contains(EXTRA_GAME_ARGS)
                     val editor = sp.edit().putBoolean(KEY_ENCODING_MIGRATED_GBK, true)
                     if (isUpgradeFromLegacy && "sjis" == settings.encoding) {
-                        settings.encoding = "gbk"
+                        // 旧版曾把用户设置的 sjis 强改为 gbk（当时为中文游戏默认）；
+                        // 现在有 auto 探测，改迁到 auto 让日文游戏正确显示。
+                        settings.encoding = "auto"
                         editor.putString(EXTRA_GAME_ARGS, settings.toJson().toString())
                     }
                     editor.apply()
@@ -70,14 +74,14 @@ class OnsSettings {
             }
         }
 
-        @JvmStatic
-        fun normalizeEncoding(value: String?): String {
-            val v = if (value == null) "gbk" else value.trim().lowercase(Locale.ROOT)
-            if ("gbk" == v || "utf8" == v || "sjis" == v) return v
-            if ("utf-8" == v) return "utf8"
-            if ("shift-jis" == v || "shift_jis" == v) return "sjis"
-            return "gbk"
-        }
+    @JvmStatic
+    fun normalizeEncoding(value: String?): String {
+        val v = if (value == null) "auto" else value.trim().lowercase(Locale.ROOT)
+        if ("auto" == v || "gbk" == v || "utf8" == v || "sjis" == v) return v
+        if ("utf-8" == v) return "utf8"
+        if ("shift-jis" == v || "shift_jis" == v) return "sjis"
+        return "auto"
+    }
 
         private fun guessName(path: String?): String {
             if (path.isNullOrEmpty()) return "ONSGame"
@@ -96,6 +100,16 @@ class OnsSettings {
         encoding = normalizeEncoding(o.optString("encoding", encoding))
         scopedSaveDir = o.optBoolean("scopedsavedir", scopedSaveDir)
         allowEditArgs = o.optBoolean("alloweditargs", allowEditArgs)
+    }
+
+    /**
+     * 解析最终传给 onsyuri 的编码：auto 时按游戏目录探测（nscript.dat →
+     * .txt），探测失败回退 gbk（历史默认，保证中文游戏不受影响）。
+     */
+    fun resolveEncoding(gameDir: String?): String {
+        val normalized = normalizeEncoding(encoding)
+        if (normalized != "auto") return normalized
+        return OnsEncodingDetect.detect(gameDir) ?: "gbk"
     }
 
     fun toJson(): JSONObject {
@@ -134,7 +148,7 @@ class OnsSettings {
         args.add(if (root.endsWith("/")) root + "default.ttf" else root + "/default.ttf")
         args.add(if (stretchFull) "--fullscreen2" else "--fullscreen")
         if (disableVideo) args.add("--no-video")
-        args.add("--enc:" + normalizeEncoding(encoding))
+        args.add("--enc:" + resolveEncoding(root))
         if (saveDir != null) {
             val ready = saveDir.isDirectory || saveDir.mkdirs()
             if (!ready) {
