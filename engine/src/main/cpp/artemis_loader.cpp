@@ -30,6 +30,9 @@ namespace {
 
 typedef void (*OnCreateFn)(ANativeActivity*, void*, size_t);
 
+// artemis_extract_hook.cpp：clean 内核消息/音频函数 inline hook → onArtemisExtract 上行
+extern "C" void artemis_install_extract_hook(void* kernelHandle, JavaVM* jvm);
+
 std::string getEngineLibName(JNIEnv* env, ANativeActivity* activity) {
     jclass activityCls = env->GetObjectClass(activity->clazz);
     if (activityCls == nullptr) {
@@ -250,6 +253,11 @@ ANativeActivity_onCreate(ANativeActivity* activity, void* savedState, size_t sav
 
     // 必须早于引擎创建任何 CSoundTrack：此刻还没转发 ANativeActivity_onCreate。
     installCsReadStackGuard(handle);
+    // 提取钩子（剧情文本框数据源）：同样必须在内核启动前完成 inline hook。
+    JavaVM* extractJvm = nullptr;
+    if (activity->env != nullptr && activity->env->GetJavaVM(&extractJvm) == JNI_OK) {
+        artemis_install_extract_hook(handle, extractJvm);
+    }
 
     OnCreateFn onCreate = reinterpret_cast<OnCreateFn>(
             dlsym(handle, "ANativeActivity_onCreate"));

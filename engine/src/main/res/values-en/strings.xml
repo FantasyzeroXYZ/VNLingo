@@ -114,6 +114,7 @@
     <string name="engine_ons_settings_section_dict">Dictionary</string>
     <string name="engine_ons_settings_section_cloud">Cloud sync</string>
     <string name="engine_ons_settings_section_display">Display</string>
+    <string name="engine_ons_settings_moved_hint">Translate / Dictionary / Cloud sync settings have moved to the app Settings page</string>
     <string name="engine_ons_extract_rate">Speed</string>
     <string name="engine_ons_settings_dict_none">No dictionary</string>
     <string name="engine_ons_extract_multi_tts">MultiTTS</string>

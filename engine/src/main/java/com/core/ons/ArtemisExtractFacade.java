@@ -56,8 +56,9 @@ public class ArtemisExtractFacade implements ExtractFacade {
     private void registerExtractListener() {
         ArtemisExtractBridge.setListener((text, voiceFile, voiceCached) -> {
             synchronized (this) {
-                // 语音先于文本到达（voplay/seplay 先行），挂到待配队列
-                if (voiceFile != null && !voiceFile.isEmpty()) {
+                // 语音先于文本到达（voplay/seplay 先行），挂到待配队列；
+                // BGM 走同一音频通道，按名字过滤避免错配到台词
+                if (voiceFile != null && !voiceFile.isEmpty() && !isBgmName(voiceFile)) {
                     pendingVoice = voiceFile;
                     voiceCachedPath = voiceCached == null ? "" : voiceCached;
                 }
@@ -79,6 +80,12 @@ public class ArtemisExtractFacade implements ExtractFacade {
                 if (l != null) l.onExtractUpdated();
             });
         });
+    }
+
+    /** BGM 名过滤：voplay/seplay 与 bgm 共用音频通道，bgm 不参与台词配对。 */
+    private static boolean isBgmName(String name) {
+        String lower = name.toLowerCase(java.util.Locale.ROOT);
+        return lower.contains("bgm") || lower.contains("music");
     }
 
     /** 内核注册语音缓存目录（官方内核无此导出 → 静默降级为无提取）。 */
@@ -139,7 +146,39 @@ public class ArtemisExtractFacade implements ExtractFacade {
                 if (c.getName().contains(name)) return readFile(c);
             }
         }
+        // 原生钩子不落盘（语音副本机制未随带桥内核分发）：退游戏目录常见语音位置按名探测
+        if (gameRoot != null && gameRoot.isDirectory()) {
+            for (File hit : probeVoiceInGameDir(gameRoot, name)) {
+                bytes = readFile(hit);
+                if (bytes != null) return bytes;
+            }
+        }
         return null;
+    }
+
+    /** 在游戏根常见语音目录（voice/ 及根目录）按名探测（含常见音频扩展名与模糊包含）。 */
+    private static List<File> probeVoiceInGameDir(File root, String name) {
+        List<File> out = new ArrayList<>();
+        String baseName = name;
+        int dot = baseName.lastIndexOf('.');
+        if (dot > 0) baseName = baseName.substring(0, dot);
+        String[] dirs = {"voice", ""};
+        String[] exts = {"", ".ogg", ".opus", ".wav", ".m4a"};
+        for (String dir : dirs) {
+            File base = dir.isEmpty() ? root : new File(root, dir);
+            if (!base.isDirectory()) continue;
+            for (String ext : exts) {
+                File candidate = new File(base, baseName + ext);
+                if (candidate.isFile()) out.add(candidate);
+            }
+            File[] children = base.listFiles();
+            if (children != null) {
+                for (File c : children) {
+                    if (c.isFile() && c.getName().contains(baseName)) out.add(c);
+                }
+            }
+        }
+        return out;
     }
 
     private static byte[] readFile(File f) {

@@ -114,6 +114,7 @@
     <string name="engine_ons_settings_section_dict">词典</string>
     <string name="engine_ons_settings_section_cloud">云同步</string>
     <string name="engine_ons_settings_section_display">显示</string>
+    <string name="engine_ons_settings_moved_hint">翻译 / 词典 / 云同步设置已移至应用「设置」页</string>
     <string name="engine_ons_extract_rate">语速</string>
     <string name="engine_ons_settings_dict_none">未导入词典</string>
     <string name="engine_ons_extract_multi_tts">MultiTTS</string>

@@ -107,6 +107,9 @@ public abstract class ArtemisLauncherBaseActivity extends com.ies_net.artemis.Ar
             android.view.View.OnLayoutChangeListener sync =
                     (v, a, b, c, d, e, f, g, h) -> helper.syncTouchability(extractPanel.panelView());
             extractPanel.panelView().addOnLayoutChangeListener(sync);
+            // 显式开合回调：VISIBLE→GONE 不触发布局变化（bounds 不变），仅靠布局回调
+            // 会让覆盖窗停留在可触摸态吃掉游戏输入（触摸失灵），故开合后直接同步。
+            extractPanel.setPanelVisibilityHook(() -> helper.syncTouchability(extractPanel.panelView()));
             helper.syncTouchability(extractPanel.panelView());
         } catch (Throwable t) {
             Log.w("YukiArtemis", "installPanels failed", t);

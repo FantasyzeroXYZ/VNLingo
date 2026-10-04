@@ -50,8 +50,10 @@ public final class OnsTranslateClient {
     private OnsTranslateClient() {
     }
 
+    /** MULTI_PROCESS：翻译设置现由应用设置页（主进程）写入、引擎进程读取，
+     *  每次 getSharedPreferences 都检查文件变更重载，避免引擎进程读到陈旧缓存。 */
     public static SharedPreferences prefs(Context context) {
-        return context.getApplicationContext().getSharedPreferences(PREFS, Context.MODE_PRIVATE);
+        return context.getApplicationContext().getSharedPreferences(PREFS, Context.MODE_MULTI_PROCESS);
     }
 
     /** 已配置即可翻译：base/model/target 为空时回退默认（Ollama 等本地服务可无 key）。 */

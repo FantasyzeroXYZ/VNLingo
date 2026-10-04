@@ -222,6 +222,17 @@ public class OnsExtractPanel {
         return panel;
     }
 
+    /**
+     * 面板可见性回调（悬浮窗宿主用）：开合后同步覆盖窗触摸放行。
+     * 不能只靠 OnLayoutChangeListener——VISIBLE→GONE 时视图 bounds 不变、
+     * 布局回调不触发，覆盖窗会停留在可触摸态吃掉全部游戏输入（Artemis 触摸失灵根因）。
+     */
+    public void setPanelVisibilityHook(Runnable hook) {
+        panelVisibilityHook = hook;
+    }
+
+    private Runnable panelVisibilityHook;
+
     public void release() {
         facade.setListener(null);
         stopTts();
@@ -463,6 +474,11 @@ public class OnsExtractPanel {
             applyAdaptiveHeight();
             refresh();
         }
+        // 可见性已同步生效，直接通知宿主同步覆盖窗触摸放行（post 一次避让同帧布局）
+        if (panelVisibilityHook != null) {
+            final Runnable hook = panelVisibilityHook;
+            main.post(hook);
+        }
     }
 
     /**
@@ -618,78 +634,13 @@ public class OnsExtractPanel {
         });
         box.addView(rateRow);
 
-        box.addView(sectionHeader(R.string.engine_ons_settings_section_translate));
-        // 翻译引擎行：API（OpenAI 兼容）/ 本地（ML Kit 离线），点行切换
-        TextView engineValue = new TextView(activity);
-        Runnable syncEngineText = () -> engineValue.setText(
-                OnsTranslateClient.ENGINE_LOCAL.equals(OnsTranslateClient.getEngine(activity))
-                        ? activity.getString(R.string.engine_ons_translate_engine_local)
-                        : activity.getString(R.string.engine_ons_translate_engine_api));
-        syncEngineText.run();
-        styleNavValue(engineValue);
-        LinearLayout engineRow = settingNavRow(R.drawable.ic_translate,
-                R.string.engine_ons_translate_engine, engineValue);
-        engineRow.setOnClickListener(v -> {
-            String next = OnsTranslateClient.ENGINE_LOCAL.equals(OnsTranslateClient.getEngine(activity))
-                    ? OnsTranslateClient.ENGINE_API : OnsTranslateClient.ENGINE_LOCAL;
-            OnsTranslateClient.prefs(activity).edit()
-                    .putString(OnsTranslateClient.KEY_ENGINE, next).apply();
-            syncEngineText.run();
-        });
-        box.addView(engineRow);
-        // 引擎配置行：API → 连接配置；本地 → 模型管理（下载/删除）
-        TextView engineCfgValue = new TextView(activity);
-        Runnable syncEngineCfg = () -> engineCfgValue.setText(
-                OnsTranslateClient.ENGINE_LOCAL.equals(OnsTranslateClient.getEngine(activity))
-                        ? activity.getString(R.string.engine_ons_translate_models)
-                        : activity.getString(R.string.engine_ons_translate_api_config));
-        syncEngineCfg.run();
-        styleNavValue(engineCfgValue);
-        LinearLayout engineCfgRow = settingNavRow(R.drawable.ic_settings,
-                R.string.engine_ons_translate_cfg, engineCfgValue);
-        engineCfgRow.setOnClickListener(v -> {
-            if (OnsTranslateClient.ENGINE_LOCAL.equals(OnsTranslateClient.getEngine(activity))) {
-                showLocalModelDialog();
-            } else {
-                showApiSettings();
-            }
-            syncEngineCfg.run();
-        });
-        box.addView(engineCfgRow);
-        // 翻译测试行（对齐参考的翻译测试：源/目标 + 输入 + 运行 + 结果）
-        LinearLayout testRow = settingNavRow(R.drawable.ic_autorenew,
-                R.string.engine_ons_translate_test, null);
-        testRow.setOnClickListener(v -> showTranslateTestDialog());
-        box.addView(testRow);
-
-        box.addView(sectionHeader(R.string.engine_ons_settings_section_dict));
-        // 词典管理行：打开管理弹窗（多词典列表/导入/启停/删除/设为当前）
-        TextView dictValue = new TextView(activity);
-        Runnable syncDictText = () -> {
-            OnsDictStore dicts = OnsDictStore.get();
-            int n = dicts.listDicts(activity).size();
-            dictValue.setText(n > 0 ? activity.getString(
-                    R.string.engine_ons_settings_dict_count, n)
-                    : activity.getString(R.string.engine_ons_settings_dict_none));
-        };
-        syncDictText.run();
-        styleNavValue(dictValue);
-        LinearLayout dictRow = settingNavRow(R.drawable.ic_book,
-                R.string.engine_ons_extract_dict, dictValue);
-        dictRow.setOnClickListener(v -> showDictManagerDialog(syncDictText));
-        box.addView(dictRow);
-
-        box.addView(sectionHeader(R.string.engine_ons_settings_section_cloud));
-        // 云同步行：state 显示当前模式；点击打开云同步配置（WebDAV/GitHub）
-        TextView cloudValue = new TextView(activity);
-        boolean githubMode = OnsSaveCloud.MODE_GITHUB.equals(
-                OnsSaveCloud.prefs(activity).getString(OnsSaveCloud.KEY_MODE, OnsSaveCloud.MODE_WEBDAV));
-        cloudValue.setText(githubMode ? "GitHub" : "WebDAV");
-        styleNavValue(cloudValue);
-        LinearLayout cloudRow = settingNavRow(R.drawable.ic_cloud,
-                R.string.engine_ons_extract_cloud, cloudValue);
-        cloudRow.setOnClickListener(v -> OnsSaveCloud.showConfigDialog(activity, null, null, null));
-        box.addView(cloudRow);
+        // 翻译 / 词典 / 云同步设置已移至应用「设置」页（产品调整：游戏内不再放配置类条目）
+        TextView movedHint = new TextView(activity);
+        movedHint.setText(R.string.engine_ons_settings_moved_hint);
+        movedHint.setTextColor(TEXT_DIM);
+        movedHint.setTextSize(12);
+        movedHint.setPadding(0, dp(12), 0, 0);
+        box.addView(movedHint);
 
         box.addView(sectionHeader(R.string.engine_ons_settings_section_display));
         box.addView(settingRow(R.drawable.ic_headphones,

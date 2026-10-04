@@ -114,6 +114,7 @@
     <string name="engine_ons_settings_section_dict">辞書</string>
     <string name="engine_ons_settings_section_cloud">クラウド同期</string>
     <string name="engine_ons_settings_section_display">表示</string>
+    <string name="engine_ons_settings_moved_hint">翻訳 / 辞書 / クラウド同期の設定はアプリの「設定」ページに移動しました</string>
     <string name="engine_ons_extract_rate">速度</string>
     <string name="engine_ons_settings_dict_none">辞書未導入</string>
     <string name="engine_ons_extract_multi_tts">MultiTTS</string>
