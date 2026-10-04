@@ -13,10 +13,24 @@
     <string name="common_follow_system">システムに従う</string>
     <string name="common_search_content_description">検索</string>
 
-    <string name="nav_home">ホーム</string>
     <string name="nav_games">ゲーム</string>
     <string name="nav_engine">エンジン</string>
+    <string name="nav_dict">辞書</string>
     <string name="nav_settings">設定</string>
+    <string name="dict_import_failed">インポートに失敗しました</string>
+    <string name="dict_delete_title">辞書を削除</string>
+    <string name="settings_extract_translate">翻訳設定</string>
+    <string name="settings_gamepad">コントローラー設定</string>
+    <string name="gamepad_settings_title">コントローラー</string>
+    <string name="gamepad_settings_summary">ゲームパッドのボタンをキーボードや他のゲームパッドボタンにリマップします。ゲーム内ですぐに反映されます。</string>
+    <string name="gamepad_remap_action">マッピング</string>
+    <string name="gamepad_unmapped">未マッピング</string>
+    <string name="gamepad_target_keyboard">キーボード · %1$s</string>
+    <string name="gamepad_target_gamepad">ゲームパッド · %1$s</string>
+    <string name="gamepad_capture_title">「%1$s」をマッピング中</string>
+    <string name="gamepad_capture_hint">割り当てるキー（ゲームパッドまたはキーボード）を押してください。戻るでキャンセル</string>
+    <string name="gamepad_mapped">マッピングしました</string>
+    <string name="gamepad_cleared">マッピングを削除しました</string>
 
     <string name="settings_app_title">アプリ設定</string>
     <string name="settings_language_title">言語</string>

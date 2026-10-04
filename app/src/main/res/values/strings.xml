@@ -13,10 +13,24 @@
     <string name="common_follow_system">跟随系统</string>
     <string name="common_search_content_description">搜索</string>
 
-    <string name="nav_home">首页</string>
     <string name="nav_games">游戏</string>
     <string name="nav_engine">引擎</string>
+    <string name="nav_dict">词典</string>
     <string name="nav_settings">设置</string>
+    <string name="dict_import_failed">导入失败</string>
+    <string name="dict_delete_title">删除词典</string>
+    <string name="settings_extract_translate">翻译设置</string>
+    <string name="settings_gamepad">手柄设置</string>
+    <string name="gamepad_settings_title">手柄设置</string>
+    <string name="gamepad_settings_summary">把手柄按键重映射为键盘或其他手柄按键；映射在游戏内即时生效。</string>
+    <string name="gamepad_remap_action">映射</string>
+    <string name="gamepad_unmapped">未映射</string>
+    <string name="gamepad_target_keyboard">键盘 · %1$s</string>
+    <string name="gamepad_target_gamepad">手柄 · %1$s</string>
+    <string name="gamepad_capture_title">正在映射「%1$s」</string>
+    <string name="gamepad_capture_hint">按下要映射到的按键（手柄或键盘），返回键取消</string>
+    <string name="gamepad_mapped">已映射</string>
+    <string name="gamepad_cleared">已清除映射</string>
 
     <string name="settings_app_title">应用设置</string>
     <string name="settings_language_title">语言</string>

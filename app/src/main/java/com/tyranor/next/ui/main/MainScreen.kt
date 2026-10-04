@@ -86,9 +86,8 @@ import com.tyranor.next.ui.common.glass.rememberGlassBottomBarColors
 import com.tyranor.next.theme.WithoutPressIndication
 import com.tyranor.next.theme.AppComponentShape
 import com.tyranor.next.theme.advancedGlassPageBackground
-import com.tyranor.next.ui.engine.EngineScreen
+import com.tyranor.next.ui.dict.DictionaryScreen
 import com.tyranor.next.ui.game.GameScreen
-import com.tyranor.next.ui.home.HomeScreen
 import com.tyranor.next.ui.settings.SettingsScreen
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
@@ -103,9 +102,8 @@ private data class Tab(
 )
 
 private val tabItems = listOf(
-  Tab(R.string.nav_home, R.drawable.ic_home),
   Tab(R.string.nav_games, R.drawable.ic_game),
-  Tab(R.string.nav_engine, R.drawable.ic_module),
+  Tab(R.string.nav_dict, R.drawable.ic_dict),
   Tab(R.string.nav_settings, R.drawable.ic_settings),
 )
 
@@ -457,15 +455,7 @@ private fun ColumnScope.MainTabPages(
               ),
           ) {
             when (page) {
-              0 -> HomeScreen(
-                modifier = Modifier.fillMaxSize(),
-                libraryState = libraryState,
-                onGameUpdated = libraryViewModel::replaceGame,
-                onGameDeleted = libraryViewModel::deleteGame,
-                onRecentRemoved = libraryViewModel::removeRecentGame,
-                onQuickLaunchToggle = libraryViewModel::toggleQuickLaunch,
-              )
-              1 -> GameScreen(
+              0 -> GameScreen(
                 modifier = Modifier.fillMaxSize(),
                 libraryState = libraryState,
                 onGameUpdated = libraryViewModel::replaceGame,
@@ -474,10 +464,9 @@ private fun ColumnScope.MainTabPages(
                 onScanLibrary = libraryViewModel::scanLibrary,
                 onScrapeEventShown = libraryViewModel::acknowledgeScrapeEvent,
                 onSearchQueryChanged = libraryViewModel::onSearchQueryChanged,
-                onAddManualGame = libraryViewModel::addManualGame,
               )
-              2 -> EngineScreen(Modifier.fillMaxSize())
-              3 -> SettingsScreen(Modifier.fillMaxSize())
+              1 -> DictionaryScreen(Modifier.fillMaxSize())
+              2 -> SettingsScreen(Modifier.fillMaxSize())
             }
           }
         }

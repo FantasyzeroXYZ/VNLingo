@@ -3,6 +3,8 @@ package com.tyranor.next.ui.settings
 import android.content.Context
 import android.content.Intent
 import android.os.Bundle
+
+import com.tyranor.next.ui.engine.EngineSettingsKind
 import com.tyranor.next.ui.common.AppScreenActivity
 
 class EngineSettingsActivity : AppScreenActivity() {

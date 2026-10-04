@@ -84,7 +84,10 @@
             android:name=".ui.settings.EngineSettingsActivity"
             android:exported="false" />
         <activity
-            android:name=".ui.settings.EngineSettingsMenuActivity"
+            android:name=".ui.engine.EngineManageActivity"
+            android:exported="false" />
+        <activity
+            android:name=".ui.gamepad.GamepadSettingsActivity"
             android:exported="false" />
         <activity
             android:name=".ui.settings.PerGameSettingsActivity"

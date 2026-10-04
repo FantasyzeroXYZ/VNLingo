@@ -173,7 +173,6 @@ fun GameScreen(
     onScanLibrary: () -> Unit,
     onScrapeEventShown: (Long) -> Unit,
     onSearchQueryChanged: (String) -> Unit,
-    onAddManualGame: (ScanGame) -> Boolean,
 ) {
     val context = LocalContext.current
     val batchScrapeRunningMessage = stringResource(R.string.game_batch_scraping_running)
@@ -286,8 +285,7 @@ fun GameScreen(
         },
         dbSearchQuery = libraryState.searchQuery,
         dbSearchResults = libraryState.searchResults,
-        onAddManualGame = onAddManualGame,
-                onSearchQueryChanged = onSearchQueryChanged,
+        onSearchQueryChanged = onSearchQueryChanged,
     )
 
     // ===== 点击游戏卡片的底部抽屉栏 =====
@@ -458,10 +456,8 @@ private fun GameLibraryContent(
     dbSearchQuery: String,
     dbSearchResults: List<ScanGame>?,
     onSearchQueryChanged: (String) -> Unit,
-    onAddManualGame: (ScanGame) -> Boolean,
 ) {
     var showSearch by rememberSaveable { mutableStateOf(false) }
-    var showPcAddDialog by remember { mutableStateOf(false) }
     var query by rememberSaveable { mutableStateOf("") }
     val gameSort by AppSettingsStore.gameSortState.collectAsState()
     val sortedGames = remember(games, gameSort) { sortGames(games, gameSort) }
@@ -496,11 +492,6 @@ private fun GameLibraryContent(
                 }
             },
             trailing = {
-                TopBarIcon(
-                    painterResource(R.drawable.ic_game_add_pc),
-                    stringResource(R.string.game_add_pc_content_description),
-                    MaterialTheme.colorScheme.primary,
-                ) { showPcAddDialog = true }
                 TopBarIcon(painterResource(R.drawable.ic_game_search), stringResource(R.string.game_search_content_description), MaterialTheme.colorScheme.primary) {
                     showSearch = !showSearch
                     if (!showSearch) query = ""
@@ -582,13 +573,6 @@ private fun GameLibraryContent(
                 }
             }
         }
-    }
-
-    if (showPcAddDialog) {
-        PcGameAddDialog(
-            onDismiss = { showPcAddDialog = false },
-            onAdd = onAddManualGame,
-        )
     }
 
 }

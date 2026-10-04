@@ -3,6 +3,7 @@ package com.tyranor.next.ui.settings
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.res.stringResource
 import com.tyranor.next.R
+import com.tyranor.next.ui.engine.EngineSettingsKind
 import com.tyranor.next.core.settings.EngineSettingsStore
 
 @Composable

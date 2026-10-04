@@ -60,9 +60,6 @@ import com.tyranor.next.R
 import com.core.engine.runtime.GameRuntime
 import com.core.nativeplugin.NativePluginInstallState
 import com.tyranor.next.core.engine.EngineType
-import com.tyranor.next.core.engine.external.EmulatorLaunchStyle
-import com.tyranor.next.core.engine.external.ExternalEmulatorLauncher
-import com.tyranor.next.core.engine.external.ExternalEmulatorRegistry
 import com.tyranor.next.core.engine.external.ExternalEngineLauncher
 import com.tyranor.next.core.engine.external.ExternalEngineModuleRegistry
 import com.tyranor.next.core.game.launch.EngineLauncher
@@ -90,9 +87,9 @@ import top.yukonga.miuix.kmp.basic.TabRowDefaults
 import androidx.compose.ui.graphics.Color
 import android.widget.Toast
 
-/** 引擎页：列表行展示已集成的游戏引擎。 */
+/** 引擎页：列表行展示已集成的游戏引擎；[headerItem] 作为列表首项（引擎管理页合并引擎设置入口用）。 */
 @Composable
-fun EngineScreen(modifier: Modifier = Modifier) {
+fun EngineScreen(modifier: Modifier = Modifier, headerItem: (@Composable () -> Unit)? = null) {
     val context = LocalContext.current
     val engineOpenDownloadFailedMessage = stringResource(R.string.engine_open_download_failed)
     val engines = EngineLauncher.supportedEngines
@@ -102,14 +99,7 @@ fun EngineScreen(modifier: Modifier = Modifier) {
     var moduleStates by remember {
         mutableStateOf(refreshModuleStates(context))
     }
-    var emulatorInstallStates by remember {
-        mutableStateOf(refreshEmulatorInstallStates(context))
-    }
-    var ppssppVersion by remember { mutableStateOf(EngineSettingsStore.getPpssppVersion(context)) }
     var moduleDialogEngine by remember { mutableStateOf<EngineType?>(null) }
-    var showExternalJumpDialog by remember { mutableStateOf(false) }
-    // YU-RIS 等「引擎专属外置运行时」弹窗：只列该引擎的目标（如 Winlator），标题与内置版本弹窗同构
-    var emulatorDialogEngine by remember { mutableStateOf<EngineType?>(null) }
     // 可拆卸 Native 运行时实时状态（行状态与弹窗管理操作共用）；卸载确认按引擎挂起
     var runtimeStates by remember {
         mutableStateOf(refreshRuntimeStates(context))
@@ -119,9 +109,7 @@ fun EngineScreen(modifier: Modifier = Modifier) {
     LifecycleEventEffect(Lifecycle.Event.ON_RESUME) {
         externalInstallStates = refreshExternalInstallStates(context, engines)
         moduleStates = refreshModuleStates(context)
-        emulatorInstallStates = refreshEmulatorInstallStates(context)
         runtimeStates = refreshRuntimeStates(context)
-        ppssppVersion = EngineSettingsStore.getPpssppVersion(context)
     }
 
     Column(modifier.fillMaxSize()) {
@@ -134,7 +122,6 @@ fun EngineScreen(modifier: Modifier = Modifier) {
             val tabs = listOf(
                 stringResource(R.string.engine_tab_gal),
                 stringResource(R.string.engine_tab_rpgm),
-                stringResource(R.string.engine_tab_console),
                 stringResource(R.string.engine_tab_web),
             )
             MiuixSettingsTheme {
@@ -174,34 +161,27 @@ fun EngineScreen(modifier: Modifier = Modifier) {
             contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 12.dp, bottom = 16.dp + glassNavBottomInset()),
             verticalArrangement = Arrangement.spacedBy(12.dp),
         ) {
+            // 头部插槽（引擎管理页：各引擎细分设置入口）
+            if (headerItem != null) {
+                item(key = "engine-settings-header", contentType = "header") {
+                    headerItem()
+                }
+            }
             items(
                 items = tabEngines,
                 key = { it.name },
                 contentType = { "engine" },
             ) { engine ->
                 val module = ExternalEngineModuleRegistry.moduleForEngine(engine)
-                val emulator = ExternalEmulatorRegistry.forEngine(engine)
                 val runtimeState = nativeRuntimeByEngine[engine]?.let { runtimeStates[engine] }
                 val installed = when {
                     module != null -> externalInstallStates[engine] == true
-                    emulator != null -> {
-                        // PSP 的安装态跟随「PPSSPP 版本」生效值（标准版/黄金版）
-                        val pkg = if (emulator.supports(EngineType.PSP)) {
-                            ExternalEmulatorRegistry.ppssppTarget(ppssppVersion).packageName
-                        } else {
-                            emulator.packageName
-                        }
-                        emulatorInstallStates[pkg] == true
-                    }
                     runtimeState != null -> runtimeState == NativePluginInstallState.INSTALLED_ENABLED
                     else -> true
                 }
                 val statusRes = when {
                     module != null ->
                         if (installed) R.string.engine_module_installed else R.string.engine_module_not_installed
-
-                    emulator != null ->
-                        if (installed) R.string.engine_emulator_installed else R.string.engine_emulator_not_installed
 
                     runtimeState == NativePluginInstallState.INSTALLED_DISABLED -> R.string.engine_runtime_disabled
                     runtimeState == NativePluginInstallState.INSTALLED_ENABLED -> R.string.engine_runtime_enabled
@@ -212,28 +192,12 @@ fun EngineScreen(modifier: Modifier = Modifier) {
                     engine = engine,
                     statusTextRes = statusRes,
                     installed = installed,
-                    // 外置模块 / 外置模拟器 / Tyrano/WebOther/VN/Artemis（内置版本条目）：点击弹窗
-                    enabled = module != null || emulator != null || engine in dialogOnlyEngines,
+                    // 外置模块 / Tyrano/WebOther/VN/Artemis（内置版本条目）：点击弹窗
+                    enabled = module != null || engine in dialogOnlyEngines,
                     onClick = {
-                        when {
-                            // Winlator 系（YU-RIS / 手动 PC）：只展示本引擎的外置运行时，标题「<引擎> 引擎列表」
-                            emulator != null && emulator.launchStyle == EmulatorLaunchStyle.WINLATOR_EXTERNAL ->
-                                emulatorDialogEngine = engine
-                            emulator != null -> showExternalJumpDialog = true
-                            else -> moduleDialogEngine = engine
-                        }
+                        moduleDialogEngine = engine
                     },
                 )
-            }
-
-            // 外置跳转支持（PPSSPP / Eden / Winlator 聚合入口）：分类模式仅主机系列展示，平铺模式始终展示
-            if (!categorizeEngines || selectedTab == EngineTab.CONSOLE.ordinal) {
-                item(key = "external-jump", contentType = "external-jump") {
-                    ExternalJumpRow(
-                        installedCount = emulatorInstallStates.values.count { it },
-                        onClick = { showExternalJumpDialog = true },
-                    )
-                }
             }
         }
     }
@@ -351,95 +315,6 @@ fun EngineScreen(modifier: Modifier = Modifier) {
                     Text(stringResource(R.string.common_cancel))
                 }
             },
-        )
-    }
-
-    // Winlator 系引擎专属弹窗：只列该引擎的外置运行时（Winlator），未安装跳下载页、已安装打开主界面
-    emulatorDialogEngine?.let { dialogEngine ->
-        val entries = ExternalEmulatorRegistry.targets.filter { it.supports(dialogEngine) }
-        AppAlertDialog(
-            onDismissRequest = { emulatorDialogEngine = null },
-            title = {
-                Text(
-                    stringResource(R.string.engine_list_title, engineDisplayName(dialogEngine)),
-                    style = MaterialTheme.typography.titleMedium,
-                    fontWeight = FontWeight.Bold,
-                    color = MaterialTheme.colorScheme.onSurface,
-                )
-            },
-            text = {
-                Column(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .verticalScroll(rememberScrollState()),
-                    verticalArrangement = Arrangement.spacedBy(8.dp),
-                ) {
-                    entries.forEach { target ->
-                        val installed = emulatorInstallStates[target.packageName] == true
-                        AppNavItem(
-                            title = stringResource(target.displayNameRes),
-                            summary = stringResource(
-                                if (installed) R.string.engine_emulator_installed else R.string.engine_emulator_not_installed,
-                            ),
-                            leadingIcon = R.drawable.ic_engine_chip,
-                            containerColor = DialogItemSurface,
-                        ) {
-                            if (installed) {
-                                ExternalEmulatorLauncher.openHome(context, target)
-                            } else if (!ExternalEngineLauncher.openInstallPage(context, target.installUrl)) {
-                                Toast.makeText(context, engineOpenDownloadFailedMessage, Toast.LENGTH_SHORT).show()
-                            }
-                            emulatorDialogEngine = null
-                        }
-                    }
-                }
-            },
-            // 不放取消按钮：点击条目或遮罩即关闭（confirmButton 槽位必填，传空）
-            confirmButton = {},
-        )
-    }
-
-    // 外置跳转支持弹窗：列 PPSSPP / Eden / Winlator，未安装点击跳下载页，已安装点击打开主界面
-    if (showExternalJumpDialog) {
-        AppAlertDialog(
-            onDismissRequest = { showExternalJumpDialog = false },
-            title = {
-                Text(
-                    stringResource(R.string.engine_external_jump_title),
-                    style = MaterialTheme.typography.titleMedium,
-                    fontWeight = FontWeight.Bold,
-                    color = MaterialTheme.colorScheme.onSurface,
-                )
-            },
-            text = {
-                Column(
-                    modifier = Modifier.fillMaxWidth(),
-                    verticalArrangement = Arrangement.spacedBy(8.dp),
-                ) {
-                    ExternalEmulatorRegistry.targets.forEach { target ->
-                        val installed = emulatorInstallStates[target.packageName] == true
-                        AppNavItem(
-                            title = stringResource(target.displayNameRes),
-                            summary = stringResource(
-                                if (installed) R.string.engine_emulator_installed else R.string.engine_emulator_not_installed,
-                            ),
-                            leadingIcon = R.drawable.ic_engine_chip,
-                            containerColor = DialogItemSurface,
-                        ) {
-                            if (installed) {
-                                ExternalEmulatorLauncher.openHome(context, target)
-                            } else {
-                                val opened = ExternalEngineLauncher.openInstallPage(context, target.installUrl)
-                                if (!opened) {
-                                    Toast.makeText(context, engineOpenDownloadFailedMessage, Toast.LENGTH_SHORT).show()
-                                }
-                            }
-                            showExternalJumpDialog = false
-                        }
-                    }
-                }
-            },
-            confirmButton = {},
         )
     }
 }
@@ -564,73 +439,17 @@ private fun GlassTabRow(
     }
 }
 
-/** 外置跳转支持行：与引擎行同视觉，右侧按“是否至少装了一个模拟器”显示状态。 */
-@Composable
-private fun ExternalJumpRow(
-    installedCount: Int,
-    onClick: () -> Unit,
-) {
-    Card(
-        modifier = Modifier
-            .fillMaxWidth()
-            .clickable(onClick = onClick)
-            .glassShadow()
-            .glassBorder(),
-        elevation = CardDefaults.cardElevation(defaultElevation = 0.dp),
-        colors = CardDefaults.cardColors(containerColor = NavWhite),
-        shape = AppComponentShape,
-    ) {
-        Row(
-            modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 14.dp),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            Image(
-                painter = painterResource(R.drawable.ic_engine_icon),
-                contentDescription = null,
-                contentScale = ContentScale.Fit,
-                colorFilter = ColorFilter.tint(MaterialTheme.colorScheme.primary),
-                modifier = Modifier.size(28.dp),
-            )
-            Column(Modifier.weight(1f).padding(start = 14.dp)) {
-                Text(
-                    stringResource(R.string.engine_external_jump_title),
-                    style = MaterialTheme.typography.titleMedium,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                )
-                Text(
-                    stringResource(R.string.engine_external_jump_summary),
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                    modifier = Modifier.padding(top = 2.dp),
-                )
-            }
-            Icon(
-                if (installedCount > 0) Icons.Filled.CheckCircle else Icons.Filled.Cancel,
-                contentDescription = stringResource(R.string.engine_external_jump_summary),
-                tint = if (installedCount > 0) {
-                    MaterialTheme.colorScheme.primary
-                } else {
-                    MaterialTheme.colorScheme.error
-                },
-                modifier = Modifier.size(20.dp),
-            )
-        }
-    }
-}
-
-/** 引擎页顶部分页（顺序即展示顺序）：GAL / RPGM / 主机 / 网页。 */
-private enum class EngineTab { GAL, RPGM, CONSOLE, WEB }
+/** 引擎页顶部分页（顺序即展示顺序）：GAL / RPGM / 网页。 */
+private enum class EngineTab { GAL, RPGM, WEB }
 
 private fun engineTabOf(engine: EngineType): EngineTab = when (engine) {
     EngineType.RPGMAKER, EngineType.RPG_MV, EngineType.RPG_MZ -> EngineTab.RPGM
+    // 已裁剪引擎（Siglus/RealLive/AVG32/UK2/FVP/YURIS/CatSystem2/PC/PSP/NS）不会出现在
+    // supportedEngines，此分支仅为 when 穷举保留
     EngineType.KIRIKIRI, EngineType.ONS, EngineType.ARTEMIS, EngineType.SIGLUS,
     EngineType.REALLIVE, EngineType.AVG32, EngineType.UK2, EngineType.FVP,
-    EngineType.RENPY, EngineType.YURIS, EngineType.CATSYSTEM2 -> EngineTab.GAL
-    // PC（手动添加，经 Winlator 运行）与主机模拟器同属「主机」分类
-    EngineType.PSP, EngineType.NINTENDO_SWITCH, EngineType.PC -> EngineTab.CONSOLE
+    EngineType.RENPY, EngineType.YURIS, EngineType.CATSYSTEM2,
+    EngineType.PSP, EngineType.NINTENDO_SWITCH, EngineType.PC -> EngineTab.GAL
     EngineType.TYRANO, EngineType.WEB_OTHER, EngineType.VN -> EngineTab.WEB
     EngineType.UNKNOWN -> EngineTab.WEB
 }
@@ -718,22 +537,6 @@ private val builtinDialogEntries: Map<EngineType, List<EngineDialogEntry>> = map
     EngineType.ONS to listOf(
         builtinEntry("ons-builtin", "ONScripter-0.7.7"),
     ),
-    EngineType.SIGLUS to listOf(
-        builtinEntry("siglus-rs", "siglus_rs-xmoezzz"),
-    ),
-    // 三引擎由同一 game_launcher 运行库承载
-    EngineType.REALLIVE to listOf(
-        builtinEntry("game-launcher", "game_launcher-xmoezzz"),
-    ),
-    EngineType.AVG32 to listOf(
-        builtinEntry("game-launcher", "game_launcher-xmoezzz"),
-    ),
-    EngineType.UK2 to listOf(
-        builtinEntry("game-launcher", "game_launcher-xmoezzz"),
-    ),
-    EngineType.FVP to listOf(
-        builtinEntry("fvp-rfvp", "rfvp-xmoezzz"),
-    ),
     EngineType.KIRIKIRI to listOf(
         builtinEntry("krkr-139", "Kirikiroid2-1.3.9"),
         builtinEntry("krkr-134", "Kirikiroid2-1.3.4"),
@@ -809,10 +612,4 @@ private fun artemisDialogTitle(label: String): String =
 private fun refreshModuleStates(context: android.content.Context): Map<String, Boolean> =
     ExternalEngineModuleRegistry.modules.associate { module ->
         module.id to ExternalEngineLauncher.isPackageInstalled(context, module)
-    }
-
-/** 外置主机模拟器安装状态（按包名）。 */
-private fun refreshEmulatorInstallStates(context: android.content.Context): Map<String, Boolean> =
-    ExternalEmulatorRegistry.targets.associate { target ->
-        target.packageName to ExternalEmulatorLauncher.isInstalled(context, target)
     }

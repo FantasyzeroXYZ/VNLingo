@@ -81,6 +81,8 @@ import com.tyranor.next.theme.AppComponentShape
 import com.tyranor.next.theme.AppComponentCornerRadius
 import com.tyranor.next.ui.archive.ArchiveUnpackActivity
 import com.tyranor.next.ui.common.AppNavItem
+import com.tyranor.next.ui.engine.EngineManageActivity
+import com.tyranor.next.ui.engine.EngineSettingsKind
 import com.tyranor.next.ui.common.AppAlertDialog
 import com.tyranor.next.ui.common.AppSearchField
 import com.tyranor.next.ui.common.AppTopBar
@@ -337,9 +339,26 @@ fun SettingsScreen(modifier: Modifier = Modifier) {
                     MiuixCard(modifier = Modifier.fillMaxWidth().glassShadow().glassBorder(), cornerRadius = AppComponentCornerRadius) {
                         Column(Modifier.padding(vertical = 4.dp)) {
                             ArrowPreference(
-                                title = stringResource(R.string.settings_engine_settings),
+                                title = stringResource(R.string.nav_engine),
                                 startAction = { SettingsItemIcon(R.drawable.ic_engine_manage) },
-                                onClick = { startActivityWithPageTransition(ctx, EngineSettingsMenuActivity.createIntent(ctx)) },
+                                onClick = { startActivityWithPageTransition(ctx, EngineManageActivity.createIntent(ctx)) },
+                            )
+                            // 提取功能线配置（原游戏内面板设置分区，产品调整移到应用设置）
+                            ArrowPreference(
+                                title = stringResource(R.string.settings_extract_translate),
+                                summary = stringResource(com.core.engine.R.string.engine_ons_settings_section_translate),
+                                startAction = { SettingsItemIcon(R.drawable.ic_settings) },
+                                onClick = {
+                                    com.core.ons.OnsExtractSettingsDialogs.showTranslateSettings(ctx as android.app.Activity)
+                                },
+                            )
+                            ArrowPreference(
+                                title = stringResource(com.core.engine.R.string.engine_ons_extract_cloud),
+                                summary = stringResource(com.core.engine.R.string.engine_ons_settings_section_cloud),
+                                startAction = { SettingsItemIcon(R.drawable.ic_settings) },
+                                onClick = {
+                                    com.core.ons.OnsSaveCloud.showConfigDialog(ctx as android.app.Activity, null, null, null)
+                                },
                             )
                             ArrowPreference(
                                 title = stringResource(R.string.archive_title),
@@ -363,6 +382,11 @@ fun SettingsScreen(modifier: Modifier = Modifier) {
                                 summary = stringResource(R.string.settings_cover_scraper_summary),
                                 startAction = { SettingsItemIcon(R.drawable.ic_game_cover) },
                                 onClick = { startActivityWithPageTransition(ctx, CoverScraperSettingsActivity.createIntent(ctx)) },
+                            )
+                            ArrowPreference(
+                                title = stringResource(R.string.settings_gamepad),
+                                startAction = { SettingsItemIcon(R.drawable.ic_settings) },
+                                onClick = { startActivityWithPageTransition(ctx, com.tyranor.next.ui.gamepad.GamepadSettingsActivity.createIntent(ctx)) },
                             )
                             ArrowPreference(
                                 title = if (checkingUpdate) stringResource(R.string.settings_update_checking) else stringResource(R.string.settings_update_check),
@@ -1189,161 +1213,6 @@ private fun LazyListPlaceholder(
 
         if (kind == EngineSettingsKind.RENPY) item {
             RenPySettingsCard(settings = renpy, onSettings = onRenpy)
-        }
-
-        if (kind == EngineSettingsKind.SIGLUS) item {
-            EngineCard("Siglus") {
-                DropdownRow(
-                    stringResource(R.string.engine_settings_siglus_language_title),
-                    siglusLanguageOptions(),
-                    siglusLanguage,
-                    onSiglusLanguage,
-                )
-                Text(
-                    stringResource(R.string.engine_settings_siglus_note),
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = MiuixTheme.colorScheme.onBackground,
-                    modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
-                )
-            }
-        }
-
-        if (kind == EngineSettingsKind.FRAMEBUFFER) item {
-            EngineCard("RealLive / AVG32 / UK2") {
-                DropdownRow(
-                    stringResource(R.string.engine_settings_fb_nls_title),
-                    fbNlsOptions(),
-                    fbNls,
-                    onFbNls,
-                )
-                Text(
-                    stringResource(R.string.engine_settings_fb_note),
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = MiuixTheme.colorScheme.onBackground,
-                    modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
-                )
-            }
-        }
-
-        if (kind == EngineSettingsKind.FVP) item {
-            EngineCard("FVP") {
-                DropdownRow(
-                    stringResource(R.string.engine_settings_fvp_nls_title),
-                    fvpNlsOptions(),
-                    fvpNls,
-                    onFvpNls,
-                )
-                SwitchPreference(
-                    title = stringResource(R.string.engine_settings_fvp_system_font_title),
-                    summary = stringResource(R.string.engine_settings_fvp_system_font_summary),
-                    checked = fvpSystemFont,
-                    onCheckedChange = onFvpSystemFont,
-                )
-                SwitchPreference(
-                    title = stringResource(R.string.engine_settings_fvp_text_hidpi_title),
-                    summary = stringResource(R.string.engine_settings_fvp_text_hidpi_summary),
-                    checked = fvpTextHidpi,
-                    onCheckedChange = onFvpTextHidpi,
-                )
-                FontPreference(
-                    label = stringResource(R.string.engine_settings_fvp_font_title),
-                    value = fvpFont.ifBlank { stringResource(R.string.engine_settings_fvp_font_follow) },
-                    followLabel = stringResource(R.string.engine_settings_fvp_font_follow),
-                    onFollow = onFvpFontFollow,
-                    onPick = onFvpFontPick,
-                )
-                Text(
-                    stringResource(R.string.engine_settings_fvp_font_hint),
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = MiuixTheme.colorScheme.onBackground,
-                    modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
-                )
-                Text(
-                    stringResource(R.string.engine_settings_fvp_note),
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = MiuixTheme.colorScheme.onBackground,
-                    modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
-                )
-            }
-        }
-
-        if (kind == EngineSettingsKind.PPSSPP) item {
-            EngineCard("PPSSPP") {
-                DropdownRow(
-                    stringResource(R.string.engine_settings_ppsspp_version_title),
-                    ppssppVersionOptions(),
-                    ppssppVersion,
-                    onPpssppVersion,
-                )
-                Text(
-                    stringResource(R.string.engine_settings_ppsspp_note),
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = MiuixTheme.colorScheme.onBackground,
-                    modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
-                )
-            }
-        }
-
-        if (kind == EngineSettingsKind.WINLATOR) item {
-            EngineCard("Winlator") {
-                WinlatorValueRow(
-                    label = stringResource(R.string.engine_settings_winlator_container_id_title),
-                    summaryHint = stringResource(R.string.engine_settings_winlator_container_id_summary),
-                    value = if (winlator.containerId > 0) winlator.containerId.toString() else "",
-                    sanitize = { it.filter { ch -> ch.isDigit() }.take(6) },
-                    onValueChange = { text ->
-                        onWinlator(winlator.copy(containerId = text.toIntOrNull()?.coerceAtLeast(0) ?: 0))
-                    },
-                )
-                WinlatorValueRow(
-                    label = stringResource(R.string.engine_settings_winlator_container_name_title),
-                    summaryHint = stringResource(R.string.engine_settings_winlator_container_name_summary),
-                    value = winlator.containerName,
-                    onValueChange = { onWinlator(winlator.copy(containerName = it)) },
-                )
-                DropdownRow(
-                    stringResource(R.string.engine_settings_winlator_graphics_driver_title),
-                    winlatorGraphicsDriverOptions(),
-                    winlator.graphicsDriver,
-                ) { onWinlator(winlator.copy(graphicsDriver = it)) }
-                DropdownRow(
-                    stringResource(R.string.engine_settings_winlator_dxwrapper_title),
-                    winlatorDxWrapperOptions(),
-                    winlator.dxwrapper,
-                ) { onWinlator(winlator.copy(dxwrapper = it)) }
-                DropdownRow(
-                    stringResource(R.string.engine_settings_winlator_screen_size_title),
-                    winlatorScreenSizeOptions(),
-                    winlator.screenSize,
-                ) { onWinlator(winlator.copy(screenSize = it)) }
-                DropdownRow(
-                    stringResource(R.string.engine_settings_winlator_lc_all_title),
-                    winlatorLcAllOptions(),
-                    winlator.lcAll,
-                ) { onWinlator(winlator.copy(lcAll = it)) }
-                DropdownRow(
-                    stringResource(R.string.engine_settings_winlator_tz_title),
-                    winlatorTimezoneOptions(),
-                    winlator.tz,
-                ) { onWinlator(winlator.copy(tz = it)) }
-                DropdownRow(
-                    stringResource(R.string.engine_settings_winlator_box64_preset_title),
-                    winlatorBox64PresetOptions(),
-                    winlator.box64Preset,
-                ) { onWinlator(winlator.copy(box64Preset = it)) }
-                SwitchPreference(
-                    title = stringResource(R.string.engine_settings_winlator_save_title),
-                    summary = stringResource(R.string.engine_settings_winlator_save_summary),
-                    checked = winlator.save,
-                    onCheckedChange = { onWinlator(winlator.copy(save = it)) },
-                )
-                Text(
-                    stringResource(R.string.engine_settings_winlator_note),
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = MiuixTheme.colorScheme.onBackground,
-                    modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
-                )
-            }
         }
 
         item { BottomInsetSpacer() }
