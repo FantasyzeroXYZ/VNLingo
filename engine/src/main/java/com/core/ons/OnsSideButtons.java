@@ -151,6 +151,9 @@ public class OnsSideButtons {
                 R.string.engine_ons_side_text_frame, onToggleTextFrame));
         column.addView(button(activity, R.drawable.ic_camera,
                 R.string.engine_ons_side_screenshot, onScreenshot));
+        // 放大镜：拖动镜头放大游戏小字（各引擎通用，见 OnsMagnifier）
+        column.addView(button(activity, R.drawable.ic_search,
+                R.string.engine_ons_side_magnifier, () -> OnsMagnifier.toggle(activity)));
         column.addView(button(activity, R.drawable.ic_settings,
                 R.string.engine_ons_side_settings, onSettings));
         column.addView(button(activity, R.drawable.ic_volume,

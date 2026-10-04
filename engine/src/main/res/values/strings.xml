@@ -105,6 +105,7 @@
     <string name="engine_ons_extract_chip">文</string>
     <string name="engine_ons_side_text_frame">剧情文本框</string>
     <string name="engine_ons_side_screenshot">截图</string>
+    <string name="engine_ons_side_magnifier">放大镜</string>
     <string name="engine_ons_side_settings">游戏设置</string>
     <string name="engine_ons_settings_title">游戏设置</string>
     <string name="engine_ons_state_on">开</string>

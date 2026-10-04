@@ -26,6 +26,20 @@
 - 探针结论（诊断代码保留）：GdipDrawString 零调用（GOT 钩子验证）；层文本渲染完全走内部
   FreeType 管线（符号未导出、调用不走 PLT），运行时不可拦截。
 
+### 放大镜（会话四追加，用户需求）
+
+- 新增 `OnsMagnifier`（com.core.ons）：可拖动悬浮放大窗，持续（~10fps）PixelCopy 抓取
+  游戏渲染并把**镜头下方 1/zoom 区域**放大显示（2x/3x/4x，＋/－ 切换），拖动整窗
+  自主选位，✕ 关闭；连续失败 5 次自动关闭。
+- 入口：OnsSideButtons 新增「放大镜」键（🔍，截图与设置之间），ONS/KRKR/Artemis/Web
+  各宿主通用（侧键组由 OnsExtractPanel 统一安装）。
+- 关键实现点：**渲染源优先游戏的 SurfaceView**——SDL/GL surface 由 SurfaceFlinger
+  单独合成，窗口 PixelCopy 拿不到其内容（实测黑屏）；PixelCopy 会把整个 surface
+  缩放填进目标位图，故抓全幅后手动 createBitmap 裁剪；镜头取景区 = 镜头屏幕矩形与
+  surface 屏幕矩形交集（各自 getLocationOnScreen，1:1 映射）。无 SurfaceView 的宿主
+  （Artemis/NativeActivity）退回窗口抓取（可能黑屏，连续失败自动关闭，未实测成功）。
+- 模拟器实测（esg）：开关/拖动到菜单文字上方 3x 放大清晰可读/变焦/关闭全部通过。
+
 ### 左缘引擎适配按键（会话四追加，用户需求）
 
 - 新增 `EngineLeftButtons` 共享组件（engine com.core.engine）：左缘竖排 40dp 圆形按键列，

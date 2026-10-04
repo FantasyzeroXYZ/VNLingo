@@ -50,6 +50,17 @@
    设备路径写 `//sdcard/ui.xml`（双斜杠），取回用 `adb pull //sdcard/ui.xml <Windows 路径>`；
    Windows python 读不了 `/tmp`，临时文件放项目内。
 
+## 移植外事实（2026-10-05 会话四新增：放大镜）
+
+- **PixelCopy 两种抓法的本质差异**：`PixelCopy.request(SurfaceView, dst, ...)` 会把
+  整个 surface **缩放填进** dst（dst 尺寸=取景区想放大必须先抓全幅再 createBitmap
+  裁剪）；`PixelCopy.request(Window, dst, ...)` 只抓窗口自身渲染，**拿不到
+  SurfaceView 内容**（SDL/GL surface 由 SurfaceFlinger 单独合成 → 实测黑屏）。
+  放大镜（OnsMagnifier）因此优先 SurfaceView 抓取，NativeActivity 宿主
+  （无 SurfaceView）退窗口抓取（可能黑屏，未实测成功）。
+- WindowManager 悬浮窗 `TYPE_APPLICATION` **必须显式 lp.gravity = TOP|START**：
+  缺省 gravity 下 x/y 不按左上锚定（Artemis 左键窗实测漂到屏幕中央）。
+
 ## 移植外事实（2026-10-05 会话三新增：KRKR）
 
 - **Kirikiroid2 层文本运行时不可拦截（实证）**：cocos2d::Label::setString 只承载控制台/UI

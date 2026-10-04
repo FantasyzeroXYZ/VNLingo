@@ -105,6 +105,7 @@
     <string name="engine_ons_extract_chip">文</string>
     <string name="engine_ons_side_text_frame">テキストパネル</string>
     <string name="engine_ons_side_screenshot">スクリーンショット</string>
+    <string name="engine_ons_side_magnifier">拡大鏡</string>
     <string name="engine_ons_side_settings">ゲーム設定</string>
     <string name="engine_ons_settings_title">ゲーム設定</string>
     <string name="engine_ons_state_on">オン</string>

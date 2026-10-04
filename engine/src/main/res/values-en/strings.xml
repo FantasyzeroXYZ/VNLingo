@@ -105,6 +105,7 @@
     <string name="engine_ons_extract_chip">T</string>
     <string name="engine_ons_side_text_frame">Story text</string>
     <string name="engine_ons_side_screenshot">Screenshot</string>
+    <string name="engine_ons_side_magnifier">Magnifier</string>
     <string name="engine_ons_side_settings">Game settings</string>
     <string name="engine_ons_settings_title">Game Settings</string>
     <string name="engine_ons_state_on">On</string>
