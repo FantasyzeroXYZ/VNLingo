@@ -75,15 +75,20 @@ public class OnsExtractPanel {
     private static final String MULTI_TTS_PACKAGE = "org.nobody.multitts";
     /** 面板透明度档位（不透明百分比），点按循环切换。 */
     private static final int[] OPACITY_STEPS = {100, 85, 70, 55, 40};
-    private static final int BG_PANEL = 0xFFFFFFFF;
+    private static final int BG_PANEL = 0xE6101010;
     private static final int BG_BUTTON = 0xFFF1F5F9;
-    /** 按键同款深色底/白描边（对齐左右缘按键组）。 */
-    private static final int BG_DARK = 0xA6101010;
+    /** 面板圆形按钮底（暗灰圆钮，白图标）。 */
+    private static final int BG_DARK = 0xFF2E2E2E;
     private static final int STROKE_LIGHT = 0x87FFFFFF;
-    private static final int BG_DEF = 0xFFF8FAFC;
+    private static final int BG_DEF = 0xFF2A2A2A;
     private static final int STROKE = 0xFFE2E8F0;
     private static final int ACCENT = 0xFF007AFF;
     private static final int DEF_ACCENT = 0xFF0D9488;
+    /** 暗色面板配色：语音行青色 / 正文白 / 次要文字浅灰 / 分隔线半透明白。 */
+    private static final int STATUS_TEAL = 0xFF2DD4BF;
+    private static final int TEXT_ON_DARK = 0xFFFFFFFF;
+    private static final int TEXT_ON_DARK_DIM = 0xFFCBD5E1;
+    private static final int DIVIDER_DARK = 0x33FFFFFF;
     private static final int SELECT_BG = 0x40FBBF24; // webgametxt 选中词琥珀高亮
     private static final int TEXT_TITLE = 0xFF0F172A;
     private static final int TEXT_BODY = 0xFF1E293B;
@@ -241,7 +246,7 @@ public class OnsExtractPanel {
         panel.setClickable(true);
 
         statusView = new TextView(activity);
-        statusView.setTextColor(TEXT_DIM);
+        statusView.setTextColor(STATUS_TEAL);
         statusView.setTextSize(11);
         statusView.setSingleLine(true);
         statusView.setEllipsize(android.text.TextUtils.TruncateAt.MIDDLE);
@@ -249,7 +254,7 @@ public class OnsExtractPanel {
 
         // 本句视图：当前句（词元可点）+ 听力占位 + 释义区 + 翻译行
         sentenceView = new TextView(activity);
-        sentenceView.setTextColor(TEXT_BODY);
+        sentenceView.setTextColor(TEXT_ON_DARK);
         sentenceView.setTextSize(16);
         sentenceView.setTextIsSelectable(false); // 点词查词，不与选中冲突
         sentenceView.setMovementMethod(LinkMovementMethod.getInstance());
@@ -271,7 +276,7 @@ public class OnsExtractPanel {
         defArea = new LinearLayout(activity);
         defArea.setOrientation(LinearLayout.VERTICAL);
         defArea.setPadding(dp(8), dp(6), dp(8), dp(6));
-        defArea.setBackground(rounded(BG_DEF, dp(8), STROKE, dp(1)));
+        defArea.setBackground(rounded(BG_DEF, dp(8), DIVIDER_DARK, dp(1)));
         defArea.setVisibility(View.GONE);
 
         defHeader = new TextView(activity);
@@ -280,7 +285,7 @@ public class OnsExtractPanel {
         defHeader.setTypeface(Typeface.DEFAULT_BOLD);
 
         defBody = new TextView(activity);
-        defBody.setTextColor(TEXT_BODY);
+        defBody.setTextColor(TEXT_ON_DARK);
         defBody.setTextSize(13);
         defBody.setLineSpacing(0f, 1.6f);
 
@@ -297,7 +302,7 @@ public class OnsExtractPanel {
         defArea.addView(defActions, defActionsLp);
 
         transView = new TextView(activity);
-        transView.setTextColor(TEXT_BODY);
+        transView.setTextColor(TEXT_ON_DARK_DIM);
         transView.setTextSize(13);
         transView.setLineSpacing(0f, 1.5f);
         transView.setVisibility(View.GONE);
@@ -416,7 +421,7 @@ public class OnsExtractPanel {
         lp.leftMargin = dp(1);
         int pad = dp(8);
         iv.setPadding(pad, pad, pad, pad);
-        iv.setBackground(rounded(BG_DARK, dp(10), STROKE_LIGHT, dp(1)));
+        iv.setBackground(rounded(BG_DARK, dp(20)));
         iv.setOnClickListener(v -> {
             try {
                 action.run();
@@ -442,7 +447,7 @@ public class OnsExtractPanel {
                 LinearLayout.LayoutParams.WRAP_CONTENT, dp(40));
         lp.rightMargin = dp(6);
         lp.leftMargin = dp(1);
-        tv.setBackground(rounded(BG_DARK, dp(10), STROKE_LIGHT, dp(1)));
+        tv.setBackground(rounded(BG_DARK, dp(20)));
         tv.setOnClickListener(v -> cycleOpacity());
         tv.setLayoutParams(lp);
         return tv;
@@ -837,7 +842,7 @@ public class OnsExtractPanel {
 
     private void restyleToggle(android.widget.ImageView toggle, boolean active) {
         if (toggle != null) {
-            toggle.setBackground(rounded(active ? ACCENT : BG_BUTTON, dp(10), STROKE, dp(1)));
+            toggle.setBackground(rounded(active ? ACCENT : BG_DARK, dp(20)));
         }
     }
 
@@ -877,7 +882,7 @@ public class OnsExtractPanel {
 
             TextView body = new TextView(activity);
             body.setText(entry.sentence);
-            body.setTextColor(TEXT_BODY);
+            body.setTextColor(TEXT_ON_DARK);
             body.setTextSize(13);
             body.setTypeface(Typeface.DEFAULT_BOLD);
             body.setLineSpacing(0f, 1.4f);
@@ -899,7 +904,7 @@ public class OnsExtractPanel {
 
             if (i < history.size() - 1) {
                 View divider = new View(activity);
-                divider.setBackgroundColor(STROKE);
+                divider.setBackgroundColor(DIVIDER_DARK);
                 historyList.addView(divider, new LinearLayout.LayoutParams(
                         LinearLayout.LayoutParams.MATCH_PARENT, Math.max(1, dp(1))));
             }
@@ -1903,11 +1908,11 @@ public class OnsExtractPanel {
         final android.widget.ImageView[] holder = new android.widget.ImageView[1];
         android.widget.ImageView iv = makeAction(iconRes, descRes, () -> {
             boolean now = onToggle.get();
-            holder[0].setBackground(rounded(now ? ACCENT : BG_DARK, dp(10), STROKE_LIGHT, dp(1)));
+            holder[0].setBackground(rounded(now ? ACCENT : BG_DARK, dp(20)));
             applyOpacity(); // 新背景需继承面板透明度
         });
         holder[0] = iv;
-        iv.setBackground(rounded(active ? ACCENT : BG_DARK, dp(10), STROKE_LIGHT, dp(1)));
+        iv.setBackground(rounded(active ? ACCENT : BG_DARK, dp(20)));
         return iv;
     }
 
@@ -2235,6 +2240,13 @@ public class OnsExtractPanel {
     private LinearLayout.LayoutParams matchWrap() {
         return new LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT);
+    }
+
+    private GradientDrawable rounded(int color, float radius) {
+        GradientDrawable d = new GradientDrawable();
+        d.setColor(color);
+        d.setCornerRadius(radius);
+        return d;
     }
 
     private GradientDrawable rounded(int color, float radius, int strokeColor, int strokeW) {
