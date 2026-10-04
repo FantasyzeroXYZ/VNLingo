@@ -26,11 +26,28 @@
 - 探针结论（诊断代码保留）：GdipDrawString 零调用（GOT 钩子验证）；层文本渲染完全走内部
   FreeType 管线（符号未导出、调用不走 PLT），运行时不可拦截。
 
+### 三引擎实测（会话四，模拟器同一构建）
+
+- **ONS（esg＝エルフの守護者）**：游戏运行 ✓、左右按键组 ✓、提取面板打开 ✓、
+  **文本提取实测 ✓**（面板显示正确日文对白——游戏画面因 gbk 编码乱码，提取桥按脚本
+  字节嗅探反而正确）；esg 开场卡姓名输入框未达语音行，语音配对沿用源仓实测结论。
+- **Artemis（blossom，clean 内核）**：游戏运行 ✓、面板/按键组 ✓；GOT 补丁钩子安装成功
+  （不再依赖 shadowhook inline——重启模拟器后 shadowhook_init/hook 全面 errno=12），
+  已拦截到部分调用（频道号"2"、内部标签"znotify"）并加了质量过滤（音频名取路径样参数、
+  文本仅放行含 CJK 行），但**对白正文与语音名在本环境未持续捕获**——重启前同一机制
+  （shadowhook inline + ANativeActivity 早装）曾完整捕获文本+♪ fem_him_00281.ogg，
+  疑与环境状态相关（见 MEMORY errno=12 条目）。ym（夜明前的琉璃色）开场制作名单
+  循环回标题，不适合快速自动化。
+- **KRKR（kazurauta）**：游戏运行 ✓、面板/按键组/设置弹窗 ✓；对白需带钩内核（基建已备）。
+
 ### 未解（下次会话从这里看）
 
 - 对白数据源 = 带 extract_sink 的 krkr2 内核（krkr2-main 源码仓构建后替换 nativeplugins/
   kirikiroid2 的 libgame*.so 并 bump pluginVersion），Java 侧零改动即生效（KR2Activity
   .setExtractListener 已武装）。krkrsdl3 同理需要其内核带钩。
+- Artemis 对白/语音在部分环境未持续捕获：shadowhook inline（errno=12 环境相关）与
+  GOT 补丁（已拦截内部调用但对白主通道未过 GOT）均未完全命中，需定位 clean 内核
+  对白/语音的实际调用点（可用 krkr 式全符号 GOT 表或内核源码）。
 - 模拟器干扰记录：宿主侧 root 脚本会周期拉起 com.vnlingo.app（用户自己的 VNLingo 悬浮字幕
   应用，与本项目同名相关）与 ScummVM，且会 `pm disable` 本应用——测试前
   `pm default-state com.tyranor.next` + force-stop 干扰应用。

@@ -98,6 +98,12 @@ public class ArtemisExtractFacade implements ExtractFacade {
         } catch (Throwable t) {
             android.util.Log.i("ArtemisExtract", "extract bridge unavailable (official kernel?)");
         }
+        // 延迟重试提取钩子（ANativeActivity_onCreate 阶段 shadowhook_init 可能失败）
+        try {
+            ((ArtemisActivity) activity).nativeInstallExtractHook();
+        } catch (Throwable t) {
+            android.util.Log.i("ArtemisExtract", "late extract hook install unavailable (official kernel?)");
+        }
     }
 
     private OnsExtractBridge.Listener extractListener;

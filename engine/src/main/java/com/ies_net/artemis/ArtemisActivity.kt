@@ -44,6 +44,9 @@ open class ArtemisActivity : NativeActivity() {
      */
     external fun nativeSetExtractCacheDir(path: String)
 
+    /** 延迟重试提取钩子安装（进程早期 shadowhook_init 可能失败，见 artemis_loader.cpp）。 */
+    external fun nativeInstallExtractHook()
+
     external fun nativePauseAllSound(): Boolean
     external fun nativeResumeAllSound(): Boolean
 
