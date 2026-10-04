@@ -26,6 +26,17 @@
 - 探针结论（诊断代码保留）：GdipDrawString 零调用（GOT 钩子验证）；层文本渲染完全走内部
   FreeType 管线（符号未导出、调用不走 PLT），运行时不可拦截。
 
+### 左缘引擎适配按键（会话四追加，用户需求）
+
+- 新增 `EngineLeftButtons` 共享组件（engine com.core.engine）：左缘竖排 40dp 圆形按键列，
+  样式对齐 OnsSideButtons；顶部折叠键状态持久化；两种形态——宿主视图树安装（KRKR）/
+  独立小悬浮窗（Artemis，TYPE_APPLICATION 必须显式 `lp.gravity = TOP|START`，缺省
+  gravity 会让 x/y 不按左上锚定——实测踩坑）。
+- KRKR：ESC（KR2 nativeKeyAction BACK，内核映射 ESC）/ OK（回车）/ 方向键×4 /
+  SKIP（按住 Ctrl）——kazurauta 实测 OK 推进对白 ✓。
+- Artemis：NEXT（EmulateKeyEvent 13 回车推进）/ SKIP（Ctrl 140 按住）/ 方向键×4——
+  blossom 实测 NEXT 推进对白 ✓（`input keyevent 66` 同路径交叉验证）。
+
 ### 三引擎实测（会话四，模拟器同一构建）
 
 - **ONS（esg＝エルフの守護者）**：游戏运行 ✓、左右按键组 ✓、提取面板打开 ✓、
