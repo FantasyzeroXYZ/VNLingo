@@ -32,6 +32,8 @@ object EngineSettingsStore {
     const val KEY_KR_MENU_HANDLER_OPA = "kr_menu_handler_opa"
     const val KEY_KR_SCOPED_SAVE_DIR = "kr_scoped_save_dir"
     const val KEY_KR_PATCH_OVERLAY_MODE = "kr_patch_overlay_mode"
+    /** KRKR 剧情文本框提取（TJS 发射器，实验性：替换 KAGParser 类，部分内核可能引导失败） */
+    const val KEY_KR_EXTRACT_TJS = "kr_extract_tjs"
     const val KEY_KR_SKIP_STARTUP_DIALOGS = "kr_skip_startup_dialogs"
     const val KEY_KR_ANIME4K_MODE = "kr_anime4k_mode"
 
@@ -415,6 +417,13 @@ object EngineSettingsStore {
         prefs(c).getBoolean(KEY_KR_SCOPED_SAVE_DIR, true)
     fun setKrScopedSaveDir(c: Context, b: Boolean) =
         prefs(c).edit().putBoolean(KEY_KR_SCOPED_SAVE_DIR, b).apply()
+
+    /** KRKR 剧情文本框提取（TJS 发射器，实验性）：替换 KAGParser 类把对白发往控制台，
+     *  由 Label::setString 钩子回收；默认关（部分内核/插件组合可能引导失败）。 */
+    fun isKrExtractTjs(c: Context): Boolean =
+        prefs(c).getBoolean(KEY_KR_EXTRACT_TJS, false)
+    fun setKrExtractTjs(c: Context, b: Boolean) =
+        prefs(c).edit().putBoolean(KEY_KR_EXTRACT_TJS, b).apply()
 
     fun getKrPatchOverlayMode(c: Context): String =
         normalizeKrPatchOverlayMode(prefs(c).getString(KEY_KR_PATCH_OVERLAY_MODE, KR_PATCH_OVERLAY_AUTO))

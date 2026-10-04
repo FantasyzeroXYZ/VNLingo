@@ -13,8 +13,9 @@ import java.io.File;
 /**
  * Kirikiroid2（KR2 宿主）的 ExtractFacade 实现：
  * - 存档管理完整可用（savedata 目录检测/导出/导入/云同步，目录 = <游戏根>/savedata）
- * - 文本提取：GdipDrawString GOT 钩子（krkr_bridge）→ onKrkrText →
- *   OnsExtractBridge 对话状态，本 facade 委派读取（与 ONS facade 同构）。
+ * - 文本提取：cocos2d Label::setString inline hook（krkr_extract_hook，随
+ *   libkrkr_bridge_v2 分发，三个 Kirikiroid2 版本符号一致）→ NativeBridge.onKrkrText
+ *   （CJK 启发式过滤）→ OnsExtractBridge 对话状态，本 facade 委派读取（与 ONS 同构）。
  * - 语音提取待 krkr2 WaveSoundBuffer 钩子（当前 ♪ 无语音）。
  */
 public class KrkrExtractFacade implements ExtractFacade {

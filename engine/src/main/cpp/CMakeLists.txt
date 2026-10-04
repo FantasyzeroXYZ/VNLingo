@@ -1,7 +1,7 @@
 cmake_minimum_required(VERSION 3.22.1)
 project(tyranor_native)
 
-add_library(krkr_bridge_v2 SHARED krkr_bridge.cpp)
+add_library(krkr_bridge_v2 SHARED krkr_bridge.cpp krkr_extract_hook.cpp)
 add_library(artemis_audio_bridge SHARED artemis_audio_bridge.cpp)
 # 提取钩子与 loader 同库：安装时机要求在内核 dlopen 后立即执行，且共享 dl 工具函数
 add_library(artemis_loader SHARED artemis_loader.cpp artemis_extract_hook.cpp)

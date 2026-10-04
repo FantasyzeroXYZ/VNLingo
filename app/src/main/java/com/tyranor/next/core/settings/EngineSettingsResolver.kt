@@ -60,6 +60,7 @@ object EngineSettingsResolver {
                 bool(PerGameSettingsStore.F_SKIP_STARTUP_DIALOGS),
                 EngineSettingsStore.isKrSkipStartupDialogs(app),
             ),
+            krExtractTjs = EngineSettingsStore.isKrExtractTjs(app),
             krAnime4kMode = EffectiveEngineSettings.resolveAllowed(
                 str(PerGameSettingsStore.F_ANIME4K_MODE),
                 EngineSettingsStore.getKrAnime4kMode(app),
@@ -232,6 +233,8 @@ data class ResolvedEngineSettings(
     val krForceDefaultFont: Boolean,
     val krPatchOverlayMode: String,
     val krSkipStartupDialogs: Boolean,
+    /** KRKR 剧情文本框提取（TJS 发射器，实验性，仅全局开关）。 */
+    val krExtractTjs: Boolean,
     val krAnime4kMode: String,
     val krRenderer: String,
     val artVersion: String,

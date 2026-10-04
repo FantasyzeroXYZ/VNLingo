@@ -29,6 +29,10 @@ constexpr size_t kUiFormCountVtableOffset = 0x238;
 
 using GetScene = void* (*)();
 
+// krkr_extract_hook.cpp：Kirikiroid2 文本提取钩子（cocos2d Label::setString inline hook）
+extern "C" bool krkr_install_extract_hook(void* gameHandle, JNIEnv* env);
+extern "C" bool krkr_install_ft_probe(void* gameHandle, const char* library);
+
 // Forward declaration so LegacyCowString's constructor can increment the
 // leak counter; the definition lives with the other globals below.
 extern std::atomic<int> gLeakedCowStringCount;
@@ -776,11 +780,26 @@ bool hookGotSymbol(const std::string& library, const char* symbol,
 
 }  // namespace
 
+extern "C" bool krkr_bridge_got_hook(const char* library, const char* symbol,
+                                     void* replacement, void** original) {
+    if (library == nullptr || symbol == nullptr) return false;
+    using GenericFn = void (*)();
+    GenericFn fn = nullptr;
+    const bool ok = hookGotSymbol<GenericFn>(std::string(library), symbol, replacement, &fn);
+    if (ok && original != nullptr) *original = reinterpret_cast<void*>(fn);
+    return ok;
+}
+
 extern "C" JNIEXPORT jboolean JNICALL
 Java_bridge_NativeBridge_initialize(JNIEnv* env, jclass, jstring gameLibrary) {
     const std::string library = takeString(env, gameLibrary);
     std::lock_guard<std::mutex> lock(gMutex);
-    return resolveGameLocked(library.c_str()) ? JNI_TRUE : JNI_FALSE;
+    if (!resolveGameLocked(library.c_str())) return JNI_FALSE;
+    // [KRKR-EXTRACT] 内核就绪即武装文本提取钩子（cocos2d Label::setString，
+    // 三版本符号一致）；失败静默降级为无提取，不影响游戏。
+    krkr_install_extract_hook(gGame.handle, env);
+    krkr_install_ft_probe(gGame.handle, gGame.library.c_str());
+    return JNI_TRUE;
 }
 
 extern "C" JNIEXPORT jboolean JNICALL

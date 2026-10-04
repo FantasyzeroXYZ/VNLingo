@@ -815,7 +815,8 @@ object EngineLauncher {
         val effectiveScoped = scoped || safMirror != null
         val defaultFont = settings.krDefaultFont
         val forceFont = settings.krForceDefaultFont
-        val patchOverlay = prepareKrPatchOverlay(context, engineRoot, settings.krPatchOverlayMode)
+        val patchOverlay = prepareKrPatchOverlay(
+            context, engineRoot, settings.krPatchOverlayMode, settings.krExtractTjs)
         val steamConfigOverlay = prepareKrSteamConfigOverlay(context, engineRoot, settings.krPatchOverlayMode)
         return Intent(context, activity).apply {
             // KR2 引擎把 path 视为“启动条目”，gamedir = path 的父目录。
@@ -1327,7 +1328,12 @@ object EngineLauncher {
      * 不再直接向用户游戏目录写入兼容脚本；只在 app 私有目录生成合成 patch.tjs，
      * 再由 KRKR 文件 hook 在读取游戏 patch.tjs 时做只读重定向。
      */
-    private fun prepareKrPatchOverlay(context: Context, engineRoot: String, mode: String): KrPatchOverlay? {
+    private fun prepareKrPatchOverlay(
+        context: Context,
+        engineRoot: String,
+        mode: String,
+        includeExtractTjs: Boolean = false,
+    ): KrPatchOverlay? {
         val root = File(engineRoot)
         if (!root.isDirectory || engineRoot.startsWith("content://")) return null
         val cleanup = cleanupTyranorManagedKrPatchScript(root)
@@ -1344,6 +1350,9 @@ object EngineLauncher {
         val additionsText = buildString {
             if (includeBasicPatch) append(krBasicPatchOverlayScript())
             if (includeSteamStub) append(krFbfSteamStubScript())
+            // [KRKR-EXTRACT] TJS 发射器（设置开启时）：包一层 KAGParser 把对白打向
+            // 控制台，由 krkr_extract_hook 的 Label::setString 钩子回收（见方案文档）
+            if (includeExtractTjs) append(krExtractEmitterScriptV8())
         }
         val baseBytes = if (force || includeSteamStub) cleanup?.bytes ?: ByteArray(0) else ByteArray(0)
         val patchCharset = detectKrPatchCharset(baseBytes)
@@ -1537,6 +1546,53 @@ object EngineLauncher {
         |// KAGPARSER_ASSIGN_DISABLED_BISECT
         |try { Debug.message("[TNEXTv7b-loaded-noassign]"); } catch(e) {}
                 |
+    """.trimMargin()
+
+    /**
+     * [KRKR-EXTRACT] TJS 发射器 v8（设置 kr_extract_tjs 开启时随 patch.tjs 注入）。
+     *
+     * 包装 KAGParser.getNextTag：ch 文本逐字入缓冲，遇到其他标签（r 视作空格）
+     * 即整句上行 Debug.message("[TNEXT]" + 文本) → Kirikiroid2 控制台 →
+     * krkr_extract_hook 的 Label::setString 钩子 → NativeBridge.onKrkrText
+     * （Java 侧按 [TNEXT] 标记过滤控制台噪音）。全部 try/catch 包裹，任何失败仅
+     * 放弃提取、不影响游戏。
+     *
+     * 已知限制：KAGParserEx（tsukikage 等 Ex 插件游戏）走自有类，不受本替换影响
+     * （无提取、无风险）；替换全局 KAGParser 在个别内核上可能引导失败，故默认关闭。
+     * 追加内容必须纯 ASCII（Kirikiroid2 按内容探测 patch.tjs 编码，混入 UTF-8 日文
+     * 会改变探测结果并殃及后续 SJIS 游戏脚本解码）。
+     */
+    private fun krExtractEmitterScriptV8(): String = """
+        |
+        |
+        |// TYRANOR_NEXT_KRKR_EXTRACT_V8
+        |class TNExtP8 extends KAGParser {
+        |  var tnBuf = "";
+        |  function tnEmit() {
+        |    if (tnBuf == "") return;
+        |    var s = tnBuf;
+        |    tnBuf = "";
+        |    try {
+        |      Debug.message("[TNEXT]" + s);
+        |    } catch(e) {
+        |      try { Debug.notice("[TNEXT]" + s); } catch(e2) {}
+        |    }
+        |  }
+        |  function getNextTag() {
+        |    var d = super.getNextTag();
+        |    if (d === void) { tnEmit(); return d; }
+        |    var tn = d.tagname;
+        |    if (tn == "ch") {
+        |      tnBuf += d.text;
+        |    } else {
+        |      if (tn == "r") { tnBuf += " "; }
+        |      tnEmit();
+        |    }
+        |    return d;
+        |  }
+        |}
+        |try { global.KAGParser = TNExtP8; } catch(e) {}
+        |
     """.trimMargin()
 
     private fun krLegacyPatchScript(fontScale: Float): String = """

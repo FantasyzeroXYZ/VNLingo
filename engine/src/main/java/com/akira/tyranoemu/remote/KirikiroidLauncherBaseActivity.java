@@ -14,6 +14,7 @@ import android.os.Bundle;
 import android.util.Log;
 import android.util.Xml;
 import android.view.Gravity;
+import android.view.KeyEvent;
 import android.view.View;
 import android.view.ViewGroup;
 import android.view.Window;
@@ -75,6 +76,8 @@ public abstract class KirikiroidLauncherBaseActivity extends KR2Activity {
     private volatile String playTimeKey;
     /** 存档管理面板（存档球）：存档检测/导出/导入/云同步。 */
     private volatile com.core.ons.ExtractFacade krkrFacade;
+    /** 剧情文本框面板（KRKR 文本提取：Label::setString 钩子 → onKrkrText → 提取桥）。 */
+    private volatile com.core.ons.OnsExtractPanel extractPanel;
     private volatile boolean firstFrameRendered;
     private volatile boolean launchDispatched;
     private volatile boolean launchSucceeded;
@@ -690,6 +693,9 @@ public abstract class KirikiroidLauncherBaseActivity extends KR2Activity {
                     if (mask != null) mask.setVisibility(android.view.View.GONE);
                     launchOrientationGuardEnabled = false;
                     applyKrkrRequestedOrientation();
+                    // 面板/按键组加入视图树必须在主线程（ready 回调来自 GL 渲染线程），
+                    // 挂在遮罩动画结束后，保证盖在游戏 GL 视图之上
+                    installExtractPanels();
                 }).start();
             }
         });
@@ -702,6 +708,42 @@ public abstract class KirikiroidLauncherBaseActivity extends KR2Activity {
             if (maskMessage != null) maskMessage.setText(message);
             if (maskHint != null) maskHint.setText(uiString(R.string.engine_return_and_retry));
         });
+    }
+
+    /**
+     * 安装剧情文本框面板与右缘按键组（覆盖层内，同 ONS 宿主形态）。
+     * KR2 宿主为普通 Activity 视图合成，面板加入 [Cocos2dxActivity.mFrameLayout]
+     * 顶层即可盖在游戏 GL 视图上；文本源为 Label::setString 钩子（krkr_extract_hook）。
+     * 仅真实游戏启动（krkrFacade 非空）安装；origin 模式（原生文件浏览器）不装。
+     */
+    private void installExtractPanels() {
+        if (extractPanel != null || krkrFacade == null) return;
+        try {
+            com.core.ons.OnsExtractPanel panel = new com.core.ons.OnsExtractPanel(krkrFacade);
+            android.widget.FrameLayout overlay = new android.widget.FrameLayout(this);
+            android.widget.FrameLayout.LayoutParams overlayLp = new android.widget.FrameLayout.LayoutParams(
+                    android.view.ViewGroup.LayoutParams.MATCH_PARENT,
+                    android.view.ViewGroup.LayoutParams.MATCH_PARENT);
+            // 最后添加：盖在游戏 GL 视图之上（此时启动遮罩即将隐藏）
+            mFrameLayout.addView(overlay, overlayLp);
+            // KRKR 无虚拟鼠标：点击模式键由按键组内部按 null 供应商自动隐藏
+            panel.install(overlay, null, null);
+            extractPanel = panel;
+            Log.i(TAG, "extract panel installed (krkr)");
+        } catch (Throwable t) {
+            Log.w(TAG, "install extract panel failed", t);
+        }
+    }
+
+    @Override
+    public boolean dispatchKeyEvent(KeyEvent event) {
+        // 手柄重映射 + 提取面板按键路由（面板收起只认 RB 呼出；展开时消费全部按键），
+        // 先于 KR2Activity 的游戏按键链路。super 内 KR2Activity 会再做一次重映射，
+        // 该操作对已映射事件幂等（映射目标默认无二级映射）。
+        KeyEvent mapped = com.core.engine.GamepadRemap.apply(event);
+        com.core.ons.OnsExtractPanel panel = extractPanel;
+        if (panel != null && panel.handleKey(mapped)) return true;
+        return super.dispatchKeyEvent(mapped);
     }
 
     protected final void setResolvedGameLibrary(String library) {

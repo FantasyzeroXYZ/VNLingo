@@ -21,6 +21,8 @@
     <string name="dict_delete_title">辞書を削除</string>
     <string name="settings_extract_translate">翻訳設定</string>
     <string name="settings_gamepad">コントローラー設定</string>
+    <string name="engine_settings_krkr_extract_tjs">セリフ抽出（実験的）</string>
+    <string name="engine_settings_krkr_extract_tjs_summary">TJS エミッタでセリフをコンソールへ送り抽出します。通常 KAGParser のゲームのみ対応で、一部のゲームは起動に失敗する可能性があります</string>
     <string name="gamepad_settings_title">コントローラー</string>
     <string name="gamepad_settings_summary">ゲームパッドのボタンをキーボードや他のゲームパッドボタンにリマップします。ゲーム内ですぐに反映されます。</string>
     <string name="gamepad_remap_action">マッピング</string>

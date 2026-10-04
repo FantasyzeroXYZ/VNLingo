@@ -21,6 +21,8 @@
     <string name="dict_delete_title">删除词典</string>
     <string name="settings_extract_translate">翻译设置</string>
     <string name="settings_gamepad">手柄设置</string>
+    <string name="engine_settings_krkr_extract_tjs">剧情文本框提取（实验性）</string>
+    <string name="engine_settings_krkr_extract_tjs_summary">经 TJS 发射器把对白送往控制台回收；仅支持普通 KAGParser 内核游戏，开启后个别游戏可能引导失败</string>
     <string name="gamepad_settings_title">手柄设置</string>
     <string name="gamepad_settings_summary">把手柄按键重映射为键盘或其他手柄按键；映射在游戏内即时生效。</string>
     <string name="gamepad_remap_action">映射</string>

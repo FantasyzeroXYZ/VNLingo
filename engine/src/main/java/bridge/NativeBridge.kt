@@ -47,13 +47,25 @@ object NativeBridge {
      * （已按 CJK/长度启发式过滤）。直接转成 ONS 提取桥的 dialogue 事件，
      * 复用既有面板/Anki 管线。
      */
+    /** 控制台行格式：`HH:MM:SS storage : message`。 */
+    private val krkrConsoleLine = Regex("^\\d\\d:\\d\\d:\\d\\d (.*?) : (.*)$", RegexOption.DOT_MATCHES_ALL)
+
     @JvmStatic
     private fun onKrkrText(text: String?) {
         if (text.isNullOrBlank()) return
-        Log.i("NativeBridge", "krkr text: $text")
+        // 严格 [TNEXT] 通道：仅 TJS 发射器 v8（或未来带钩内核经此路径）发出的标记行
+        // 进入提取；其余 Label 文本（引擎控制台的脚本加载/调试行）一律丢弃，
+        // 避免原版内核下面板被噪音刷屏。带钩内核的正常提取走
+        // KR2Activity.setExtractListener 独立通道，不经本方法。
+        val m = krkrConsoleLine.find(text)
+        val message = if (m != null) m.groupValues[2] else text
+        val dialogue = message.takeIf { it.startsWith("[TNEXT]") }
+            ?.removePrefix("[TNEXT]")?.trim()?.takeIf { it.isNotEmpty() }
+        if (dialogue == null) return
+        Log.i("NativeBridge", "krkr text: $dialogue")
         try {
             val b64 = android.util.Base64.encodeToString(
-                text.toByteArray(Charsets.UTF_8), android.util.Base64.NO_WRAP)
+                dialogue.toByteArray(Charsets.UTF_8), android.util.Base64.NO_WRAP)
             val payload = "{\"type\":\"dialogue\",\"payload\":{\"b64\":\"$b64\"}}"
             com.core.ons.OnsExtractBridge.get().onEvent(payload.toByteArray(Charsets.UTF_8))
         } catch (t: Throwable) {
