@@ -195,13 +195,15 @@ class TyranoActivity : Activity() {
                 }
             val hook = (hookAsset?.let { assets.open(it).buffered().use { input -> input.readBytes() } } ?: ByteArray(0)) +
                 touchPad
-            val scriptAppends = if (webGameType == WebGameType.RPG_MZ) {
-                mapOf(
-                    "js/rmmz_core.js" to loadAsset(RPG_MZ_CORE_HOOK_ASSET),
-                    "js/rmmz_managers.js" to loadAsset(RPG_MZ_MANAGERS_HOOK_ASSET),
-                )
-            } else {
-                emptyMap()
+            val scriptAppends = mutableMapOf<String, ByteArray>()
+            if (webGameType == WebGameType.RPG_MZ) {
+                scriptAppends["js/rmmz_core.js"] = loadAsset(RPG_MZ_CORE_HOOK_ASSET)
+                scriptAppends["js/rmmz_managers.js"] = loadAsset(RPG_MZ_MANAGERS_HOOK_ASSET)
+            }
+            if (webGameType == WebGameType.TYRANO) {
+                // 超长 [iscript] 块会让老引擎的 tag.text 逐行递归 nextOrder 而爆栈（RangeError），
+                // 追加补丁改为单帧迭代消费连续 text 标签；见 assets/__tyrano_tag_patch.js
+                scriptAppends[TYRANO_TAG_SCRIPT_PATH] = loadAsset(TYRANO_TAG_PATCH_ASSET)
             }
             val modResources = if (rpgMakerModEnabled) {
                 mapOf(
@@ -1017,6 +1019,8 @@ class TyranoActivity : Activity() {
     companion object {
         private const val TAG = "YukiTyrano"
         private const val TYRANO_HOOK_ASSET = "__tyrano__.js"
+        private const val TYRANO_TAG_PATCH_ASSET = "__tyrano_tag_patch.js"
+        private const val TYRANO_TAG_SCRIPT_PATH = "tyrano/plugins/kag/kag.tag.js"
         private const val RPG_MV_HOOK_ASSET = "__rpg__.js"
         private const val RPG_MZ_HOOK_ASSET = "__rmmz__.js"
         private const val TOUCH_PAD_ASSET = "__touch_pad.js"
