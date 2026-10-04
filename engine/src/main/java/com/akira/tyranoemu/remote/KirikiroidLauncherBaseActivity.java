@@ -729,9 +729,54 @@ public abstract class KirikiroidLauncherBaseActivity extends KR2Activity {
             // KRKR 无虚拟鼠标：点击模式键由按键组内部按 null 供应商自动隐藏
             panel.install(overlay, null, null);
             extractPanel = panel;
+            installEngineLeftButtons(overlay);
             Log.i(TAG, "extract panel installed (krkr)");
         } catch (Throwable t) {
             Log.w(TAG, "install extract panel failed", t);
+        }
+    }
+
+    /** 引擎键注入：经 KR2 的 nativeKeyAction 直达引擎（BACK 由内核映射为 ESC）。 */
+    private void krkrKey(int keyCode, boolean down) {
+        try {
+            org.tvp.kirikiri2.KR2Activity.nativeKeyAction(keyCode, down);
+        } catch (Throwable t) {
+            Log.w(TAG, "krkrKey failed code=" + keyCode, t);
+        }
+    }
+
+    private void krkrKeyHold(int keyCode, long holdMs) {
+        krkrKey(keyCode, true);
+        new android.os.Handler(android.os.Looper.getMainLooper())
+                .postDelayed(() -> krkrKey(keyCode, false), holdMs);
+    }
+
+    /**
+     * 左缘引擎适配按键（KRKR）：ESC=菜单/取消（内核映射自 BACK）、OK=回车决定、
+     * 方向键=选肢/历史滚动、SKIP=按住 Ctrl（KAG 快进）。
+     */
+    private void installEngineLeftButtons(ViewGroup overlay) {
+        try {
+            java.util.List<com.core.engine.EngineLeftButtons.ButtonSpec> buttons =
+                    new java.util.ArrayList<>();
+            buttons.add(new com.core.engine.EngineLeftButtons.ButtonSpec("ESC",
+                    () -> krkrKey(android.view.KeyEvent.KEYCODE_BACK, true)));
+            buttons.add(new com.core.engine.EngineLeftButtons.ButtonSpec("OK",
+                    () -> krkrKeyHold(android.view.KeyEvent.KEYCODE_ENTER, 80)));
+            buttons.add(new com.core.engine.EngineLeftButtons.ButtonSpec("▲",
+                    () -> krkrKeyHold(android.view.KeyEvent.KEYCODE_DPAD_UP, 80)));
+            buttons.add(new com.core.engine.EngineLeftButtons.ButtonSpec("▼",
+                    () -> krkrKeyHold(android.view.KeyEvent.KEYCODE_DPAD_DOWN, 80)));
+            buttons.add(new com.core.engine.EngineLeftButtons.ButtonSpec("◀",
+                    () -> krkrKeyHold(android.view.KeyEvent.KEYCODE_DPAD_LEFT, 80)));
+            buttons.add(new com.core.engine.EngineLeftButtons.ButtonSpec("▶",
+                    () -> krkrKeyHold(android.view.KeyEvent.KEYCODE_DPAD_RIGHT, 80)));
+            buttons.add(new com.core.engine.EngineLeftButtons.ButtonSpec("SKIP",
+                    () -> krkrKeyHold(android.view.KeyEvent.KEYCODE_CTRL_LEFT, 900)));
+            com.core.engine.EngineLeftButtons.install(overlay, "krkr_left", buttons);
+            Log.i(TAG, "engine left buttons installed (krkr)");
+        } catch (Throwable t) {
+            Log.w(TAG, "install engine left buttons failed", t);
         }
     }
 

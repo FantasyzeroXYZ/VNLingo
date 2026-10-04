@@ -111,6 +111,8 @@ public abstract class ArtemisLauncherBaseActivity extends com.ies_net.artemis.Ar
             // 会让覆盖窗停留在可触摸态吃掉游戏输入（触摸失灵），故开合后直接同步。
             extractPanel.setPanelVisibilityHook(() -> helper.syncTouchability(extractPanel.panelView()));
             helper.syncTouchability(extractPanel.panelView());
+
+            installEngineLeftButtons();
         } catch (Throwable t) {
             Log.w("YukiArtemis", "installPanels failed", t);
         }
@@ -136,6 +138,47 @@ public abstract class ArtemisLauncherBaseActivity extends com.ies_net.artemis.Ar
         // 输入走 native 队列，此处不保证到达；内核文本钩子落地后再评估接入点
         if (DoubleBackExit.dispatchBackKey(this, event, this::exitFromBack)) return true;
         return super.dispatchKeyEvent(event);
+    }
+
+    /** 引擎键注入：经内核 EmulateKeyEvent（keycode 映射同 ArtemisActivity.dispatchKeyEvent）。 */
+    private void artKey(int code, int action) {
+        try {
+            EmulateKeyEvent(code, action);
+        } catch (Throwable t) {
+            Log.w("YukiArtemis", "artKey failed code=" + code, t);
+        }
+    }
+
+    /**
+     * 左缘引擎适配按键（Artemis）：NEXT=回车推进、SKIP=按住 Ctrl、
+     * 方向键=选肢/回览。经独立小窗安装（NativeActivity 宿主视图不参与合成）。
+     */
+    private void installEngineLeftButtons() {
+        try {
+            java.util.List<com.core.engine.EngineLeftButtons.ButtonSpec> buttons =
+                    new java.util.ArrayList<>();
+            buttons.add(new com.core.engine.EngineLeftButtons.ButtonSpec("NEXT",
+                    () -> artKey(13, 2)));
+            buttons.add(new com.core.engine.EngineLeftButtons.ButtonSpec("SKIP",
+                    () -> {
+                        artKey(140, 1);
+                        new android.os.Handler(android.os.Looper.getMainLooper())
+                                .postDelayed(() -> artKey(140, 0), 900);
+                    }));
+            buttons.add(new com.core.engine.EngineLeftButtons.ButtonSpec("▲",
+                    () -> artKey(38, 2)));
+            buttons.add(new com.core.engine.EngineLeftButtons.ButtonSpec("▼",
+                    () -> artKey(40, 2)));
+            buttons.add(new com.core.engine.EngineLeftButtons.ButtonSpec("◀",
+                    () -> artKey(37, 2)));
+            buttons.add(new com.core.engine.EngineLeftButtons.ButtonSpec("▶",
+                    () -> artKey(39, 2)));
+            com.core.engine.EngineLeftButtons.installAsWindow(
+                    this, "artemis_left", buttons);
+            Log.i("YukiArtemis", "engine left buttons installed (artemis)");
+        } catch (Throwable t) {
+            Log.w("YukiArtemis", "install engine left buttons failed", t);
+        }
     }
 
     @Override
