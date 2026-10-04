@@ -1,209 +1,56 @@
-# Tyranor Next
+# VNLingo
 
 <p align="center">
-  <img src="screenshots/index.png" alt="Tyranor Next" width="850" />
+  <strong>多引擎视觉小说（Galgame）聚合启动器 · 游戏内提取与制卡</strong>
 </p>
 
-基于 **Tyranor 模拟器逆向重写**的多引擎视觉小说（Galgame）聚合启动器，面向 Android 平台。内置 Kirikiri / ONScripter / Tyrano / Artemis / Siglus / RealLive / AVG32 / UK2 / FVP 九套引擎运行环境，并支持 Ren'Py、RPG Maker RGSS 外置 APK 引擎模块与 PSP / Nintendo Switch 外置模拟器跳转（PPSSPP / Eden），可识别和启动多类游戏，提供游戏库管理、封面获取、存档镜像、引擎参数调节等一体化体验。
+VNLingo 基于 **Tyranor Next**（多引擎 Galgame 聚合启动器）衍生，在本仓库中新增了完整的**游戏内提取与制卡**功能线：游戏运行时实时提取当前对话文本、配对语音与画面截图，提供查词典、双轨翻译、TTS 朗读、听力模式与 AnkiDroid 一键制卡，配合右缘固定按键组与虚拟鼠标操控。
 
-mac原生版本如下：
+## 功能总览
 
-- [Tyranor Next for macOS](https://github.com/Weiss-UltimateSavior/Tyranor-Mac)
+### 启动器基座（源自 Tyranor Next）
 
-iOS版本计划中...
-鸿蒙设备可使用卓易通安装
+- 多引擎识别与启动：KiriKiri / ONScripter / Tyrano / Artemis / Siglus / RealLive / AVG32 / UK2 / FVP，Ren'Py 与 RPG Maker XP/VX/VX Ace 外置模块，RPG Maker MV/MZ 网页运行环境
+- 外置跳转：PSP（PPSSPP）/ Nintendo Switch（Eden）/ Windows（Winlator）
+- 游戏库管理、封面获取、存档镜像、引擎参数调节、后台更新
 
-主打轻便、简单、快捷，不引入其他冗余功能的简约设计思路
+### 游戏内提取与制卡（本仓库新增）
 
-企鹅群：364439133
+- **提取面板（剧情文本框）**：当前句栏、配对语音 ♪、翻译行、历史回放、听力模式、暗色圆钮风格
+- **查词典**：Yomichan zip / MDX jsonl 导入，多词典管理，最长前缀 + 词形还原
+- **翻译双轨**：OpenAI 兼容 API 与 ML Kit 离线翻译（zh/en/ja/ko，模型按需下载），内置翻译测试
+- **TTS 朗读**：系统 TextToSpeech 与 MultiTTS HTTP 合成双路径，自动朗读、语速调节
+- **AnkiDroid 制卡**：词卡/句卡一键入库（vendored 官方 API）
+- **截图**：PixelCopy 直取游戏 Surface（纯游戏画面），主页截图管理页
+- **游玩统计**：总/周/月时长三卡 + 每游戏列表
+- **右缘按键组**：文本框/截图/设置/音量（百分比）/点击模式/回主页 + 顶部折叠键，虚拟鼠标（D-pad/摇杆 + A 点击）与触摸直传切换
 
-感谢 [@安音](https://www.pixiv.net/users/8182248) 为本项目绘画的logo娘！
+详细设计见 [docs/游戏内提取制卡功能方案.md](docs/游戏内提取制卡功能方案.md)。
 
-## 感谢各位贡献者们！一起成为光吧！
+## 模块结构
 
-<a href="https://github.com/Weiss-UltimateSavior/Tyranor-Next/graphs/contributors">
-  <img src="https://contrib.rocks/image?repo=Weiss-UltimateSavior/Tyranor-Next" />
-</a>
-
-## 支持范围
-
-### 引擎与游戏类型
-
-| 游戏类型                 | 典型识别特征                                                              | 运行环境                         |
-| -------------------- | ------------------------------------------------------------------- | ---------------------------- |
-| Kirikiri / Kirikiri2 | `.xp3`、`startup.tjs`                                                | Kirikiroid2 / krkrsdl3 原生运行时 |
-| ONScripter           | `nscript.dat`、`.nsa`                                                | ONScripter 原生运行时             |
-| Artemis              | `system.ini`、`.pfs`                                                 | Artemis 原生运行时                |
-| SiglusEngine         | `Gameexe.dat`/`Gameexe.ini`、`Scene.pck`（根或 `Data/`）                | Siglus 原生运行时（siglus_rs）      |
-| RealLive             | `Gameexe.ini` + `SEEN.TXT`（10000 项 TOC）或 `SEEN####.TXT`             | 内置视觉小说运行时（game_launcher）  |
-| AVG32                | `Gameexe.ini` + `SEEN.TXT`（`PACL`）或 `SEEN###.TXT`（`TPC32`）          | 内置视觉小说运行时（game_launcher）  |
-| UK2（PC-98）          | `UK2.CFG`、`*.MES`（`<< UK2 TEXT Ver1.00 >>` 头）                       | 内置视觉小说运行时（game_launcher）  |
-| FVP                  | `*.hcb`/`*.bch` 脚本、`graph.bin`/`voice.bin` 等资源包                   | 内置 FVP 原生运行时（rfvp）          |
-| YU-RIS               | `yscfg.dat`、`pac/*.ypf`、`YS*.DLL`、`.ymv`                          | 外置 Winlator（winlator-cn）        |
-| CatSystem2           | `config/startup.xml`、`*.int`、`*.cst`、`*.hg3`、`*.kcs` 等组合         | 外置 Winlator（winlator-cn）        |
-| PC（手动添加）        | 游戏页顶栏「添加 PC 游戏」选择目录并指定启动 exe                          | 外置 Winlator（winlator-cn）        |
-| TyranoBuilder        | `index.html`、`tyrano/`                                              | 内置 Tyrano Web 运行环境           |
-| RPG Maker XP         | `.rgssad`、`Game.ini` + `Data/*.rxdata`                              | 外置 RPGM APK 模块               |
-| RPG Maker VX         | `.rgss2a`、`Game.ini` + `Data/*.rvdata`                              | 外置 RPGM APK 模块               |
-| RPG Maker VX Ace     | `.rgss3a`、`Game.ini` + `Data/*.rvdata2`                             | 外置 RPGM APK 模块               |
-| mkxp-z               | 用户选择/内部别名 `internal.mkxp-z`                                         | 外置 RPGM APK 模块               |
-| RPG Maker MV         | `www/`、`js/rpg_core.js`                                             | 内置 Web 运行环境                  |
-| RPG Maker MZ         | `www/`、`js/rmmz_core.js`                                            | 内置 Web 运行环境                  |
-| VN                   | `globalData.vndata`                                                 | 内置 Web 运行环境                  |
-| WebOther             | 通用 `index.html` 网页游戏                                                | 内置 Web 运行环境                  |
-| Ren'Py               | `.rpa`、`game/script.rpy`、`game/options.rpy`、`renpy/` + `.rpy/.rpyc` | 外置 RenPy APK 模块              |
-| PSP                  | `.pbp`、`.cso`、`.iso`、`.chd`                                         | 外置 PPSSPP 模拟器                 |
-| Nintendo Switch      | `.nsp`、`.xci`、`.nca`、`.nro`                                         | 外置 Eden 模拟器                   |
-
-CatSystem2 游戏按 `config/startup.xml`、`.int/.cst/.hg3/.kcs` 等目录特征组合评分识别（`cs2.exe` 仅作辅助，不单独判定），启动同样经外置 Winlator（目录 + 主程序；Runtime 允许 `.bin` 且优先 `cs2.exe`）。
-
-YU-RIS（Windows）游戏通过外置 Winlator（winlator-cn）运行：扫描按 `yscfg.dat`、`pac/*.ypf`、引擎 DLL 与 `.ymv` 特征识别，启动时以「游戏目录 + 主程序 exe」经 Winlator 外置启动协议拉起（目录由 Winlator 自动分配空闲盘符临时挂载，`save=false` 不写回容器配置）；主程序自动选择，可在游戏详情「启动文件」手动覆盖。存档与运行参数由 Winlator 管理，主 App 不接管。
-
-内置 Web 运行环境同时支持部分以 `app.asar` 打包的 NW\.js 游戏；启动时会根据归档内容进一步识别具体类型。
-Ren'Py 与 RPG Maker XP/VX/VX Ace/mkxp-z 当前通过外置 APK 模块运行：Ren'Py 支持 8.5 / 7.7.1 版本，可在全局或单游戏设置中选择引擎版本；自动模式会读取 Ren'Py `script_version` 与 Python2 运行库特征，在 8.5 / 7.7.1 模块间匹配。主 App 默认启用该能力，仅在引擎页检查目标模块是否已安装；未安装时引擎 item 显示打叉并提示下载安装。RPG Maker MV/MZ 属于 Web runtime，继续使用内置 Web 运行环境。
-PC 游戏（任意 Windows 程序）通过游戏页顶栏「添加 PC 游戏」手动入库（不参与扫描）：选择目录并从目录检索 exe、指定启动程序；启动经外置 Winlator，启动文件可在游戏详情中随时切换。PC 游戏不纳入存档管理与引擎参数配置。
-
-PSP 与 Nintendo Switch 游戏通过外置模拟器跳转运行：扫描按 ROM 扩展名识别并逐条入库（.iso/.cso/.pbp/.chd、.nsp/.xci/.nca/.nro），启动时按类型拉起已安装的 PPSSPP / Eden（显式组件 + 读取授权，使用 SAF 内容 URI；文件回退路径经 FileProvider 转换）。这两类游戏的存档与设置由模拟器自行管理，主 App 不接管；引擎页「外置跳转支持」入口可查看安装状态并跳转下载页。引擎页可在应用设置中开启「引擎页分类显示」，按 GAL / RPGM / 主机 / 网页 分页展示引擎项。
-
-### 平台与文件要求
-
-- Android 8.0（API 26）及以上。
-- 当前原生引擎库仅提供 `arm64-v8a`，设备需为 64 位 ARM 架构。
-- 游戏目录需位于 Android 可访问的本地存储，并通过系统文件选择器（SAF）授权；启动时目录必须能够映射为真实文件路径，外置存储上的部分引擎可能需要“所有文件访问”权限。
-- 实际兼容性取决于游戏使用的引擎版本、封包/加密方式和脚本特性；特殊修改版可能需要调整引擎设置或补丁。
-
-## 参与贡献
-
-欢迎参与项目开发与维护！
-
-在提交 Pull Request 前，请先阅读务必阅读遵守 [贡献指南](./CONTRIBUTING.md)。
-如果不符合贡献指南的要求，可能会被拒绝合并。
-代码务必符合项目整体风格，避免引入新的问题。
-提交前请务必使用项目内AGENT.md文件内的审核方式进行提交前审核。
-如果代码一眼丁真，一定拒绝合并。
-
-## 技术架构
-
-### 模块划分
-
-| 模块       | 职责                                                                                            |
-| -------- | --------------------------------------------------------------------------------------------- |
-| `app`    | Android 应用壳：Compose UI、功能抽象层、配置、封面、存档、授权、后台更新等应用侧能力                                           |
-| `engine` | 底层引擎运行时核心：SDL2/SDL3、Kirikiri TVP、krkrsdl3、ONScripter、Artemis、Siglus、FVP（rfvp）、Tyrano、Native/JNI 与引擎宿主 Activity |
-
-### 三层目录架构
-
-当前项目按职责归类为三层，依赖方向固定为：
-
-```
-界面 UI 交互层 -> 功能抽象层 -> 底层引擎层
-```
-
-| 层级        | 目录                                         | 职责                                                                                                     |
-| --------- | ------------------------------------------ | ------------------------------------------------------------------------------------------------------ |
-| 底层引擎层     | `engine/`                                  | KRKR/Kirikiroid、krkrsdl3、ONS、Artemis、Siglus、FVP（rfvp）、Tyrano、SDL/Cocos/IJK、Native/JNI、引擎宿主 Activity、引擎资源与 Native 插件底层加载 |
-| 功能抽象层     | `app/src/main/java/com/tyranor/next/core/` | 游戏扫描、游戏模型、启动编排、封面抓取、存档管理、在线补丁、应用/引擎/单游戏配置、授权、后台更新                                                      |
-| 界面 UI 交互层 | `app/src/main/java/com/tyranor/next/ui/`   | Compose 页面、Activity 壳、弹窗、导航、顶部栏、搜索框、用户输入、加载态与错误态                                                       |
-
-功能抽象层按领域继续拆分：
-
-- `core/game`：游戏模型、扫描、启动、存档管理
-- `core/engine`：引擎类型、内置引擎插件启动与安装编排、外置 APK 引擎模块注册与启动协议
-- `core/cover`：封面抓取、来源聚合、批量任务
-- `core/patch`：KRKR 在线补丁
-- `core/settings`：应用级配置、引擎级配置、单游戏配置
-- `core/auth`：Hikarinagi OAuth 授权与 token 管理
-- `core/updater`：后台更新检查与通知
-- `core/unpack`：Artemis 启动封包解包辅助；XP3 解包/封包独立工具的核心逻辑与 SAF 中转
-
-UI 层按页面域继续拆分：
-
-- `ui/main`：主入口、底部导航与全局页面状态
-- `ui/home`：首页
-- `ui/game`：游戏库、游戏卡片、封面操作、游戏动作弹窗
-- `ui/engine`：引擎页
-- `ui/settings`：应用设置、引擎设置入口、引擎/单游戏设置页面
-- `ui/cover`：封面来源与批量抓取设置
-- `ui/patch`：KRKR 在线补丁页面
-- `ui/save`：存档管理页面
-- `ui/archive`：XP3 解包 / 封包独立工具页
-- `ui/auth`：OAuth 回调 Activity
-- `ui/common`：公共 UI 组件、弹窗、占位页、顶部栏/输入框等复用组件
-
-### 技术栈
-
-- **语言**：Kotlin（引擎层含 Java 桥接代码）
-- **UI**：Jetpack Compose + Material 3 + [Miuix](https://github.com/compose-miuix-ui/miuix)
-- **导航**：底部导航 `NavigationBar`；主 Tab 内容页使用水平移动切换，详情/设置等独立 Activity 进入使用向上翻页、退出使用向下翻页
-- **构建**：Gradle 9.5.1 / AGP 9.2.1 / Kotlin 2.x + Compose Compiler，`compileSdk 37`、`minSdk 26`、`targetSdk 36`
-- **持久化**：SharedPreferences（扫描结果、引擎全局设置、单游戏设置覆盖、最近记录）
-- **文件访问**：Storage Access Framework（SAF）管理外部游戏目录，`documentFile` 库辅助
-
-### 引擎集成设计
-
-- 引擎原生插件（`kirikiroid2` / `ons` / `artemis` 的 `.so`）以 assets 形式随 APK 打包（`nativeplugins/`），首次启动由 `NativePluginManager` 自动解压安装到应用私有目录
-- 共享 Native 插件 `.so` 的源头位于 `engine/src/main/nativeplugins`；app 侧仅维护插件 `manifest.json` 和 app-only 插件。构建时由 Gradle 合并生成 `app/build/generated/assets/nativeplugins/*.zip`
-- 共享 RPG Maker 注入脚本源头位于 `engine/src/main/assets`；app 侧只保留应用专属注入脚本，构建时由 Gradle 同步生成到 app assets，避免两边手工维护重复文件
-- `app` 模块通过 `core/game/launch/EngineLauncher` 将扫描结果映射到对应引擎 Activity 启动（SAF URI → 真实路径转换）
-- Ren'Py、RPG Maker RGSS 等外置 APK 引擎模块由 `core/engine/external` 统一注册、检测安装状态并按 intent 协议拉起；主 App 不维护手动启用开关，模块安装即视为可用
-- PSP / Nintendo Switch 由 `core/engine/external` 的 `ExternalEmulatorRegistry` / `ExternalEmulatorLauncher` 跳转外置 PPSSPP / Eden：扫描识别 ROM 后逐条入库（一 ROM 一条），运行时在目录解析前分流、按显式组件与读取授权启动；引擎页「外置跳转支持」项展示安装状态并可跳下载页，Manifest `<queries>` 已声明对应包名
-- Tyrano 运行环境内置本地 HTTP 服务器、Asar 归档解析与 JS 钩子脚本（`__tyrano__.js` 等），无需外部依赖即可运行网页式脚本游戏
-- FVP（rfvp）宿主为 Java `SurfaceView` + `Choreographer` 主循环驱动 Rust 引擎（`librfvp.so` + 自研桥接库），随 APK 打包；支持 `*.hcb` 原版与 `*.bch` 汉化脚本，文本编码（Shift-JIS/GBK/UTF-8）、系统字体回退与文本 HiDPI 可在引擎设置中按全局/单游戏调整
-- RealLive / AVG32 / UK2 由 `game_launcher` 运行库承载（与 Siglus 同一 `libsiglus.so`，由 `libgames_bridge.so` dlopen），宿主 `FramebufferGameActivity`（`:fbgames` 进程）每帧驱动 `game_fb_*` 帧缓冲：单指=左键、双指点按=右键、双指上下滑=滚轮、Back=右键，文本编码（自动/Shift-JIS/GBK/Big5/UTF-8/韩语）可按全局/单游戏调整
-- 原生库仅提供 `arm64-v8a` 架构
+| 模块 | 职责 |
+|---|---|
+| `app`    | 应用壳：Compose UI、游戏库/扫描/启动编排、设置、封面、更新 |
+| `engine` | 引擎层：各引擎宿主 Activity、提取面板与事件桥、词典/翻译/制卡/TTS、Native 插件 |
 
 ## 构建
 
-```bash
-# 编译 Debug APK
-./gradlew assembleDebug --no-daemon
-```
+- Android Studio 或命令行：`./gradlew :app:assembleDebug`（JDK 17+，NDK 28）
+- 产物：`app/build/outputs/apk/debug/app-debug.apk`
 
-产物位于 `app/build/outputs/apk/debug/`。需要 Android SDK（本地平台 android-37）环境。
+## 文档
 
-## 目录结构
-
-```
-app/
-├── src/main/java/com/tyranor/next/
-│   ├── core/      功能抽象层：扫描、启动、引擎模块、封面、存档、补丁、拆封包、配置、授权、更新
-│   ├── ui/        界面 UI 交互层：主界面、游戏页、设置页、弹窗、公共组件
-│   └── theme/     Compose / Miuix 主题、色调、深浅色适配
-├── src/main/assets/
-│   ├── engine/        App 专属 Web 引擎注入脚本
-│   └── nativeplugins/ Gradle 构建期生成的 Native 插件 zip
-└── src/main/nativeplugins/ 插件 manifest 与 app-only 插件源头
-
-engine/
-├── src/main/java/          底层引擎宿主、桥接代码与运行时入口
-├── src/main/cpp/           Native/JNI、SDL、引擎运行时代码
-├── src/main/assets/        底层引擎资源与共享引擎脚本源头
-├── src/main/nativeplugins/ 共享 Native 插件 so 源头
-└── rust/                   XP3 解封包 Rust 源码（xp3 解析与 KSD mode-2 隐性解码；许可证见 LICENSE.usefulunpack）
-
-docs/   设计文档、逆向分析、功能计划与优化方案
-```
-
-## 许可证
-
-本项目基于 **GNU General Public License v2.0** 发布，详见 [LICENSE](LICENSE)（GPL-2.0-only）。
-
-- `engine/` 引擎运行时基于 Tyranor 模拟器逆向重写，上游涉及 Kirikiroid2 / ONScripter 等 GPL-2.0 项目，因此整个项目以 GPL-2.0 授权分发
-- 基于本项目发布的衍生作品须遵循 GPL-2.0 条款，并随发行物提供完整源码
-- Miuix 等第三方依赖按各自许可证引入
-- Siglus / RealLive / AVG32 / UK2 引擎运行库来自 [siglus_rs](https://github.com/xmoezzz/siglus_rs)（MPL-2.0，上述引擎的非官方 Rust 重写/移植），以其自身许可证引入；相应源码可于上游或其 fork 仓库获取
-- FVP 引擎运行库来自 [rfvp](https://github.com/xmoezzz/rfvp)（MPL-2.0，FVP 引擎的非官方 Rust 重写/移植），以其自身许可证引入；相应源码可于上游或其 fork 仓库获取
-- Anime4K GLSL 着色器（`engine/src/main/assets/anime4k/`）来自 [bloc97/Anime4K](https://github.com/bloc97/Anime4K)，按其 MIT 许可证引入（版权声明保留于各着色器文件头部）
+- [PROGRESS.md](PROGRESS.md) — 进度记录（会话级）
+- [MEMORY.md](MEMORY.md) — 环境事实 / 踩坑 / 决策 / 续作指南
+- [docs/游戏内提取制卡功能方案.md](docs/游戏内提取制卡功能方案.md) — 提取功能线方案与实施记录
+- `待办.txt` — 后续产品调整计划（未跟踪，本地）
 
 ## 致谢
-- [Kirikiroid2](https://github.com/zeas2/Kirikiroid2): Kirikiroid2引擎
-- **Tyranor 模拟器**：本项目引擎运行时与核心架构的逆向重写基础
-- [Artemis-Compat](https://github.com/Weiss-UltimateSavior/artemis-compat)：自研兼容内核
-- [siglus_rs](https://github.com/xmoezzz/siglus_rs)（MPL-2.0）：SiglusEngine / RealLive / AVG32 / UK2 的 Rust 重写与多平台移植，四个引擎的运行时
-- [rfvp](https://github.com/xmoezzz/rfvp)（MPL-2.0）：FVP 引擎的 Rust 重写与多平台移植，FVP 运行时
-- **RinneMobile**：游戏扫描识别/SAF路径映射逻辑/独立存档映射/krkrsdl3 等多个功能的参考与实现
-- [Miuix](https://github.com/compose-miuix-ui/miuix)：设置界面组件库
-- [Anime4K](https://github.com/bloc97/Anime4K):（bloc97，MIT）：KRKR 游戏画面实时超分（线条重建 CNN 着色器）
-- [OnscripterYuri](https://github.com/YuriSizuku/OnscripterYuri): ONS引擎
-- [UsefulUnpack](https://github.com/znso4pa/usefulunpack)（znso4pa，MIT）：XP3 / KSD 解封包 Rust 实现（`engine/rust` 的 `lib.rs` / `common.rs` / `ksd.rs` 来源，许可证见 `engine/rust/LICENSE.usefulunpack`）
-- 各引擎运行时均基于其开源许可引入
+
+- [Tyranor Next](https://github.com/Weiss-UltimateSavior/Tyranor-Next)（GPL-2.0）：本项目的基座
+- 提取功能线参考了 web 端提取实践与 AnkiDroid 官方 API
+
+## 许可
+
+本项目沿用上游 **GPL-2.0** 许可（见 [LICENSE](LICENSE)）。
