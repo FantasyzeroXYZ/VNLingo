@@ -4,7 +4,70 @@
 > `docs/游戏内提取制卡功能方案.md`（提取功能线方案）阅读。
 > 更新时间：2026-10-05
 
-## 2026-10-05 会话：提取/制卡功能线整体移植（分支 feat/extract-suite，4+1 提交）
+## 2026-10-05 会话（二）：产品调整四项 + Artemis 两修复（分支 feat/extract-suite）
+
+执行 `待办.txt` 产品调整，按用户补充保留 Artemis 并修复其两处缺陷。全部在模拟器
+（Pixel_6，`--abi arm64-v8a` 安装）实测通过。
+
+### 一、导航重构（待办①）
+
+- 底部导航 **游戏 / 词典 / 设置** 三栏：删「首页」Tab（`HomeScreen.kt` 移除），
+  删「引擎」Tab；新增 `ui/dict/DictionaryScreen.kt` 词典页（多词典启停/删除/设为当前 +
+  SAF 导入 Yomichan zip / MDX jsonl，复用 engine `OnsDictStore`，数据与游戏内查词同库）。
+- 引擎页并入设置页：设置页「引擎」条目 → 新 `EngineManageActivity` 合并页
+  （顶部引擎细分设置入口卡片 + 引擎管理列表，`EngineScreen` 增加 headerItem 插槽）；
+  删 `EngineSettingsMenuActivity`（`EngineSettingsKind` 枚举迁至 EngineManageActivity.kt）。
+
+### 二、引擎支持裁剪（待办①）
+
+只保留 krkr / ons / rpgmaker 系列 / tyrano / renpy / web（VN、WebOther）/ artemis：
+
+- `EngineLauncher.supportedEngines` 收敛；删 Siglus / Framebuffer(RealLive/AVG32/UK2) / FVP /
+  Winlator(YU-RIS、PC) 启动分支与 `YurisLaunchFiles.kt`；历史库残留条目 buildIntent 走 error 分支。
+- `EngineScanner`：删除上述引擎与 PSP/Switch ROM 的特征识别与 ROM 入库分支（含 readHead 管线）。
+- UI：引擎页删「主机」分类与外置跳转（PPSSPP/Eden/Winlator）入口与弹窗；删 PC 手动添加
+  （`PcGameAddDialog.kt` 移除、GameScreen 顶栏入口移除）；设置种类删 SIGLUS / FRAMEBUFFER /
+  FVP / PPSSPP / WINLATOR（详情页对应分支一并移除）。外置模拟器基础设施类保留（死代码，不再有入口）。
+
+### 三、设置归位（待办②）
+
+- 游戏内面板设置弹窗只留「朗读 + 显示」，加「已移至应用设置」提示（`engine_ons_settings_moved_hint`）。
+- 新 `OnsExtractSettingsDialogs.java`（engine）：翻译设置弹窗宿主无关版（引擎切换 / API 配置 /
+  ML Kit 模型管理 / 翻译测试，与原面板同款样式同数据源）；应用设置页新增「翻译设置」「云同步」条目。
+- `OnsTranslateClient.prefs` 改 `MODE_MULTI_PROCESS`：应用主进程写入、引擎进程每次读取重载。
+
+### 四、手柄按键重映射（待办③）
+
+- engine `GamepadRemap`（@JvmStatic）：prefs `gamepad_remap` 持久化 + 内存快照，
+  `apply()` 在 dispatchKeyEvent 最前端把手柄源按键替换为目标（键盘或其他手柄键）。
+- 宿主接线五处：ONScripter / TyranoActivity / RpgMakerActivity / ArtemisActivity / KR2Activity
+  （dispatchKeyEvent 前置 remap + onResume refresh）。
+- app `ui/gamepad/GamepadSettingsActivity`：16 个标准手柄键列表，捕获式配置
+  （点「映射」→ 按下目标键即存，BACK 取消，支持删除）；设置页「手柄设置」入口。
+
+### 五、Artemis 两修复（用户补充）
+
+1. **面板读不到文本/语音**：根因是随包 Artemis 内核（含 clean 内核 .so）均无 extract_bridge
+   发射器（符号表验证，外部内核源码仓的带桥构建未随仓分发）。修复：新
+   `artemis_extract_hook.cpp`（并入 artemis_loader 库），dlopen shadowhook（jniLibs 真库，1.1.1）
+   对 clean 内核 `artc::Compositor::SetMessageLayered`（文本）与
+   `artc::AudioChannels::Play`（语音名）做 entry inline hook，经 `onArtemisExtract` 上行；
+   facade 增加 BGM 名过滤与游戏目录语音兜底探测。**限制**：语音名可配对显示，
+   packed 游戏语音字节暂不可播（语音副本落盘机制未随内核分发）；官方 revision 内核不挂钩。
+2. **关闭面板后触摸失灵**：根因是 `WindowOverlayHost` 触摸放行只靠 OnLayoutChangeListener，
+   VISIBLE→GONE 时 bounds 不变、回调不触发，全屏覆盖窗停留在可触摸态吃掉全部输入。
+   修复：`OnsExtractPanel.setPanelVisibilityHook`，togglePanel 后显式同步（布局监听保留兜底）。
+
+### 六、模拟器回归（全部通过）
+
+- 导航三栏 / 词典页空态 / 设置页新条目 / 手柄捕获式映射（A→键盘·U）+ 删除 + prefs 落盘。
+- blossom（Artemis clean 内核）真机流程：启动 → 面板显示当前句 + ♪ fem_him_00281.ogg →
+  关闭面板后点按正常推进剧情 → 主页键确认弹窗正常。
+- 注意：该 AVD 有宿主侧遗留 root 脚本周期性拉起 ScummVM 干扰前台（`am_proc_start from uid 0`），
+  与本项目无关；ARM 转译镜像必须 `adb install -r --abi arm64-v8a` 否则 :artemis.clean 进程缺
+  libartemis_audio_bridge.so 崩溃。
+
+## 2026-10-05 会话（一）：提取/制卡功能线整体移植（分支 feat/extract-suite，4+1 提交）
 
 背景：把本地仓库 Tyranor-Next（同源项目）的「游戏内提取 + 制卡」功能线整体移植到 VNLingo
 （上游最新 fork，基线在提取功能线之前）。原则：**只增不删**（上游既有功能全保留）、
@@ -55,5 +118,6 @@
 
 ## 进行中 ⏸
 
-- `feat/extract-suite` 分支 5 个提交未推送（推送到 FantasyzeroXYZ/VNLingo 由用户决定）。
-- 产品调整计划见 `待办.txt`（去首页导航、引擎并入设置页、词典页入底栏、裁剪引擎支持范围）。
+- `feat/extract-suite` 分支本次新增 3 个提交（Artemis 修复 / 导航与裁剪 / 手柄重映射）未推送。
+- 遗留：packed Artemis 游戏语音字节不可播（需内核侧语音副本机制）；官方 revision 内核无提取；
+  外置模拟器（PPSSPP/Eden/Winlator）基础设施代码保留但无入口。
