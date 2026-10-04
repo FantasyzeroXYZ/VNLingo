@@ -4,6 +4,37 @@
 > `docs/游戏内提取制卡功能方案.md`（提取功能线方案）阅读。
 > 更新时间：2026-10-05
 
+## 2026-10-05 会话（三）：KRKR 文本提取基建（分支 feat/extract-suite）
+
+目标「让 krkr 所有版本支持文本读取」。结论：**接收端全链路就绪，对白数据源仍需带钩内核**
+（krkr2-main 源码构建；本仓与本地 Tyranor-Next 仓的 libgame*.so 均无提取导出）。
+
+### 已落地
+
+- **接收端补全**：KRKR 宿主（KirikiroidLauncherBaseActivity，覆盖 1.3.9/1.3.4/1.2.6）此前只建了
+  facade 没装面板——现于游戏揭晓后把 OnsExtractPanel + 右缘按键组装入 mFrameLayout 顶层
+  （主线程，遮罩动画结束后），dispatchKeyEvent 前置 GamepadRemap + 面板按键路由。
+  模拟器实测：kazurauta（KAG3.32）游戏内按键组/设置弹窗/面板本体均正常。
+- **Label::setString 钩子**（krkr_extract_hook.cpp，随 libkrkr_bridge_v2 构建）：三版本导出
+  同名符号；shadowhook inline hook 在 :kirikiri2 进程对插件目录 dlopen 的内核不可用
+  （errno=12 "Init linker mod failed"），退 **Label 虚表补丁**（mprotect 改 RELRO 槽，
+  slotIndex=173 实测），控制台文本→NativeBridge.onKrkrText→OnsExtractBridge 全链路实测通过。
+- **TJS 发射器 v8**（krExtractEmitterScriptV8，设置 kr_extract_tjs 开启时随 patch.tjs 注入）：
+  包装 KAGParser 把对白以 [TNEXT] 标记发往 Debug.message 控制台；Java 侧 onKrkrText 仅放行
+  [TNEXT] 行。**实测 kazurauta 开启后引导期 SIGSEGV（KAGParser 全局替换引发，与历史结论
+  一致）——默认关闭，标注实验性**；Ex 插件游戏（KAGParserEx）不受替换影响（无提取亦无风险）。
+- 探针结论（诊断代码保留）：GdipDrawString 零调用（GOT 钩子验证）；层文本渲染完全走内部
+  FreeType 管线（符号未导出、调用不走 PLT），运行时不可拦截。
+
+### 未解（下次会话从这里看）
+
+- 对白数据源 = 带 extract_sink 的 krkr2 内核（krkr2-main 源码仓构建后替换 nativeplugins/
+  kirikiroid2 的 libgame*.so 并 bump pluginVersion），Java 侧零改动即生效（KR2Activity
+  .setExtractListener 已武装）。krkrsdl3 同理需要其内核带钩。
+- 模拟器干扰记录：宿主侧 root 脚本会周期拉起 com.vnlingo.app（用户自己的 VNLingo 悬浮字幕
+  应用，与本项目同名相关）与 ScummVM，且会 `pm disable` 本应用——测试前
+  `pm default-state com.tyranor.next` + force-stop 干扰应用。
+
 ## 2026-10-05 会话（二）：产品调整四项 + Artemis 两修复（分支 feat/extract-suite）
 
 执行 `待办.txt` 产品调整，按用户补充保留 Artemis 并修复其两处缺陷。全部在模拟器

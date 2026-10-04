@@ -50,6 +50,26 @@
    设备路径写 `//sdcard/ui.xml`（双斜杠），取回用 `adb pull //sdcard/ui.xml <Windows 路径>`；
    Windows python 读不了 `/tmp`，临时文件放项目内。
 
+## 移植外事实（2026-10-05 会话三新增：KRKR）
+
+- **Kirikiroid2 层文本运行时不可拦截（实证）**：cocos2d::Label::setString 只承载控制台/UI
+  （三版本同名导出 `_ZN7cocos2d5Label9setStringERKSs`，旧 GNU COW string ABI，参数首字即
+  char*）；GdipDrawString 有导出但零调用；层文本走内部 FreeType 管线（符号未导出且 FT 调用
+  不经 PLT，GOT 钩子无效）。**对白提取唯一可靠路径 = krkr2-main 源码带钩内核**；接收端
+  （KR2Activity.setExtractListener → OnsExtractBridge → 面板）已全链路就绪，内核替换即生效。
+- **shadowhook 在 :kirikiri2 进程对插件目录 dlopen 的内核 inline hook 失败**（errno=12
+  "Init linker mod failed"，:artemis.clean 进程同样用法则成功）——退「导出虚表 mprotect 补丁」
+  （Label vtable 槽扫描匹配 dlsym 地址后改槽，slotIndex=173）。
+- **TJS 发射器（patch.tjs 包装 KAGParser）在 KAG3.32（kazurauta）引导期 SIGSEGV 复现**——
+  `global.KAGParser = 子类` 赋值即崩；设置 kr_extract_tjs 默认关、标注实验性。
+- **模拟器宿主侧 root 脚本干扰升级**：周期拉起 com.vnlingo.app（用户自己的 VNLingo 悬浮字幕
+  Android 应用！与本项目同名）与 ScummVM，还会 `pm disable` com.tyranor.next——表现为
+  「Activity class does not exist」；用 `pm default-state com.tyranor.next` 恢复，
+  干扰应用可 `pm disable-user`（会被脚本还原）或 `pm uninstall -k --user 0`（会破坏 PMS
+  活动索引 → 同类「does not exist」，重启模拟器无效，需 `cmd package install-existing` 还原）。
+- **进程活着时勿用 run-as 改 SharedPreferences XML**——进程内存态会在下次写回时覆盖外部修改；
+  先 `am force-stop` 再改。
+
 ## 移植外事实（2026-10-05 会话二新增）
 
 - **随包 Artemis 内核（含 libartemis-clean.so）均无 extract_bridge 发射器**：`llvm-nm -D`
