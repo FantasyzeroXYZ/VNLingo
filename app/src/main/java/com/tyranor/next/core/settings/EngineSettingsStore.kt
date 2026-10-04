@@ -561,7 +561,8 @@ object EngineSettingsStore {
         var disableVideo: Boolean = false,
         var sharpness: Boolean = false,
         var sharpnessValue: String = "2",
-        var encoding: String = "gbk",
+        // "auto"（按游戏目录探测，见 engine OnsEncodingDetect）/ gbk / sjis / utf8
+        var encoding: String = "auto",
     ) {
         fun toJson(): String =
             JSONObject()
@@ -596,6 +597,7 @@ object EngineSettingsStore {
     fun saveOns(c: Context, o: Ons) = onsPrefs(c).edit().putString("gameargs", o.toJson()).apply()
 
     fun normalizeEncoding(v: String): String = when (v.trim().lowercase()) {
+        "auto" -> "auto"
         "utf8", "utf-8" -> "utf8"
         "sjis", "shift-jis", "shift_jis" -> "sjis"
         else -> "gbk"

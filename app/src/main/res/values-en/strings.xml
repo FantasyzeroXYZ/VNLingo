@@ -114,6 +114,15 @@
     <string name="engine_module_installed">Module installed</string>
     <string name="engine_module_download">Download</string>
     <string name="engine_module_not_installed">Module not installed</string>
+    <string name="engine_runtime_enabled">Enabled</string>
+    <string name="engine_runtime_disabled">Disabled</string>
+    <string name="engine_runtime_not_installed">Not installed</string>
+    <string name="engine_runtime_action_toggle_on">Enable runtime</string>
+    <string name="engine_runtime_action_toggle_off">Disable runtime</string>
+    <string name="engine_runtime_action_uninstall">Uninstall runtime</string>
+    <string name="engine_runtime_uninstall_summary">Re-download or import after uninstall to restore</string>
+    <string name="engine_runtime_uninstall_confirm">Games on %1$s will not launch after uninstalling — restore by re-downloading or re-importing the runtime. Uninstall?</string>
+    <string name="engine_runtime_uninstalled">%1$s uninstalled</string>
     <string name="engine_desc_kirikiri">Kirikiroid2 / krkrsdl3 games using .xp3 and startup.tjs</string>
     <string name="engine_desc_ons">ONScripter games using nscript.dat and .nsa archives</string>
     <string name="engine_desc_tyrano">TyranoBuilder games using index.html and tyrano/ scripts</string>
@@ -222,7 +231,8 @@
     <string name="game_cover_source_generic_summary">Search this source</string>
     <string name="game_launch_file_empty">No xp3 or exe files found in this folder</string>
 
-    <string name="home_recent_empty">No recently opened games</string>
+    <string name="home_recent_empty">No recent games</string>
+    <string name="screenshots_entry_subtitle">View, share and delete in-game screenshots</string>
     <string name="home_quick_launch">Quick launch</string>
     <string name="home_empty_slot_content_description">Empty slot</string>
 
@@ -648,4 +658,19 @@
     <string name="pc_add_duplicate">This folder is already in the library</string>
     <string name="pc_add_failed">Failed to add, please retry</string>
     <string name="game_cover_flow_caption">%1$s - %2$s</string>
+    <string name="play_stats_title">Play stats</string>
+    <string name="screenshots_title">Screenshots</string>
+    <string name="screenshots_empty">No screenshots yet</string>
+    <string name="screenshots_empty_hint">Tap the Screenshot button on the right edge in game to capture</string>
+    <string name="screenshots_count">%1$d shots</string>
+    <string name="screenshots_share">Share</string>
+    <string name="screenshots_delete">Delete</string>
+    <string name="play_stats_total">Total</string>
+    <string name="play_stats_week">This week</string>
+    <string name="play_stats_month">This month</string>
+    <string name="play_stats_empty">No play records yet</string>
+    <string name="play_stats_unit_min">%1$d min</string>
+    <string name="play_stats_unit_hour">%1$.1f h</string>
+    <string name="plugin_not_installed">This engine runtime has been uninstalled — re-download or restore it from the Engines page</string>
+    <string name="plugin_runtime_disabled">Engine plugin is disabled — re-enable it on the Engines page</string>
 </resources>

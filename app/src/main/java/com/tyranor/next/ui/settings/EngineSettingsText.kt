@@ -100,8 +100,14 @@ internal fun krFpsOptions(): List<Pair<String, String>> =
 internal fun onsSharpnessOptions(): List<Pair<String, String>> =
     listOf("1" to "1.0", "2" to "2.0", "3" to "3.0", "4" to "4.0", "5" to "5.0")
 
+@Composable
 internal fun onsEncodingOptions(): List<Pair<String, String>> =
-    listOf("gbk" to "GBK", "sjis" to "Shift-JIS", "utf8" to "UTF-8")
+    listOf(
+        "auto" to stringResource(R.string.common_auto),
+        "gbk" to "GBK",
+        "sjis" to "Shift-JIS",
+        "utf8" to "UTF-8",
+    )
 
 @Composable
 internal fun artVersionOptions(): List<Pair<String, String>> = listOf(
@@ -237,6 +243,7 @@ internal fun krTexSizeOptionsMap(): Map<String, String> = krTexSizeOptions().toM
 internal fun krFpsOptionsMap(): Map<String, String> =
     krFpsOptions().filterNot { it.first.isEmpty() }.toMap()
 
+@Composable
 internal fun onsEncodingOptionsMap(): Map<String, String> = onsEncodingOptions().toMap()
 
 @Composable

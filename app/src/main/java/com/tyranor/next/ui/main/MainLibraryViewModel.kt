@@ -220,12 +220,18 @@ class MainLibraryViewModel(application: Application) : AndroidViewModel(applicat
 
     /** 扫描放在 viewModelScope/FIFO 队列中，离开游戏页或 Activity 重建时不会由页面 Scope 取消。 */
     fun scanLibrary() {
+        Log.i(TAG, "scanLibrary requested scanning=${_uiState.value.scanning} " +
+                "scrapeRunning=${CoverScrapeTaskManager.state.value.running}")
         if (_uiState.value.scanning || CoverScrapeTaskManager.state.value.running) return
         val revision = stateRevision.incrementAndGet()
         _uiState.update { it.copy(scanning = true) }
         enqueuePersistence(revision = revision, finishesScan = true) {
+            Log.i(TAG, "scan job started")
             if (GameLibraryFacade.loadRoots(appContext).isNotEmpty()) {
                 EngineScanner.rescanLibrary(appContext)
+                Log.i(TAG, "scan job finished")
+            } else {
+                Log.i(TAG, "scan job skipped: no roots")
             }
         }
     }

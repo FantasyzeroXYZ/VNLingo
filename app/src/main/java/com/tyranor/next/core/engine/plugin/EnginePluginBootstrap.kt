@@ -3,6 +3,7 @@ package com.tyranor.next.core.engine.plugin
 import android.content.Context
 import android.content.SharedPreferences
 import com.core.engine.EnginePrefs
+import com.core.engine.runtime.GameRuntime
 import com.core.nativeplugin.NativePluginConstants
 import com.core.nativeplugin.NativePluginInstallState
 import com.core.nativeplugin.NativePluginManager
@@ -61,16 +62,42 @@ object EnginePluginBootstrap {
         data class UnknownEngine(val engineId: String) : Failure
 
         data object InstallFailed : Failure
+
+        /** 用户已卸载该运行时且未重新安装：引导 UI 去下载/恢复，而非静默重装。 */
+        data object NotInstalled : Failure
+
+        /** 用户已停用该运行时：引导 UI 去引擎页重新启用，而非静默重启用。 */
+        data object Disabled : Failure
     }
 
-    /** 幂等：仅对尚未安装的引擎执行一次复制。每次应用启动调用开销极低。 */
+    /** 幂等：仅对尚未安装的引擎执行一次复制。每次应用启动调用开销极低。
+     *  用户显式卸载（removed）的运行时不再自动还原，见 GameRuntimeCatalog。 */
     @JvmStatic
     fun provisionIfNeeded(context: Context) {
         val app = context.applicationContext
         for (spec in engines) {
+            val runtime = runtimeForEngineId(spec.engineId) ?: continue
+            if (GameRuntime.Store.isRemoved(app, runtime)) continue
             provisionEngineIfNeeded(app, spec, requireEnabled = false)
         }
     }
+
+    /** 卸载运行时（删除实体 + 标记 removed）；恢复需重新下载/导入。 */
+    @JvmStatic
+    fun uninstall(context: Context, engineId: String): Boolean {
+        val runtime = runtimeForEngineId(engineId) ?: return false
+        runtime.uninstall(context)
+        return true
+    }
+
+    /** 清除 removed 标记（下载/导入完成后调用，恢复自动保障）。 */
+    @JvmStatic
+    fun markRestored(context: Context, engineId: String) {
+        runtimeForEngineId(engineId)?.let { GameRuntime.Store.setRemoved(context, it, false) }
+    }
+
+    private fun runtimeForEngineId(engineId: String) =
+        GameRuntime.byNativeEngineId(engineId)
 
     /** 启动前同步保障：对应引擎插件必须已安装、已启用且文件完整。 */
     @JvmStatic
@@ -101,6 +128,13 @@ object EnginePluginBootstrap {
         val app = context.applicationContext
         val spec = engines.firstOrNull { it.engineId == engineId }
             ?: return Failure.UnknownEngine(engineId)
+        val runtime = runtimeForEngineId(engineId)
+        if (runtime != null && GameRuntime.Store.isRemoved(app, runtime)) {
+            return Failure.NotInstalled
+        }
+        if (runtime != null && runtime.installState(app) == NativePluginInstallState.INSTALLED_DISABLED) {
+            return Failure.Disabled
+        }
         return if (provisionEngineIfNeeded(app, spec, requireEnabled = true)) {
             null
         } else {
@@ -121,13 +155,10 @@ object EnginePluginBootstrap {
             markInstalled(prefs, spec, enabled = true, version = bundledVersion)
             return true
         }
-        if (!requireEnabled && state == NativePluginInstallState.INSTALLED_DISABLED && !outdated) {
+        if (state == NativePluginInstallState.INSTALLED_DISABLED && !outdated) {
+            // 用户显式停用：维持停用，不随引导期/启动预检悄悄重启（启动预检已返回 Disabled）
             markInstalled(prefs, spec, enabled = false, version = bundledVersion)
-            return true
-        }
-        if (requireEnabled && state == NativePluginInstallState.INSTALLED_DISABLED && !outdated) {
-            markInstalled(prefs, spec, enabled = true, version = bundledVersion)
-            return isReady(app, spec.engineId)
+            return false
         }
         if (outdated) {
             android.util.Log.i(TAG, "re-provision ${spec.engineId}: version $installedVersion -> $bundledVersion")
@@ -136,7 +167,9 @@ object EnginePluginBootstrap {
             val target = currentDirFor(app, spec.engineId)
             if (target.exists()) target.deleteRecursively()
             extractPluginZip(app, spec.engineId, target)
-            markInstalled(prefs, spec, enabled = true, version = bundledVersion)
+            // 重新解压后保留用户启停意图（requireEnabled 仅来自启动预检，且预检已先拦截停用态）
+            val enabledAfter = requireEnabled || state == NativePluginInstallState.INSTALLED_ENABLED
+            markInstalled(prefs, spec, enabled = enabledAfter, version = bundledVersion)
             val ready = isReady(app, spec.engineId)
             if (ready) {
                 android.util.Log.i(TAG, "provisioned native plugin: ${spec.engineId}")

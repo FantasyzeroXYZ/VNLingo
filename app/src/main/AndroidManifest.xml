@@ -59,6 +59,12 @@
         </provider>
 
         <activity
+            android:name=".ui.stats.PlayStatsActivity"
+            android:exported="false" />
+        <activity
+            android:name=".ui.screenshots.ScreenshotManagerActivity"
+            android:exported="false" />
+        <activity
             android:name=".ui.archive.ArchiveUnpackActivity"
             android:exported="false" />
         <activity

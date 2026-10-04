@@ -21,6 +21,8 @@ object EngineSettingsResolver {
         fun str(key: String): String? = if (override.has(key)) override.optString(key) else null
         fun bool(key: String): Boolean? = if (override.has(key)) override.optBoolean(key) else null
 
+        android.util.Log.i("EngineSettingsResolver",
+                "resolve uri=" + game.uri + " override=" + override + " engine=" + game.engine)
         val removableStorage = gameDir?.let { GamePathUtils.isRemovableStoragePath(it) } == true
         val onsGlobal = EngineSettingsStore.loadOns(app)
         val onsOverride = PerGameSettingsStore.toOnsOverride(override.optJSONObject(PerGameSettingsStore.ONS_KEY))

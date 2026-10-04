@@ -28,6 +28,7 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.pager.HorizontalPager
 import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material3.Icon
@@ -256,6 +257,17 @@ fun HomeScreen(
                         quickLaunch = quickLaunch,
                         onGameClick = { selectedGame = it },
                         onGameLongClick = { launchGame(it) },
+                    )
+                }
+                // 截图管理入口：游戏内「截图」键产出的截图统一在此查看/分享/删除
+                item(key = "screenshots_entry", contentType = "screenshots_entry") {
+                    ScreenshotManagerEntry(
+                        onClick = {
+                            startActivityWithPageTransition(
+                                context,
+                                com.tyranor.next.ui.screenshots.ScreenshotManagerActivity.createIntent(context),
+                            )
+                        },
                     )
                 }
                 items(
@@ -590,6 +602,43 @@ private fun QuickLaunchEmptyCard(modifier: Modifier = Modifier) {
 
 /** 最近打开列表项：圆角长矩形，左侧统一图标 + 游戏名，右侧打开时间；交互与游戏页统一——点按开菜单、长按直启；向左滑动约 1/6 露出独立删除按钮，点击直接移除该条记录。 */
 @OptIn(ExperimentalFoundationApi::class)
+/** 截图管理入口行：与最近打开行同视觉（白卡 + 描边），点击打开截图管理页。 */
+@Composable
+private fun ScreenshotManagerEntry(onClick: () -> Unit) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(AppComponentShape)
+            .background(NavWhite)
+            .glassBorder()
+            .clickable(onClick = onClick)
+            .padding(horizontal = 16.dp, vertical = 14.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Column(Modifier.weight(1f)) {
+            Text(
+                stringResource(R.string.screenshots_title),
+                style = MaterialTheme.typography.titleMedium,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
+            Text(
+                stringResource(R.string.screenshots_entry_subtitle),
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+                modifier = Modifier.padding(top = 2.dp),
+            )
+        }
+        Icon(
+            imageVector = Icons.AutoMirrored.Filled.KeyboardArrowRight,
+            contentDescription = null,
+            tint = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+    }
+}
+
 @Composable
 private fun RecentGameRow(
     game: ScanGame,

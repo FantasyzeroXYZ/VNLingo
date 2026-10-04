@@ -32,6 +32,7 @@ import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Cancel
 import androidx.compose.material.icons.filled.CheckCircle
@@ -56,6 +57,8 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.compose.LifecycleEventEffect
 import com.tyranor.next.R
+import com.core.engine.runtime.GameRuntime
+import com.core.nativeplugin.NativePluginInstallState
 import com.tyranor.next.core.engine.EngineType
 import com.tyranor.next.core.engine.external.EmulatorLaunchStyle
 import com.tyranor.next.core.engine.external.ExternalEmulatorLauncher
@@ -107,11 +110,17 @@ fun EngineScreen(modifier: Modifier = Modifier) {
     var showExternalJumpDialog by remember { mutableStateOf(false) }
     // YU-RIS 等「引擎专属外置运行时」弹窗：只列该引擎的目标（如 Winlator），标题与内置版本弹窗同构
     var emulatorDialogEngine by remember { mutableStateOf<EngineType?>(null) }
+    // 可拆卸 Native 运行时实时状态（行状态与弹窗管理操作共用）；卸载确认按引擎挂起
+    var runtimeStates by remember {
+        mutableStateOf(refreshRuntimeStates(context))
+    }
+    var uninstallConfirmEngine by remember { mutableStateOf<EngineType?>(null) }
 
     LifecycleEventEffect(Lifecycle.Event.ON_RESUME) {
         externalInstallStates = refreshExternalInstallStates(context, engines)
         moduleStates = refreshModuleStates(context)
         emulatorInstallStates = refreshEmulatorInstallStates(context)
+        runtimeStates = refreshRuntimeStates(context)
         ppssppVersion = EngineSettingsStore.getPpssppVersion(context)
     }
 
@@ -172,6 +181,7 @@ fun EngineScreen(modifier: Modifier = Modifier) {
             ) { engine ->
                 val module = ExternalEngineModuleRegistry.moduleForEngine(engine)
                 val emulator = ExternalEmulatorRegistry.forEngine(engine)
+                val runtimeState = nativeRuntimeByEngine[engine]?.let { runtimeStates[engine] }
                 val installed = when {
                     module != null -> externalInstallStates[engine] == true
                     emulator != null -> {
@@ -183,6 +193,7 @@ fun EngineScreen(modifier: Modifier = Modifier) {
                         }
                         emulatorInstallStates[pkg] == true
                     }
+                    runtimeState != null -> runtimeState == NativePluginInstallState.INSTALLED_ENABLED
                     else -> true
                 }
                 val statusRes = when {
@@ -192,6 +203,9 @@ fun EngineScreen(modifier: Modifier = Modifier) {
                     emulator != null ->
                         if (installed) R.string.engine_emulator_installed else R.string.engine_emulator_not_installed
 
+                    runtimeState == NativePluginInstallState.INSTALLED_DISABLED -> R.string.engine_runtime_disabled
+                    runtimeState == NativePluginInstallState.INSTALLED_ENABLED -> R.string.engine_runtime_enabled
+                    runtimeState != null -> R.string.engine_runtime_not_installed
                     else -> R.string.engine_integrated
                 }
                 EngineRow(
@@ -261,10 +275,82 @@ fun EngineScreen(modifier: Modifier = Modifier) {
                             moduleDialogEngine = null
                         }
                     }
+
+                    // 可拆卸 Native 运行时管理：启停 + 卸载（卸载需确认，恢复走重新下载/导入）
+                    nativeRuntimeByEngine[dialogEngine]?.let { runtime ->
+                        val currentState = runtimeStates[dialogEngine] ?: runtime.installState(context)
+                        if (currentState == NativePluginInstallState.INSTALLED_ENABLED ||
+                            currentState == NativePluginInstallState.INSTALLED_DISABLED
+                        ) {
+                            val disabled = currentState == NativePluginInstallState.INSTALLED_DISABLED
+                            AppNavItem(
+                                title = stringResource(
+                                    if (disabled) R.string.engine_runtime_action_toggle_on
+                                    else R.string.engine_runtime_action_toggle_off,
+                                ),
+                                summary = stringResource(
+                                    if (disabled) R.string.engine_runtime_disabled
+                                    else R.string.engine_runtime_enabled,
+                                ),
+                                leadingIcon = R.drawable.ic_engine_chip,
+                                containerColor = DialogItemSurface,
+                            ) {
+                                runtime.setEnabled(context, disabled)
+                                runtimeStates = refreshRuntimeStates(context)
+                            }
+                            AppNavItem(
+                                title = stringResource(R.string.engine_runtime_action_uninstall),
+                                summary = stringResource(R.string.engine_runtime_uninstall_summary),
+                                leadingIcon = R.drawable.ic_engine_chip,
+                                containerColor = DialogItemSurface,
+                            ) {
+                                uninstallConfirmEngine = dialogEngine
+                            }
+                        }
+                    }
                 }
             },
             // 不放取消按钮：点击条目或遮罩即关闭（confirmButton 槽位必填，传空）
             confirmButton = {},
+        )
+    }
+
+    // 运行时卸载确认：删除实体并落 removed 用户意图（引导期不再自动还原），恢复走重新下载/导入
+    uninstallConfirmEngine?.let { confirmEngine ->
+        AppAlertDialog(
+            onDismissRequest = { uninstallConfirmEngine = null },
+            title = {
+                Text(
+                    stringResource(R.string.engine_runtime_action_uninstall),
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.Bold,
+                    color = MaterialTheme.colorScheme.onSurface,
+                )
+            },
+            text = {
+                Text(
+                    stringResource(R.string.engine_runtime_uninstall_confirm, engineDisplayName(confirmEngine)),
+                    style = MaterialTheme.typography.bodyMedium,
+                )
+            },
+            confirmButton = {
+                TextButton(onClick = {
+                    nativeRuntimeByEngine[confirmEngine]?.uninstall(context)
+                    Toast.makeText(
+                        context,
+                        context.getString(R.string.engine_runtime_uninstalled, engineDisplayName(confirmEngine)),
+                        Toast.LENGTH_SHORT,
+                    ).show()
+                    runtimeStates = refreshRuntimeStates(context)
+                    uninstallConfirmEngine = null
+                    moduleDialogEngine = null
+                }) { Text(stringResource(R.string.common_confirm)) }
+            },
+            dismissButton = {
+                TextButton(onClick = { uninstallConfirmEngine = null }) {
+                    Text(stringResource(R.string.common_cancel))
+                }
+            },
         )
     }
 
@@ -579,6 +665,20 @@ private fun engineDescription(engine: EngineType): String = when (engine) {
     EngineType.NINTENDO_SWITCH -> stringResource(R.string.engine_desc_nintendo_switch)
     EngineType.UNKNOWN -> stringResource(R.string.engine_desc_unknown)
 }
+
+/** 可拆卸 Native 运行时 ↔ 引擎类型映射：行状态与启停/卸载操作的数据源。
+ *  Web 资源包运行时（rpgmv overlay）宿主尚未接入 WebRuntimeAssets，暂保持「已集成」展示。 */
+private val nativeRuntimeByEngine: Map<EngineType, GameRuntime> = mapOf(
+    EngineType.KIRIKIRI to GameRuntime.KIRIKIROID2,
+    EngineType.ONS to GameRuntime.ONS,
+    EngineType.ARTEMIS to GameRuntime.ARTEMIS,
+)
+
+/** 各 Native 运行时的实时安装状态（行状态与弹窗管理操作共用）。 */
+private fun refreshRuntimeStates(context: android.content.Context): Map<EngineType, NativePluginInstallState> =
+    nativeRuntimeByEngine.keys.associateWith { engine ->
+        nativeRuntimeByEngine[engine]?.installState(context) ?: NativePluginInstallState.NOT_INSTALLED
+    }
 
 private fun refreshExternalInstallStates(
     context: android.content.Context,

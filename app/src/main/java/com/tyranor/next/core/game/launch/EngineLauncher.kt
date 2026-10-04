@@ -721,7 +721,14 @@ object EngineLauncher {
                 args.add(if (path.endsWith("/")) "${path}default.ttf" else "$path/default.ttf")
                 args.add(if (ons.stretchFull) "--fullscreen2" else "--fullscreen")
                 if (ons.disableVideo) args.add("--no-video")
-                args.add("--enc:" + EngineSettingsStore.normalizeEncoding(ons.encoding))
+                // 编码：auto 时按游戏目录探测（日文 SJIS / 中文 GBK / UTF-8），
+                // 探测失败回退 gbk（历史默认，保证既有中文游戏不受影响）。
+                val onsEnc = EngineSettingsStore.normalizeEncoding(ons.encoding)
+                args.add(
+                    "--enc:" + if (onsEnc == "auto") {
+                        com.core.ons.OnsEncodingDetect.detect(path) ?: "gbk"
+                    } else onsEnc,
+                )
                 val saveDir = if (ons.scopedSaveDir) {
                     val external = context.getExternalFilesDir(null) ?: context.filesDir
                     File(File(external, "save"), File(path).name)
@@ -1505,11 +1512,10 @@ object EngineLauncher {
         val force = mode == EngineSettingsStore.KR_PATCH_OVERLAY_FORCE
         val includeBasicPatch = force || cleanup?.hadUserContent != true
         val includeSteamStub = hasSteamPlugin && (force || mode == EngineSettingsStore.KR_PATCH_OVERLAY_AUTO)
-        if (!includeBasicPatch && !includeSteamStub) {
-            Log.i(TAG, "KRKR patch overlay skipped root=$engineRoot mode=$mode userPatch=true steam=false")
-            return null
-        }
-
+        // [KRKR-EXTRACT] TJS 发射器默认停用：实测全局替换 KAGParser 类会让
+        // KAG3.32 内核（kazurauta）在引导期段错误，KAGParserEx（tsukikage）
+        // 注册前不可写且延迟手段（Timer）本身致命。KRKR 文本提取改走内核
+        // 路线（krkr2-main 源码钩子）；krExtractPatchScript 保留备用。
         val additionsText = buildString {
             if (includeBasicPatch) append(krBasicPatchOverlayScript())
             if (includeSteamStub) append(krFbfSteamStubScript())
@@ -1645,6 +1651,67 @@ object EngineLauncher {
         |System.setArgument("-debugwin","no");
         |Plugins.link("kirikiroid2.dll");
         |
+    """.trimMargin()
+
+    /**
+     * [KRKR-EXTRACT] KAG 对话发射器 TJS（随 patch.tjs overlay 注入）。
+     *
+     * 包装 KAGParser 的 getNextTag：ch 文本逐字入缓冲，遇到其他标签
+     * （r 视作空格）即整句上行到 Debug.message/notice → Kirikiroid2 控制台
+     * → cocos Label::setString vtable 钩子 → onKrkrText（无磁盘 IO）。
+     * 全部 try/catch 包裹，任何失败仅放弃提取、不影响游戏。krkr2 无
+     * Debug.log 与 Dictionary.saveStructure（krkrZ 专属），勿回用。
+     *
+     * 追加内容必须纯 ASCII：Kirikiroid2 按内容探测 patch.tjs 编码，混入
+     * UTF-8 日文会改变探测结果并殃及后续 SJIS 游戏脚本的解码
+     * （实测 tsukikage 因此在 execStorage("Storages.tjs") 处报
+     * 「无法转换字节字符为宽字符」）。ASCII 探针不走 Java 捕获
+     * （Label 钩子有 CJK≥2 过滤），但经控制台直达 logcat 可诊断。
+     *
+     * 已知限制：Timer 在 Initialize 阶段实例化会使 Kirikiroid2 1.3.9 段错误
+     * （fault addr 0x128，kazurauta/tsukikage 双游戏复现），故不做任何延迟
+     * 替换。KAGParserEx（tsukikage 等 Ex 游戏使用）由插件注册且注册前
+     * 不可写，顶层替换抛异常被弃用 —— Ex 游戏与无 patch.tjs 通道的游戏
+     * 需内核路线（krkr2-main 源码钩子）。kazurauta（plain KAGParser）已
+     * 实测可走本通道。
+          */
+    private fun krExtractPatchScript(): String = """
+        |
+        |
+        |// TYRANOR_NEXT_KRKR_EXTRACT_V7
+        |class TNExtP extends KAGParser {
+        |  var tnBuf = "";
+        |  var tnProbed = false;
+        |  function tnEmit() {
+        |    if (tnBuf == "") return;
+        |    var s = tnBuf;
+        |    tnBuf = "";
+        |    try {
+        |      Debug.message(s);
+        |    } catch(e) {
+        |      try { Debug.notice(s); } catch(e2) {}
+        |    }
+        |  }
+        |  function getNextTag() {
+        |    if (!tnProbed) {
+        |      tnProbed = true;
+        |      try { Debug.message("[TNEXTv7-armed]"); } catch(e) {}
+        |    }
+        |    var d = super.getNextTag();
+        |    if (d === void) { tnEmit(); return d; }
+        |    var tn = d.tagname;
+        |    if (tn == "ch") {
+        |      tnBuf += d.text;
+        |    } else {
+        |      if (tn == "r") { tnBuf += " "; }
+        |      tnEmit();
+        |    }
+        |    return d;
+        |  }
+        |}
+        |// KAGPARSER_ASSIGN_DISABLED_BISECT
+        |try { Debug.message("[TNEXTv7b-loaded-noassign]"); } catch(e) {}
+                |
     """.trimMargin()
 
     private fun krLegacyPatchScript(fontScale: Float): String = """

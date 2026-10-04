@@ -114,6 +114,15 @@
     <string name="engine_module_installed">モジュールはインストール済み</string>
     <string name="engine_module_download">ダウンロード</string>
     <string name="engine_module_not_installed">モジュール未インストール</string>
+    <string name="engine_runtime_enabled">有効</string>
+    <string name="engine_runtime_disabled">無効</string>
+    <string name="engine_runtime_not_installed">未インストール</string>
+    <string name="engine_runtime_action_toggle_on">ランタイムを有効化</string>
+    <string name="engine_runtime_action_toggle_off">ランタイムを無効化</string>
+    <string name="engine_runtime_action_uninstall">ランタイムをアンインストール</string>
+    <string name="engine_runtime_uninstall_summary">アンインストール後は再ダウンロードまたはインポートで復元します</string>
+    <string name="engine_runtime_uninstall_confirm">%1$s をアンインストールすると、このエンジンのゲームは起動できなくなります。再ダウンロードまたはインポートで復元できます。アンインストールしますか？</string>
+    <string name="engine_runtime_uninstalled">%1$s をアンインストールしました</string>
     <string name="engine_desc_kirikiri">Kirikiroid2 / krkrsdl3、.xp3 と startup.tjs のゲーム</string>
     <string name="engine_desc_ons">ONScripter、nscript.dat と .nsa アーカイブのゲーム</string>
     <string name="engine_desc_tyrano">TyranoBuilder、index.html と tyrano/ スクリプトのゲーム</string>
@@ -223,6 +232,7 @@
     <string name="game_launch_file_empty">フォルダ内に xp3 または exe ファイルが見つかりません</string>
 
     <string name="home_recent_empty">最近開いたゲームはありません</string>
+    <string name="screenshots_entry_subtitle">ゲーム内スクリーンショットの表示・共有・削除</string>
     <string name="home_quick_launch">クイック起動</string>
     <string name="home_empty_slot_content_description">空きスロット</string>
 
@@ -648,4 +658,19 @@
     <string name="pc_add_duplicate">このフォルダーは既に追加済みです</string>
     <string name="pc_add_failed">追加に失敗しました。もう一度お試しください</string>
     <string name="game_cover_flow_caption">%1$s - %2$s</string>
+    <string name="play_stats_title">プレイ統計</string>
+    <string name="screenshots_title">スクリーンショット管理</string>
+    <string name="screenshots_empty">スクリーンショットはまだありません</string>
+    <string name="screenshots_empty_hint">ゲーム中の右端「スクリーンショット」ボタンで保存できます</string>
+    <string name="screenshots_count">全 %1$d 枚</string>
+    <string name="screenshots_share">共有</string>
+    <string name="screenshots_delete">削除</string>
+    <string name="play_stats_total">合計</string>
+    <string name="play_stats_week">今週</string>
+    <string name="play_stats_month">今月</string>
+    <string name="play_stats_empty">プレイ記録はまだありません</string>
+    <string name="play_stats_unit_min">%1$d 分</string>
+    <string name="play_stats_unit_hour">%1$.1f 時間</string>
+    <string name="plugin_not_installed">このエンジンランタイムはアンインストール済みです。エンジンページから再取得してください</string>
+    <string name="plugin_runtime_disabled">エンジンプラグインが無効です。エンジンページで再度有効にしてください</string>
 </resources>

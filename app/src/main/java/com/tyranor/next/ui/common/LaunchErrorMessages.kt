@@ -35,6 +35,10 @@ private fun LaunchResult.Failure.toUserMessage(context: Context): String {
                 localized.getString(R.string.plugin_unknown_engine, reason.engineId)
             EnginePluginBootstrap.Failure.InstallFailed ->
                 localized.getString(R.string.plugin_install_failed)
+            EnginePluginBootstrap.Failure.NotInstalled ->
+                localized.getString(R.string.plugin_not_installed)
+            EnginePluginBootstrap.Failure.Disabled ->
+                localized.getString(R.string.plugin_runtime_disabled)
         }
 
         is LaunchResult.Failure.KrkrMirrorPrepareFailed ->

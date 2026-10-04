@@ -4,6 +4,10 @@
     <external-files-path
         name="update_apks"
         path="updates/" />
+    <!-- 游戏截图（getExternalFilesDir/screenshots）经 FileProvider 分享 -->
+    <external-files-path
+        name="game_screenshots"
+        path="screenshots/" />
     <files-path
         name="update_apks_internal"
         path="updates/" />
