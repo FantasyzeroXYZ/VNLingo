@@ -278,6 +278,8 @@ public class OnsExtractPanel {
         statusView.setSingleLine(true);
         statusView.setEllipsize(android.text.TextUtils.TruncateAt.MIDDLE);
         statusView.setText(activity.getString(R.string.engine_ons_extract_standby));
+        // 候选切换入口：有多来源候选时点状态行循环（0=自动，1..n=候选源）
+        statusView.setOnClickListener(v -> showCandidateDialog());
 
         // 本句视图：当前句（词元可点）+ 听力占位 + 释义区 + 翻译行
         sentenceView = new TextView(activity);
@@ -892,10 +894,59 @@ public class OnsExtractPanel {
         historyList.post(() -> historyScroller.smoothScrollTo(0, historyList.getHeight()));
     }
 
+    /** 候选显示序：0=自动(状态机还原)，1..n=候选源；按游戏持久化。 */
+    private int candidateIndex;
+    private boolean initializedCandidatePref;
+
+
+    /**
+     * 候选选择悬浮框（LunaTranslator 式「钩子后选最适配」）：
+     * 列出 自动还原 + 各候选源（截断预览），单选即生效并按游戏记忆。
+     */
+    private void showCandidateDialog() {
+        if (facade == null) return;
+        java.util.List<String> cands = facade.getSentenceCandidates();
+        if (cands.isEmpty()) {
+            toast(R.string.engine_ons_extract_candidate_none);
+            return;
+        }
+        String[] items = new String[cands.size() + 1];
+        items[0] = activity.getString(R.string.engine_ons_extract_candidate_auto);
+        for (int i = 0; i < cands.size(); i++) {
+            String c = cands.get(i);
+            items[i + 1] = (i == 0 ? activity.getString(
+                    R.string.engine_ons_extract_candidate_raw) + " " : "")
+                    + (c.length() > 32 ? c.substring(0, 32) + "…" : c);
+        }
+        new android.app.AlertDialog.Builder(activity)
+                .setTitle(R.string.engine_ons_extract_candidate_pick)
+                .setSingleChoiceItems(items, Math.min(candidateIndex, items.length - 1),
+                        (d, which) -> {
+                            candidateIndex = which;
+                            ttsPrefs().edit()
+                                    .putInt("cand_idx_" + facade.gameDisplayName(), which)
+                                    .apply();
+                            d.dismiss();
+                            refresh();
+                        })
+                .show();
+    }
+
     private void refresh() {
         ExtractFacade bridge = facade;
         String sentence = bridge.getSentenceText();
         if (sentence.isEmpty()) sentence = bridge.getPageText();
+        // 候选切换（LunaTranslator 式「选最适配」）：0=自动(状态机还原)，1..n=候选源
+        java.util.List<String> cands = bridge.getSentenceCandidates();
+        if (!initializedCandidatePref && facade != null) {
+            initializedCandidatePref = true;
+            candidateIndex = ttsPrefs()
+                    .getInt("cand_idx_" + facade.gameDisplayName(), 0);
+        }
+        if (candidateIndex > 0 && !cands.isEmpty()) {
+            String pick = cands.get(Math.min(candidateIndex - 1, cands.size() - 1));
+            if (pick != null && !pick.isEmpty()) sentence = pick;
+        }
         // 历史累计：句增量非空且非重复才入列；翻句重置听力揭示态与选词
         if (!sentence.isEmpty() && !sentence.equals(lastHistorySentence)) {
             history.add(new HistoryEntry(sentence, bridge.getVoiceName()));
@@ -927,9 +978,12 @@ public class OnsExtractPanel {
         final boolean hasTrans = transView.getTag() != null;
         main.post(() -> {
             if (!expanded) return;
-            statusView.setText(voiceName.isEmpty()
+            java.util.List<String> candsNow = facade != null
+                    ? facade.getSentenceCandidates() : java.util.Collections.emptyList();
+            statusView.setText((candsNow.size() >= 1 ? "⇄候选 " : "")
+                    + (voiceName.isEmpty()
                     ? activity.getString(R.string.engine_ons_extract_voice_none_line)
-                    : activity.getString(R.string.engine_ons_extract_voice_line, voiceName));
+                    : activity.getString(R.string.engine_ons_extract_voice_line, voiceName)));
             sentenceView.setVisibility(hideForListening ? View.GONE : View.VISIBLE);
             listeningView.setVisibility(hideForListening ? View.VISIBLE : View.GONE);
             if (hideForListening) {

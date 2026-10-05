@@ -63,6 +63,8 @@ public final class OnsExtractBridge {
     private final List<String> pendingVoices = new ArrayList<>();
     /** 当前句配对的语音名。 */
     private volatile String voiceName = "";
+    /** FT 钩子候选（KRKR 重绘链派生；空 = 无候选）。 */
+    private volatile List<String> candidates = new ArrayList<>();
     /** 配对语音字节（拉取后缓存，重播/保存用）。 */
     private volatile byte[] voiceBytes = null;
 
@@ -101,10 +103,45 @@ public final class OnsExtractBridge {
                 handleDialogue(data.optString("b64", ""));
             } else if ("sound".equals(type)) {
                 handleSound(data.optString("file", ""));
+            } else if ("candidates".equals(type)) {
+                handleCandidates(data.optString("b64", ""));
             }
         } catch (Throwable t) {
             Log.w(TAG, "onEvent parse failed", t);
         }
+    }
+
+    /**
+     * KRKR FT 钩子的原始重绘链候选（[FTRAW]）：解析出候选列表——
+     * [0]=原始链原样；[1]=最长重复后缀（最终整行重绘≈当前句真身）。
+     * 面板「候选切换」由用户选最适配的显示（LunaTranslator 式）。
+     */
+    private void handleCandidates(String b64) {
+        byte[] raw;
+        try {
+            raw = Base64.decode(b64, Base64.DEFAULT);
+        } catch (Throwable t) {
+            return;
+        }
+        String chain = new String(raw, StandardCharsets.UTF_8).trim();
+        if (chain.isEmpty()) return;
+        List<String> list = new ArrayList<>(2);
+        list.add(chain);
+        String best = longestRepeatedSuffix(chain);
+        if (best != null && !best.equals(chain)) list.add(best);
+        candidates = list;
+        Listener l = listener;
+        if (l != null) main.post(l::onExtractUpdated);
+    }
+
+    /** 最长重复后缀：suffix t（长度 k 从大到小）满足 indexOf(t) < 出现于末尾。 */
+    private static String longestRepeatedSuffix(String s) {
+        for (int k = s.length() - 1; k >= 2; k--) {
+            String t = s.substring(s.length() - k);
+            int first = s.indexOf(t);
+            if (first >= 0 && first < s.length() - k) return t;
+        }
+        return null;
     }
 
     private void handleDialogue(String b64) {
@@ -315,6 +352,11 @@ public final class OnsExtractBridge {
 
     public String getVoiceName() {
         return voiceName;
+    }
+
+    /** 候选列表（≥2 才有切换意义；ONS/Web 宿主恒空）。 */
+    public List<String> getCandidates() {
+        return candidates;
     }
 
     /** 会话内锁定的文本编码（SJIS/GBK/UTF-8），供 TTS 选择朗读语言。 */

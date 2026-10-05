@@ -70,6 +70,11 @@
     <string name="engine_ons_extract_listening_hidden">Listening mode: this line has voice audio, text is hidden — tap to show</string>
     <string name="engine_ons_extract_voice_line">♪ %1$s</string>
     <string name="engine_ons_extract_voice_none_line">♪ (no voice)</string>
+    <string name="engine_ons_extract_candidate_auto">Candidate: auto restore</string>
+    <string name="engine_ons_extract_candidate_n">Switch to next candidate</string>
+    <string name="engine_ons_extract_candidate_pick">Pick candidate text</string>
+    <string name="engine_ons_extract_candidate_none">No candidate yet (wait for next line)</string>
+    <string name="engine_ons_extract_candidate_raw">Raw stream:</string>
     <string name="engine_ons_extract_standby">Standby</string>
     <string name="engine_ons_extract_history_empty">No history yet</string>
     <string name="engine_ons_extract_dict">Dict</string>

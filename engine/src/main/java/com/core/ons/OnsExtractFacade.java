@@ -30,6 +30,10 @@ public final class OnsExtractFacade implements ExtractFacade {
     }
 
     @Override
+    public java.util.List<String> getSentenceCandidates() {
+        return OnsExtractBridge.get().getCandidates();
+    }
+
     public String getVoiceName() {
         return OnsExtractBridge.get().getVoiceName();
     }

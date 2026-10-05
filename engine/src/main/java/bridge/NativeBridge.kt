@@ -61,20 +61,29 @@ object NativeBridge {
         val message = if (m != null) m.groupValues[2] else text
         // 双通道：[TNEXT]=TJS 发射器标记行；[FTLN]=FT 字符流行（krkr_extract_hook
         // 的 FT_Load_Char 钩子按停顿切行重建，纯运行时 hook、不改内核）
+        // 三通道：[TNEXT]=TJS 发射器；[FTLN]=FT 状态机还原句；[FTRAW]=FT 原始重绘链
+        //（候选，面板可切换显示——LunaTranslator 式「选最适配」）
+        if (message.startsWith("[FTRAW]")) {
+            val raw = message.removePrefix("[FTRAW]")
+            if (raw.isNotBlank()) {
+                try {
+                    val b64 = android.util.Base64.encodeToString(
+                        raw.toByteArray(Charsets.UTF_8), android.util.Base64.NO_WRAP)
+                    val payload = "{\"type\":\"candidates\",\"payload\":{\"b64\":\"$b64\"}}"
+                    com.core.ons.OnsExtractBridge.get()
+                        .onEvent(payload.toByteArray(Charsets.UTF_8))
+                } catch (t: Throwable) {
+                    Log.w("NativeBridge", "onKrkrText candidates failed", t)
+                }
+            }
+            return
+        }
         val dialogue = when {
             message.startsWith("[TNEXT]") -> message.removePrefix("[TNEXT]").trim()
             message.startsWith("[FTLN]") -> message.removePrefix("[FTLN]").trim()
             else -> null
         }?.takeIf { it.isNotEmpty() } ?: return
         Log.i("NativeBridge", "krkr text: $dialogue")
-        try {
-            val b64 = android.util.Base64.encodeToString(
-                dialogue.toByteArray(Charsets.UTF_8), android.util.Base64.NO_WRAP)
-            val payload = "{\"type\":\"dialogue\",\"payload\":{\"b64\":\"$b64\"}}"
-            com.core.ons.OnsExtractBridge.get().onEvent(payload.toByteArray(Charsets.UTF_8))
-        } catch (t: Throwable) {
-            Log.w("NativeBridge", "onKrkrText failed", t)
-        }
     }
 
     /**

@@ -26,6 +26,7 @@
 
 #include <atomic>
 #include <chrono>
+#include <thread>
 #include <cerrno>
 #include <cstring>
 #include <string>
@@ -287,9 +288,23 @@ bool ftEndsWithTerminal(const std::string& s) {
     return false;
 }
 
+std::atomic<bool> gFlushThreadRunning{false};
+
+void flushTimerLoop() {
+    while (gFlushThreadRunning.load(std::memory_order_relaxed)) {
+        std::this_thread::sleep_for(std::chrono::milliseconds(100));
+        const auto now = std::chrono::steady_clock::now();
+        std::lock_guard<std::mutex> lock(gLineMutex);
+        if (!gKnown.empty() && now - gLastCharAt > std::chrono::milliseconds(300)) {
+            flushLineLocked();
+        }
+    }
+}
+
 void flushLineLocked() {
     if (gKnown.empty() && gRawBuf.empty()) return;
-    // raw 流：重绘链原样（离线调试还原算法用）；gKnown：状态机还原结果
+    // raw 流：重绘链原样；gKnown：状态机还原结果。两者都上行——
+    // 面板提供「候选切换」（LunaTranslator 式），用户选最适配的显示
     LOGI("ft raw : %s", gRawBuf.c_str());
     if (!gKnown.empty()) {
         std::string line;
@@ -299,7 +314,14 @@ void flushLineLocked() {
         LOGI("ft line: %s", line.c_str() + 6);
         emitText(line.c_str());
     }
-    gRawBuf.clear();
+    if (!gRawBuf.empty()) {
+        std::string raw;
+        raw.swap(gRawBuf);
+        raw.insert(0, "[FTRAW]");
+        emitText(raw.c_str());
+    } else {
+        gRawBuf.clear();
+    }
 }
 
 unsigned long hookedFTGetCharIndex(void* face, unsigned long code) {
@@ -447,6 +469,10 @@ extern "C" bool krkr_install_ft_probe(void* gameHandle, const char* library) {
         return false;
     }
     gOrigFTGetCharIndex = reinterpret_cast<FTGetCharIndexFn>(orig);
+    // 主动结算线程：进程生命周期常驻（detach），保证点击等待期面板也刷新
+    if (!gFlushThreadRunning.exchange(true)) {
+        std::thread(flushTimerLoop).detach();
+    }
     LOGI("ft probe GOT hooked (FT_Get_Char_Index)");
     return true;
 }

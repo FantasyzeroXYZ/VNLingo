@@ -41,6 +41,10 @@ public class KrkrExtractFacade implements ExtractFacade {
         return OnsExtractBridge.get().getPageText();
     }
 
+    @Override public java.util.List<String> getSentenceCandidates() {
+        return OnsExtractBridge.get().getCandidates();
+    }
+
     @Override public String getVoiceName() {
         // KRKR 语音钩子（WaveSoundBuffer）待实现；当前恒空（面板 ♪ 无语音）
         return "";

@@ -70,6 +70,11 @@
     <string name="engine_ons_extract_listening_hidden">リスニングモード：このセリフには音声があるため、テキストを非表示にしています。タップで表示</string>
     <string name="engine_ons_extract_voice_line">♪ %1$s</string>
     <string name="engine_ons_extract_voice_none_line">♪（音声なし）</string>
+    <string name="engine_ons_extract_candidate_auto">候補: 自動復元</string>
+    <string name="engine_ons_extract_candidate_n">次の候補に切替</string>
+    <string name="engine_ons_extract_candidate_pick">候補テキストを選択</string>
+    <string name="engine_ons_extract_candidate_none">候補なし（次の行を待つ）</string>
+    <string name="engine_ons_extract_candidate_raw">生ストリーム:</string>
     <string name="engine_ons_extract_standby">待機</string>
     <string name="engine_ons_extract_history_empty">履歴はまだありません</string>
     <string name="engine_ons_extract_dict">辞書</string>

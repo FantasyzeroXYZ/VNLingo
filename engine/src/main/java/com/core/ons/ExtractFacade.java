@@ -25,6 +25,14 @@ public interface ExtractFacade {
     /** 当前句配对语音名（空串表示无语音）。 */
     String getVoiceName();
 
+    /**
+     * 当前句的候选文本（多来源钩子时 ≥2，面板可切换显示；默认无候选）。
+     * LunaTranslator 式「钩子后选最适配」：KRKR FT 钩子提供原始链与派生句。
+     */
+    default java.util.List<String> getSentenceCandidates() {
+        return java.util.Collections.emptyList();
+    }
+
     /** 会话锁定编码（SJIS/GBK/UTF-8），供 TTS 选语言；web 宿主返回 UTF-8。 */
     String getLockedCharset();
 
