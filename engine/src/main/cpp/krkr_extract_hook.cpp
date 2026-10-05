@@ -219,7 +219,7 @@ void ftAppendUtf8Locked(unsigned long code) {
 }
 
 static bool ftEndsWithTerminal(const std::string& s);
-void flushLineLocked();
+void deriveAndMaybeEmitLocked();
 
 void ftFeedCharLocked(unsigned long code) {
     if (gPassIdx >= gKnown.size()) {
@@ -290,13 +290,77 @@ bool ftEndsWithTerminal(const std::string& s) {
 
 std::atomic<bool> gFlushThreadRunning{false};
 
+std::string gPage;        // 累计整页（跨 flush 周期持久）
+std::string gLastEmitted; // 上次上行内容（变更才发）
+
+/**
+ * 页缓冲增量模型（核心）：在原始链里 rfind 已知页——
+ * 找到 → 其后即是新打字符的增量，拼接（打字机换行后重绘只查新段，
+ * 这是唯一能拿全上/下行的方式）；
+ * 页在链中但无增量 → 无事；
+ * 页不在链中 → 翻页（旧页已被滚出窗口/点击推进），重置页与原始链。
+ */
+std::string ftDerivePage(const std::string& raw);
+
+void deriveAndMaybeEmitLocked(bool force) {
+    if (gRawBuf.empty()) return;
+    std::string derived = ftDerivePage(gRawBuf);
+    if (derived.empty()) {
+        if (!force) return;
+        derived = gRawBuf;  // 长停顿兜底：链未完成也上行（可能含半句）
+    }
+    if (!gPage.empty()) {
+        // 段拼接：本段与页尾最大重叠 → 只追加增量；无重叠 = 翻页
+        size_t o = std::min(gPage.size(), derived.size());
+        while (o > 0) {
+            if (gPage.compare(gPage.size() - o, o, derived, 0, o) == 0) break;
+            --o;
+        }
+        if (o > 0) {
+            gPage += derived.substr(o);
+        } else {
+            gPage = derived;      // 翻页
+            gRawBuf = derived;    // raw 重置到新页
+        }
+    } else {
+        gPage = derived;
+    }
+    if (gRawBuf.size() > 3000) {
+        // raw 封顶：保留最后一次页出现之后的尾部（rfind 代价受控）
+        const size_t p = gRawBuf.rfind(gPage);
+        gRawBuf.erase(0, p == std::string::npos ? gRawBuf.size() / 3 : p);
+    }
+    if (!gPage.empty() && gPage != gLastEmitted) {
+        gLastEmitted = gPage;
+        std::string out = gPage;
+        out.insert(0, "[FTLN]");
+        LOGI("ft line: %s", out.c_str() + 6);
+        emitText(out.c_str());
+        // 原始链候选同步上行（面板候选切换「原始流」数据源）
+        if (!gRawBuf.empty()) {
+            std::string raw = gRawBuf;
+            raw.insert(0, "[FTRAW]");
+            emitText(raw.c_str());
+        }
+    }
+}
+
 void flushTimerLoop() {
     while (gFlushThreadRunning.load(std::memory_order_relaxed)) {
         std::this_thread::sleep_for(std::chrono::milliseconds(100));
         const auto now = std::chrono::steady_clock::now();
         std::lock_guard<std::mutex> lock(gLineMutex);
-        if (!gKnown.empty() && now - gLastCharAt > std::chrono::milliseconds(300)) {
-            flushLineLocked();
+        const auto idle = now - gLastCharAt;
+        if (idle > std::chrono::milliseconds(3000)) {
+            // 页结束（点击推进的等待期，玩家反应 > 换行停顿）：结算并翻页
+            deriveAndMaybeEmitLocked(true);
+            gPage.clear();
+            gLastEmitted.clear();
+            gRawBuf.clear();
+        } else {
+            // 300ms~3s 的停顿 = 换行/顿号间歇：只结算当前段，页继续累计
+            //（>300ms 的 force 让未完成链也即时上行，面板实时跟进）
+            deriveAndMaybeEmitLocked(idle > std::chrono::milliseconds(300));
         }
     }
 }
@@ -322,36 +386,11 @@ std::string ftDerivePage(const std::string& raw) {
             return page;
         }
     }
-    return raw;  // 单次快照（无重绘链）
+    return {};  // 链未完成（打字中）：无重复快照，等下一轮
 }
 
-void flushLineLocked() {
-    if (gKnown.empty() && gRawBuf.empty()) return;
-    // raw 流：重绘链原样；主上行 = 从原始链推导的整页内容——
-    // 最长重复后缀 = 最后一次整窗重绘快照（含上/下行全部字符），只差最后
-    // 1-2 个刚打的字。状态机结果（单行易缺上行）降为回退。
-    LOGI("ft raw : %s", gRawBuf.c_str());
-    std::string derived = ftDerivePage(gRawBuf);
-    if (derived.empty() && !gKnown.empty()) {
-        derived.swap(gKnown);
-        gPassIdx = 0;
-    }
-    gKnown.clear();
-    gPassIdx = 0;
-    if (!derived.empty()) {
-        derived.insert(0, "[FTLN]");
-        LOGI("ft line: %s", derived.c_str() + 6);
-        emitText(derived.c_str());
-    }
-    if (!gRawBuf.empty()) {
-        std::string raw;
-        raw.swap(gRawBuf);
-        raw.insert(0, "[FTRAW]");
-        emitText(raw.c_str());
-    } else {
-        gRawBuf.clear();
-    }
-}
+// 原始链候选随页变更上行一次（面板候选切换用）：页变更时由
+// deriveAndMaybeEmitLocked 内附带；此处不再单独 flush。
 
 unsigned long hookedFTGetCharIndex(void* face, unsigned long code) {
     const unsigned long idx = gOrigFTGetCharIndex != nullptr ? gOrigFTGetCharIndex(face, code) : 0;
@@ -359,10 +398,6 @@ unsigned long hookedFTGetCharIndex(void* face, unsigned long code) {
             && code >= 0x20 && code < 0x110000 && code != gPrevCode) {
         const auto now = std::chrono::steady_clock::now();
         std::lock_guard<std::mutex> lock(gLineMutex);
-        if (!gKnown.empty()
-                && now - gLastCharAt > std::chrono::milliseconds(300)) {
-            flushLineLocked();  // 停顿结算（惰性：下一字符到达时触发）
-        }
         ftFeedCharLocked(code);
         {
             // raw 码点流累积（调试）
@@ -387,7 +422,6 @@ unsigned long hookedFTGetCharIndex(void* face, unsigned long code) {
             if (gRawBuf.size() > 2048) gRawBuf.clear();
         }
         gLastCharAt = now;
-        if (gKnown.size() >= 600) flushLineLocked();  // 超长兜底
     }
     gPrevCode = code;
     return idx;
