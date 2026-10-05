@@ -1157,8 +1157,8 @@ public class OnsExtractPanel {
                 int j = i + 1;
                 while (j < n && !Character.isWhitespace(text.charAt(j))) j++;
                 end = j;
-                i = end;
             }
+            i = end;
             final int idx = unitRanges.size();
             final int s0 = start, e0 = end;
             unitRanges.add(new int[]{s0, e0});
@@ -1335,6 +1335,8 @@ public class OnsExtractPanel {
         }
         final String voiceName = bridge.getVoiceName();
         if (sentence.isEmpty()) {
+            android.util.Log.w("OnsExtractPanel", "makeWordCard no text: sentence='"
+                    + bridge.getSentenceText() + "' page='" + bridge.getPageText() + "'");
             toast(R.string.engine_ons_extract_no_text);
             return;
         }

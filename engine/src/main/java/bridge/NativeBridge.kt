@@ -64,8 +64,10 @@ object NativeBridge {
         if (text.isNullOrBlank()) return
         // 严格 [TNEXT] 通道：仅 TJS 发射器 v8（或未来带钩内核经此路径）发出的标记行
         // 进入提取；其余 Label 文本（引擎控制台的脚本加载/调试行）一律丢弃，
-        // 避免原版内核下面板被噪音刷屏。带钩内核的正常提取走
-        // KR2Activity.setExtractListener 独立通道，不经本方法。
+        // 避免原版内核下面板被噪音刷屏。KR2Activity.setExtractListener 通道仅在
+        // krkr2-main 带钩内核（libkrkr2.so 导出 nativeSetExtractSink）下可用；
+        // 现役 Kirikiroid2 1.3.9 内核 + FT 钩子时本方法是唯一上行通道，
+        // [FTLN] 必须在此转发进提取桥（只落日志会导致面板/制卡全程拿不到文本）。
         val m = krkrConsoleLine.find(text)
         val message = if (m != null) m.groupValues[2] else text
         // 双通道：[TNEXT]=TJS 发射器标记行；[FTLN]=FT 字符流行（krkr_extract_hook
@@ -93,6 +95,15 @@ object NativeBridge {
             else -> null
         }?.takeIf { it.isNotEmpty() && hasCjk(it) } ?: return
         Log.i("NativeBridge", "krkr text: $dialogue")
+        try {
+            val b64 = android.util.Base64.encodeToString(
+                dialogue.toByteArray(Charsets.UTF_8), android.util.Base64.NO_WRAP)
+            val payload = "{\"type\":\"dialogue\",\"payload\":{\"b64\":\"$b64\"}}"
+            com.core.ons.OnsExtractBridge.get()
+                .onEvent(payload.toByteArray(Charsets.UTF_8))
+        } catch (t: Throwable) {
+            Log.w("NativeBridge", "onKrkrText dialogue forward failed", t)
+        }
     }
 
     /**

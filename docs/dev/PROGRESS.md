@@ -4,6 +4,35 @@
 > `docs/说明/游戏内提取制卡功能方案.md`（提取功能线方案）阅读。
 > 更新时间：2026-10-05
 
+## 2026-10-05 会话（七）：模拟器实测非首单位选词查词 + 实际制卡通过（三修复）
+
+- **renderSentence CJK 死循环（ANR 根因）**：CJK 分支漏了 `i = end` 推进——任何 CJK 句
+  在 setSpan 处无限循环（unitRanges/span 无限增长）拖死主线程（打字机推进即 ANR）。
+  修：`i = end` 移到两分支公共路径。实测面板正常渲染 21 字日语句，连推多行无 ANR。
+- **[FTLN] 对白只落日志、从未接入提取桥**：NativeBridge.onKrkrText 对 [FTLN] 仅 Log.i
+  （注释以为带钩内核走 KR2Activity.setExtractListener 独立通道），但现役 1.3.9 内核
+  无 nativeSetExtractSink（UnsatisfiedLinkError 静默降级），该通道永远不存在——
+  桥的 pageText/sentenceText 恒空，面板一直靠 [FTRAW] 候选兜底显示，制卡报
+  「暂无可制卡文本」，翻译/朗读同样拿不到文本。修：[FTLN] 就地转发
+  OnsExtractBridge.onEvent（dialogue 事件，与 [FTRAW] 同款 b64 装载）。
+- **打字机延伸句语义**：桥的句文本=前缀差分增量，KRKR 打字机半句→整句是前缀延伸，
+  制卡例句只剩尾部增量（实测首卡例句只有「とに、わたしも続く。」10 字）。
+  修：前缀延伸（common==旧长且新更长）时句=整句解码；新增行仍走增量语义
+  （保 ONS 多行页取末行行为）。
+- **模拟器端到端实测（kazurauta，通过）**：点选句中非首单位 続 → 递减扫描命中
+  続く【つづく】释义 → 制卡 → AnkiDroid 2.25.0 收到词卡（deck TyranorNext，
+  Word/Reading/Meaning/Sentence 四字段齐全）；第一卡暴露例句截断 → 修复后
+  第二卡复核例句=完整 21 字句。AnkiDroid 侧经 deck 列表（2 cards due）与
+  Card browser（Edit note 全字段）双重确认。
+- **测试环境搭建（可复用）**：AnkiDroid 本地无 → GitHub release 直连下载
+  AnkiDroid-2.25.0-full-universal.apk（111MB）安装；首启过 intro + All files
+  access；制卡权限 `pm grant com.tyranor.next com.ichi2.anki.permission.READ_WRITE_DATABASE`
+  （prot=dangerous，requestPermissions 系统弹窗在模拟器上未出现，pm grant 最稳）；
+  测试词典 17 词条经 `run-as com.tyranor.next sqlite3` 直插 ons_dict.db
+  （种子 SQL 在 .tmp-test/dict_seed.sql，覆盖实测句词汇）。
+- 遗留：正式词典需用户经词典页导入（Yomichan zip / jsonl）；AnkiDroid 未装/未授权
+  时当前仅 toast 提示，无引导跳转。
+
 ## 2026-10-05 会话（六）：KRKR 纯运行时 hook 对白提取（用户方向：不走内部输出）
 
 - **推翻旧结论**：此前记录「层文本渲染符号未导出、调用不走 PLT、运行时不可拦截」

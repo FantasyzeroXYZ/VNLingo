@@ -149,6 +149,35 @@
 - **手柄重映射**：GamepadRemap 快照式（宿主 onResume 刷新），映射在 dispatchKeyEvent
   最前端生效，先于提取面板/虚拟鼠标/游戏链路。
 
+## 实测踩坑（2026-10-05 会话七新增：制卡端到端实测）
+
+1. **install-debug-apk.sh 不带 `BUILD=1` 只装已构建 APK**（脚本头部有用法）；且中途
+   失败的构建会留下不一致的 up-to-date 缓存，之后"成功"的构建仍可能打包旧 dex——
+   怀疑改动没生效时用 python zipfile 逐 dex 验证特征字符串：
+   `zipfile` 读 APK → 按 `classes\d*\.dex` 逐个 `in` 判断。Git Bash 的
+   `unzip -p | strings` 在 171MB 多 dex APK 上会漏报/误报，不可作判据。
+2. **KRKR 1.3.9 内核的 sink 通道永远不存在**：KR2Activity.setExtractListener →
+   nativeSetExtractSink 在现役 libgame.so 无导出（UnsatisfiedLinkError 被 catch
+   静默降级，logcat 只有一行 warn）。FT 钩子 [FTLN] 的唯一上行通道是
+   NativeBridge.onKrkrText——别再往 sink 通道上加功能，也别被
+   「krkr2 extract sink armed」日志骗了（catch 之后仍会打印）。
+3. **AnkiDroid 2.25 制卡链路（实测可用）**：官方 AddContentApi（vendored 源码，
+   authority `content://com.ichi2.anki.flashcards`）仍被支持；权限
+   `com.ichi2.anki.permission.READ_WRITE_DATABASE` prot=dangerous，但
+   requestPermissions 的系统弹窗在模拟器上不出现 → 自动化用
+   `adb shell pm grant com.tyranor.next com.ichi2.anki.permission.READ_WRITE_DATABASE`。
+   首次制卡前 AnkiDroid 必须完成过首启（intro + All files access），否则 collection
+   未建。AnkiDroid 非 debuggable（run-as 拒绝），验证走 UI（deck 列表/Card browser）
+   或 logcat。
+4. **模拟器快速种词典**：设备端自带 sqlite3 且 `run-as com.tyranor.next` 可用
+   （debug 包），SQL push 到 /data/local/tmp（MSYS 下记得 `MSYS_NO_PATHCONV=1`）
+   后 `run-as ... sh -c 'sqlite3 databases/ons_dict.db < ...'`；schema =
+   dicts/entries/kv 三表，需写 kv 的 current_dict 与 dict_name，改完重启应用生效
+   （entryCount 启动时读入）。
+5. **AnkiDroid 制卡入口注意**：面板释义区 📖（makeWordCard，词卡）与动作排 📋
+   （sendToAnki，句卡）是两个入口；制卡失败各分支都有 toast，但失败路径多数无日志，
+   排查时先截 toast（点击后 ~1.5s 内截图）。
+
 ## 续作指南（下次会话从这里开始）
 
 1. **推送**：`feat/extract-suite` 分支 8 个提交未推送（用户决定何时 push 到 origin）。

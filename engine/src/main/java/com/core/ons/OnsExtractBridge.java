@@ -155,13 +155,18 @@ public final class OnsExtractBridge {
         if (raw.length == 0) return;
 
         // 前缀差分：字节级最长公共前缀，得到本句增量后缀（对齐多字节边界由
-        // 解码器容错兜底）；显示存完整页，增量喂句面板
+        // 解码器容错兜底）；显示存完整页，增量喂句面板。
+        // 打字机延伸（新 raw 完整包含旧 raw）例外：KRKR FT 钩子按重绘推进，
+        // 半句→整句是前缀延伸，此时"本句"= 整句而非尾部增量（制卡例句/朗读
+        // 都要完整句；新增行仍走增量语义，保持 ONS 多行页取末行行为）。
         int common = commonPrefixLength(lastPageBytes, raw);
+        boolean extension = common == lastPageBytes.length && raw.length > lastPageBytes.length;
         byte[] suffix = new byte[raw.length - common];
         System.arraycopy(raw, common, suffix, 0, suffix.length);
 
         String page = decode(raw, true);
-        String sentence = suffix.length == 0 ? "" : decode(suffix, false);
+        String sentence = (suffix.length == 0 || extension)
+                ? page : decode(suffix, false);
         lastPageBytes = raw;
         pageText = page;
         sentenceText = sentence;
