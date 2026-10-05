@@ -1,4 +1,4 @@
-# install-debug-apk.ps1 — 构建（可选）并安装 VNLingo debug APK 到模拟器/设备
+﻿# install-debug-apk.ps1 — 构建（可选）并安装 VNLingo debug APK 到模拟器/设备
 #
 # 用法（PowerShell）：
 #   .\scripts\install-debug-apk.ps1                    # 交互式选择设备并安装
