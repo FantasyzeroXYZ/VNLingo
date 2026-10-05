@@ -1401,32 +1401,57 @@ public class OnsExtractPanel {
     // ------------------------------------------------------------------
 
     private void translateCurrent() {
-        if (!OnsTranslateClient.isConfigured(activity)) {
-            showApiSettings();
-            return;
-        }
+        // 翻译链（TrackReader translate() 对齐）：未配置 API 也能翻译——
+        // 已配置 API 优先，失败/未配置回退 MyMemory 免费服务（零配置开箱即用）
         ExtractFacade bridge = facade;
         String sentence = bridge.getSentenceText();
         if (sentence.isEmpty()) sentence = bridge.getPageText();
         if (sentence.isEmpty()) return;
         final int requestId = ++translateRequestId;
+        final String sentenceF = sentence;
         transView.setTag(Boolean.TRUE);
         transView.setText(activity.getString(R.string.engine_ons_extract_translating));
         if (expanded) transView.setVisibility(View.VISIBLE);
-        OnsTranslateClient.translateWithEngine(activity, sentence, (translated, error) -> main.post(() -> {
-            if (requestId != translateRequestId) return; // 翻句或已有更新请求
-            if (translated != null) {
-                transView.setTag(Boolean.TRUE);
-                transView.setText(activity.getString(
-                        R.string.engine_ons_extract_translate_line, translated));
-                transView.setVisibility(View.VISIBLE);
-            } else {
-                transView.setTag(null);
-                transView.setVisibility(View.GONE);
-                toast(activity.getString(R.string.engine_ons_extract_translate_failed, error));
+        new Thread(() -> {
+            // 先用户 API（若已配置），失败回退 MyMemory 免费链
+            String translated = null;
+            try {
+                translated = OnsFreeTranslate.translate(activity, sentenceF);
+            } catch (Throwable t) {
+                Log.w(TAG, "translate chain failed", t);
             }
-            if (expanded) mainScrollToTrans();
-        }));
+            if (translated == null && OnsTranslateClient.isConfigured(activity)) {
+                final String[] out = {null};
+                final Object lock = new Object();
+                OnsTranslateClient.translateWithEngine(activity, sentenceF, (tr, err) -> {
+                    synchronized (lock) {
+                        out[0] = tr;
+                        lock.notifyAll();
+                    }
+                });
+                synchronized (lock) {
+                    try { lock.wait(20000); } catch (InterruptedException ignored) { }
+                }
+                translated = out[0];
+            }
+            final String tr = translated;
+            final String err = translated == null ? "network" : null;
+            main.post(() -> {
+                if (requestId != translateRequestId) return; // 翻句或已有更新请求
+                if (tr != null) {
+                    transView.setTag(Boolean.TRUE);
+                    transView.setText(activity.getString(
+                            R.string.engine_ons_extract_translate_line, tr));
+                    transView.setVisibility(View.VISIBLE);
+                } else {
+                    transView.setTag(null);
+                    transView.setVisibility(View.GONE);
+                    toast(activity.getString(
+                            R.string.engine_ons_extract_translate_failed, "network"));
+                }
+                if (expanded) mainScrollToTrans();
+            });
+        }, "ons-translate").start();
     }
 
     private void mainScrollToTrans() {

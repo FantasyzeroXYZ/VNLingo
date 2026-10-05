@@ -303,9 +303,8 @@ std::string gLastEmitted;
  */
 std::string ftDerivePage(const std::string& raw);
 
-void deriveAndMaybeEmitLocked(bool force) {
-    if (gRawBuf.empty()) return;
-    std::string derived = ftDerivePage(gRawBuf);
+void deriveAndMaybeEmitLocked(bool pageEnd, const std::string& snap) {
+    std::string derived = ftDerivePage(snap);
     if (derived.empty()) {
         // 无重复快照 = 打字未达 2 次重绘（或 UI 字体图集一次性绘制）：
         // 前者下一轮重绘会补齐，后者是启动期垃圾——一律跳过，不上行
@@ -334,7 +333,7 @@ void deriveAndMaybeEmitLocked(bool force) {
     }
     if (!gPage.empty() && gPage != gLastEmitted) {
         const auto sinceEmit = std::chrono::steady_clock::now() - gLastEmitAt;
-        if (!force && sinceEmit < std::chrono::milliseconds(300)) return;  // 打字中节流
+        if (!pageEnd && sinceEmit < std::chrono::milliseconds(300)) return;  // 打字中节流
         gLastEmitted = gPage;
         gLastEmitAt = std::chrono::steady_clock::now();
         std::string out = gPage;
@@ -351,21 +350,28 @@ void deriveAndMaybeEmitLocked(bool force) {
 }
 
 void flushTimerLoop() {
+    // 400ms 轮询 + 锁内只拷 512 字节尾部快照、推导在锁外：ARM 转译下
+    // O(n²) 推导全速跑会饿死持同一锁的游戏渲染线程（实测 KRKR 主线程 ANR）
     while (gFlushThreadRunning.load(std::memory_order_relaxed)) {
-        std::this_thread::sleep_for(std::chrono::milliseconds(100));
-        const auto now = std::chrono::steady_clock::now();
-        std::lock_guard<std::mutex> lock(gLineMutex);
-        const auto idle = now - gLastCharAt;
-        if (idle > std::chrono::milliseconds(3000)) {
-            // 页结束（点击推进的等待期，玩家反应 > 换行停顿）：结算并翻页
-            deriveAndMaybeEmitLocked(true);
-            gPage.clear();
-            gLastEmitted.clear();
-            gRawBuf.clear();
-        } else {
-            // 300ms~3s 的停顿 = 换行/顿号间歇：只结算当前段，页继续累计
-            //（>300ms 的 force 让未完成链也即时上行，面板实时跟进）
-            deriveAndMaybeEmitLocked(idle > std::chrono::milliseconds(300));
+        std::this_thread::sleep_for(std::chrono::milliseconds(400));
+        std::string snap;
+        {
+            std::lock_guard<std::mutex> lock(gLineMutex);
+            if (gRawBuf.empty()) continue;
+            snap = gRawBuf.size() > 512 ? gRawBuf.substr(gRawBuf.size() - 512) : gRawBuf;
+        }
+        const bool pageEnd = std::chrono::steady_clock::now() - gLastCharAt
+                > std::chrono::milliseconds(3000);
+        {
+            std::lock_guard<std::mutex> lock(gLineMutex);
+            deriveAndMaybeEmitLocked(pageEnd, snap);
+            if (pageEnd) {
+                gPage.clear();
+                gLastEmitted.clear();
+                gRawBuf.clear();
+            } else if (gRawBuf.size() > 4096) {
+                gRawBuf.erase(0, gRawBuf.size() - 512);
+            }
         }
     }
 }

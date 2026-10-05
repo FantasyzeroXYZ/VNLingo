@@ -83,6 +83,13 @@
 
 ## 移植外事实（2026-10-05 会话二新增）
 
+- **FT 钩子定时器的 ANR 教训（KRKR 实测）**：O(n²) 重绘链推导全速跑 + 与
+  每字形钩子共用一把锁 → ARM 转译下游戏主线程被饿死（ANR 5s）。
+  修复：锁内只拷 512 字节尾部快照、推导在锁外、400ms 轮询、raw 4096 截尾。
+  通用教训：**推导/扫描类重活必须在锁外对快照做**。
+- **模拟器新实例的组件禁用干扰**：模拟器重启后宿主脚本可能把
+  com.tyranor.next 组件置 disabled（am start 报 does not exist）——
+  `pm default-state com.tyranor.next` 恢复后再测。
 - **KRKR 对白完整还原的两个备选（已评估，暂缓实施）**：
   A=字符串层 native 钩子——锚点：TVPCreateAndAddWindow(tTJSNI_Window*) 已导出
   （libgame.so 可见核心符号不止 GDI 桩），krkr2-main 源码对齐消息层文本函数偏移，
