@@ -17,10 +17,19 @@ set -euo pipefail
 
 REPO_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 APK="$REPO_ROOT/app/build/outputs/apk/debug/app-debug.apk"
-SERIAL="${SERIAL:-emulator-5554}"
 PACKAGE="com.tyranor.next"
 ADB="${ADB:-D:/dev-cache/Android/Sdk/platform-tools/adb.exe}"
 JDK="${JAVA_HOME:-D:/dev-cache/jdk-17.0.20.1+1}"
+
+# 自动检测：取第一台 state=device 的设备；SERIAL 环境变量可覆盖
+if [[ -z "${SERIAL:-}" ]]; then
+    SERIAL="$("$ADB" devices | awk '$2 == "device" { print $1; exit }')"
+    if [[ -z "$SERIAL" ]]; then
+        echo "[install] 未检测到可用设备（adb devices 无 state=device 行）" >&2
+        exit 1
+    fi
+    echo "[install] 自动检测设备: $SERIAL"
+fi
 
 if [[ "${BUILD:-0}" == "1" || ! -f "$APK" ]]; then
     echo "[install] building debug APK..."
