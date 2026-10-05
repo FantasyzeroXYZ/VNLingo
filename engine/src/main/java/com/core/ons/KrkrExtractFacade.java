@@ -56,6 +56,10 @@ public class KrkrExtractFacade implements ExtractFacade {
     @Override public Bitmap getScreenshot() { return null; }
     @Override public void setListener(OnsExtractBridge.Listener listener) {
         this.extractListener = listener;
+        // 必须转发到桥：FT 钩子上行（NativeBridge.onKrkrText → onEvent）经桥的
+        // listener 通知面板刷新——只存本地会导致面板永远收不到更新（推进对白
+        // 后文本不变、要重开面板才刷新的根因；ONS facade 同款转发）
+        OnsExtractBridge.get().setListener(listener);
     }
 
     private OnsExtractBridge.Listener extractListener;
