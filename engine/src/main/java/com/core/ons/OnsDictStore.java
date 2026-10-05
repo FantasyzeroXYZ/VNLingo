@@ -494,7 +494,16 @@ public final class OnsDictStore {
         java.io.ByteArrayOutputStream out = new java.io.ByteArrayOutputStream();
         byte[] buf = new byte[16384];
         int n;
-        while ((n = in.read(buf)) > 0) out.write(buf, 0, n);
+        long total = 0;
+        while ((n = in.read(buf)) > 0) {
+            total += n;
+            // 炸弹包保险丝：单个 term_bank 正常 <20MB，超过 64MB 视为异常包
+            // 判导入失败，而不是在 OOM 里拖垮整个进程
+            if (total > 64L * 1024 * 1024) {
+                throw new IllegalArgumentException("dictionary entry too large (>64MB)");
+            }
+            out.write(buf, 0, n);
+        }
         return new String(out.toByteArray(), StandardCharsets.UTF_8);
     }
 

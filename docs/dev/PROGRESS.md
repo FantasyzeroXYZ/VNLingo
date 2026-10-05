@@ -4,6 +4,18 @@
 > `docs/说明/游戏内提取制卡功能方案.md`（提取功能线方案）阅读。
 > 更新时间：2026-10-05
 
+## 2026-10-05 会话（十六）：健壮性第八批（词典炸弹包保险丝 + 连按压力实测）
+
+- **Yomichan/MDX 条目读取上限**：OnsDictStore.readText 此前无界读入
+  ByteArrayOutputStream——炸弹包或异常文件（解压后数 GB）会在 OOM 里拖垮
+  进程。加 64MB 单条目保险丝：正常 Yomichan 分包 <20MB，超限判导入失败
+  （DictionaryScreen 的 runCatching 落「导入失败」toast）。
+- **连按压力实测**：游戏内面板句栏 5 次跨单元快速连按（间隔 0.4s）——
+  executor 串行 + 代次早停下无崩溃无 ANR；miss 正确提示新文案「未查到该词」
+  （round 2 的文案拆分在压力场景下验证生效）。
+- 旋转压力测试按 MEMORY 记录跳过：SDL 内核（KRKR/ONS）旋转即杀进程，
+  属上游 Kirikiroid2/ONScripter 行为，非本仓可修。
+
 ## 2026-10-05 会话（十五）：健壮性第七批（Zip Slip 防护）
 
 - **SaveZipUtil.unzipInto 补 Zip Slip 防护**：条目名直接 `new File(targetDir, name)`
