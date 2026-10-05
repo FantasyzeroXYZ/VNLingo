@@ -1,8 +1,8 @@
 # VNLingo 项目规范（项目专门）
 
 > 项目专属工程约定。通用规则（编码/构建/JNI/提交）见《安卓开发通用规范》，
-> 本文只写 VNLingo 特有的部分。配合 `PROGRESS.md`（进度）、`MEMORY.md`（经验）、
-> `待办.txt`（待办）、`docs/游戏内提取制卡功能方案.md`（提取功能线方案）阅读。
+> 本文只写 VNLingo 特有的部分。配合 `docs/开发/PROGRESS.md`（进度）、`docs/开发/MEMORY.md`（经验）、
+> `docs/开发/待办.txt`（待办）、`docs/说明/游戏内提取制卡功能方案.md`（提取功能线方案）阅读。
 
 ## 1. 架构分层与进程边界
 
@@ -52,13 +52,13 @@ engine 模块     引擎宿主（ONScripter/Tyrano/RpgMaker/Artemis/KR2 Activity
   （如 `libartemis-clean.so`——宿主按名打包，引擎源码仓产出 `libartemis.so` 由
   宿主重命名，见 artemis-compat AGENT.md）。
 - 内核源码仓（artemis-compat、krkr2-main、OnscripterYuri）的本地路径与上游约定
-  记录在 MEMORY.md；内核更新 = 源码更新 → 构建 → strip → 替换 → 版本+1 → 实测。
+  记录在 `docs/开发/MEMORY.md`；内核更新 = 源码更新 → 构建 → strip → 替换 → 版本+1 → 实测。
 
 ## 5. 运行时钩子（逆向路线）规范
 
 - 挂点选择优先级：**源码级桥 > dlsym 可得的导出符号 > 签名扫描**；字形层挂点
   是最后手段（字符流有重组歧义）。
-- 每个挂点必须在《游戏内提取制卡功能方案.md》或 MEMORY.md 登记：目标符号
+- 每个挂点必须在《游戏内提取制卡功能方案.md》或 `docs/开发/MEMORY.md` 登记：目标符号
   （mangled）、内核与偏移、序言校验结论、调用频率/线程、上行通道。
 - 内联跳板统一使用 `artemis_official_hook.cpp` 的实现模式（4 指令跳板 +
   PC 相对指令校验拒绝挂钩 + mprotect/RX/clear_cache），不重复造轮子。
@@ -75,8 +75,8 @@ engine 模块     引擎宿主（ONScripter/Tyrano/RpgMaker/Artemis/KR2 Activity
 
 ## 7. 文档与提交纪律
 
-- 每次会话：PROGRESS.md（进度，按会话分节）、MEMORY.md（可复用经验/踩坑/
-  外部事实）、待办.txt（完成/遗留勾选）三件套必须更新后提交。
+- 每次会话：`docs/开发/PROGRESS.md`（进度，按会话分节）、`docs/开发/MEMORY.md`
+  （可复用经验/踩坑/外部事实）、`docs/开发/待办.txt`（完成/遗留勾选）三件套必须更新后提交。
 - 提交信息：`类型(范围): 摘要`；正文分条列改动与实测证据。
 - 里程碑打注释 tag（如 `local-2026-10-05`）。
 - 品牌名：用户可见文案一律 **VNLingo**；applicationId 保持 `com.tyranor.next`
