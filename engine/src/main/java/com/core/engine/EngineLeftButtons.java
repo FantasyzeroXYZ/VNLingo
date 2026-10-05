@@ -192,10 +192,16 @@ public final class EngineLeftButtons {
             toggle.setImageResource(visible
                     ? com.core.engine.R.drawable.ons_toggle_up
                     : com.core.engine.R.drawable.ons_toggle_down);
-            toggle.setScaleType(android.widget.ImageView.ScaleType.CENTER_INSIDE);
+            // 与右侧折叠键（OnsSideButtons.button）同款：深色圆角矩形底 + 白色图标
+            toggle.setScaleType(android.widget.ImageView.ScaleType.FIT_CENTER);
             toggle.setColorFilter(Color.WHITE);
             int pad = dp(activity, 8);
             toggle.setPadding(pad, pad, pad, pad);
+            GradientDrawable bg = new GradientDrawable();
+            bg.setCornerRadius(dp(activity, 10));
+            bg.setColor(BG);
+            bg.setStroke(dp(activity, 1), STROKE);
+            toggle.setBackground(bg);
             LinearLayout.LayoutParams tlp = new LinearLayout.LayoutParams(
                     dp(activity, BUTTON_DP), dp(activity, BUTTON_DP));
             tlp.bottomMargin = dp(activity, GAP_DP);
