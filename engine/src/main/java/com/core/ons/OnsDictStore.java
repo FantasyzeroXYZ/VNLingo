@@ -74,10 +74,27 @@ public final class OnsDictStore {
             if (context == null) return null;
             db = context.getApplicationContext()
                     .openOrCreateDatabase("ons_dict.db", Context.MODE_PRIVATE, null);
+            // 跨进程争用兜底：词典库被主进程（词典页导入/删除）与游戏进程
+            // （面板查词）同时访问，默认忙等 0 会直接 SQLITE_BUSY 报错，
+            // 给 5s 忙等窗口让短写事务自然让路。
+            // PRAGMA 带结果行，必须 rawQuery（execSQL 会抛 "Queries can be
+            // performed using query or rawQuery only"）
+            Cursor busy = null;
+            try {
+                busy = db.rawQuery("PRAGMA busy_timeout = 5000", null);
+                if (busy.moveToFirst()) {
+                    Log.i(TAG, "busy_timeout = " + busy.getInt(0));
+                }
+            } catch (Throwable t) {
+                Log.w(TAG, "busy_timeout pragma failed", t);
+            } finally {
+                if (busy != null) busy.close();
+            }
             migrate(db);
             Cursor c = db.rawQuery("SELECT COUNT(*) FROM entries", null);
             if (c.moveToFirst()) entryCount = c.getInt(0);
             c.close();
+            Log.i(TAG, "db opened: entries=" + entryCount + " process=" + android.os.Process.myPid());
             c = db.rawQuery("SELECT value FROM kv WHERE name='dict_name'", null);
             if (c.moveToFirst()) dictName = c.getString(0);
             c.close();

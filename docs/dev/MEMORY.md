@@ -149,6 +149,20 @@
 - **手柄重映射**：GamepadRemap 快照式（宿主 onResume 刷新），映射在 dispatchKeyEvent
   最前端生效，先于提取面板/虚拟鼠标/游戏链路。
 
+## 实测踩坑（2026-10-05 会话十新增：PRAGMA/导航模式）
+
+1. **PRAGMA 带结果行必须 rawQuery**：`execSQL("PRAGMA busy_timeout = 5000")` 在
+   Android 上抛 `SQLiteException: Queries can be performed using SQLiteDatabase
+   query or rawQuery methods only`（PRAGMA 有返回行时 execSQL 拒绝）→ 主进程
+   启动即崩。用 rawQuery + close，外面再包 try。
+2. **导航模式影响全部点按坐标**：模拟器切手势导航（底部横条）后，右缘按键列与
+   提取面板的 inset/宽度计算都变（面板呈全宽透明态、坐标整体漂移），三键导航
+   时代码的坐标记忆全部失效。坐标类自动化前先 `dumpsys input | grep -i scale`/
+   截屏确认导航模式；测试中不要切导航模式。
+3. **查词 miss 与「未导入词典」共用 toast 会把排查带偏**：本次因这句长文案
+   误判成「游戏进程词典库为空」绕了远路——已拆分成两句（miss=未查到该词）。
+   工程上：同一 toast 文案覆盖两个语义分支时优先拆分。
+
 ## 实测踩坑（2026-10-05 会话七新增：制卡端到端实测）
 
 1. **install-debug-apk.sh 不带 `BUILD=1` 只装已构建 APK**（脚本头部有用法）；且中途

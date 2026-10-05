@@ -1223,7 +1223,11 @@ public class OnsExtractPanel {
                         : scanByWordTwoPhase(text, startPos, requestId);
                 if (requestId != dictRequestId) return;
                 if (hit == null) {
-                    main.post(() -> toast(R.string.engine_ons_extract_dict_none));
+                    // 已加载词典但未命中 ≠ 未导入词典：两句文案分开，避免误判成库为空
+                    boolean noDict = !OnsDictStore.get().hasDictionary();
+                    main.post(() -> toast(noDict
+                            ? R.string.engine_ons_extract_dict_none
+                            : R.string.engine_ons_extract_def_none));
                     return;
                 }
                 defGroups = hit.groups;
@@ -2118,10 +2122,25 @@ public class OnsExtractPanel {
                 try (FileOutputStream fos = new FileOutputStream(out)) {
                     fos.write(bytes);
                 }
+                trimHistoryVoiceDir(out.getParentFile());
             } catch (Throwable t) {
                 Log.w(TAG, "persistHistoryVoice failed for " + voiceName, t);
             }
         }, "ons-history-voice").start();
+    }
+
+    /** 语音缓存目录封顶：只留最近 100 条（每条可达 MB 级，长会话无限累积
+     *  会吃掉数百 MB；cacheDir 虽可被系统回收，主动封顶更稳）。 */
+    private static void trimHistoryVoiceDir(File dir) {
+        if (dir == null || !dir.isDirectory()) return;
+        File[] files = dir.listFiles();
+        if (files == null || files.length <= 100) return;
+        java.util.Arrays.sort(files, (a, b) -> Long.compare(a.lastModified(), b.lastModified()));
+        for (int i = 0; i < files.length - 100; i++) {
+            if (!files[i].delete()) {
+                Log.w("OnsExtractPanel", "trim history voice failed: " + files[i].getName());
+            }
+        }
     }
 
     /** 把语音字节写入缓存文件并用 MediaPlayer 播放（调用方先 stopVoice）。 */
