@@ -34,6 +34,20 @@
 - 遗留：说话人行重绘链的自动还原仍有重复段（用户可切「最长重复后缀」候选绕过）；
   面板不透明度是全局持久化（跨引擎共享），可点 40% 芯片调整。
 
+## 2026-10-05 会话（六追加四）：Artemis 官方内核字符串层钩子（LunaTranslator 式）
+
+- **发现**：官方 revision 内核（六款全）导出全套引擎 API——artemis:: 类、完整
+  Lua API、FreeType。字符串层挂点直接 dlsym：`CBackLog::Add`（第 6 参=每页
+  完整文本，显示时序）、`CArtemisParser::Text/TextTail`（解析器文本段）。
+  LunaHook64.dll 亦证实 LunaTranslator 有 Artemis 专属模块（Artemis64x/
+  .?AVArtemis@@，Windows 版按版本串识别）。
+- **实现**（artemis_official_hook.cpp，编入 artemis_loader）：arm64 手写内联
+  钩子（4 指令跳板；安装时校验序言无 PC 相对指令；内核内部直调故 GOT 不可达，
+  必须内联）；artemis_loader dlopen 后安装，dlsym 探测 CBackLog::Add 自动区分
+  官方/clean 内核；上行复用 [FTLN]/[FTRAW] 通道。
+- **验证状态**：编译通过；设备实测待模拟器恢复（本会话末模拟器掉线），且
+  尚缺官方内核测试游戏（材料仅 blossom=clean）。clean 内核回归同待跑。
+
 ## 2026-10-05 会话（六追加三）：页缓冲模型与已知边界
 
 - **页缓冲增量模型**：gPage 跨周期累计（raw rfind 已知页拼增量，翻页自动重置，
