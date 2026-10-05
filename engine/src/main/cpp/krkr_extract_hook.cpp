@@ -25,6 +25,7 @@
 #include <jni.h>
 
 #include <atomic>
+#include <chrono>
 #include <cerrno>
 #include <cstring>
 #include <string>
@@ -152,16 +153,193 @@ bool installShadowhook() {
     return init(&info) != nullptr;
 }
 
-// ---- FT_Load_Char 探针（内核经 PLT 调用 FreeType；层文本渲染来源观测）----
+// ---- FT_Get_Char_Index 钩子：字符流 → 行重建（纯运行时 hook 的对白提取，不改内核）----
+// 内核导出 FreeType 全套且 JUMP_SLOT 经自身 GOT（libgame*.so 实测 158 个 FT_ 槽），
+// GOT 补丁即可拦截层文本渲染的每个字符码点（Unicode）。按停顿 300ms 切行累积。
 using FTLoadCharFn = unsigned long (*)(void* face, unsigned long code, int flags);
 FTLoadCharFn gOrigFTLoadChar = nullptr;
+std::mutex gLineMutex;
+std::chrono::steady_clock::time_point gLastCharAt;
 
 unsigned long hookedFTLoadChar(void* face, unsigned long code, int flags) {
     const unsigned long err = gOrigFTLoadChar != nullptr ? gOrigFTLoadChar(face, code, flags) : 0;
-    if (code >= 0x20 && code < 0x110000) {
-        __android_log_print(ANDROID_LOG_INFO, TAG, "ft char: %lu", code);
-    }
     return err;
+}
+
+// 对白渲染的实际路径（krkr2-main FreeType.cpp:651/670 证实）：
+// FT_Get_Char_Index(face, unicode) → FT_Load_Glyph(face, index)——FT_Load_Char 从不被调用。
+// 字符码点全部经 FT_Get_Char_Index；测量+渲染会对同一字符相邻重复查询，相邻去重。
+using FTGetCharIndexFn = unsigned long (*)(void* face, unsigned long code);
+FTGetCharIndexFn gOrigFTGetCharIndex = nullptr;
+unsigned long gPrevCode = 0;
+
+// 打字机重绘状态机：KAG 每加一字整行重绘，码点流 = 前缀链『ず『ずっ『ずっと…
+// known=已确认句；i=本轮重绘已匹配位置。码字匹配 known[i] 则 i++（重绘确认）；
+// i 到尾则是新字（追加）；与 known[0] 相同且 i>0 则新一轮重绘开始。
+std::string gKnown;     // UTF-8 已确认句
+std::string gRawBuf;    // 原始码点流（未还原，调试用）
+size_t gPassIdx = 0;    // 当前重绘轮匹配到的 UTF-8 字节位置（按码点推进）
+
+static size_t ftUtf8ByteLenOfFirst(const std::string& s) {
+    if (s.empty()) return 0;
+    const unsigned char b = static_cast<unsigned char>(s[0]);
+    return b < 0x80 ? 1 : b < 0xE0 ? 2 : b < 0xF0 ? 3 : 4;
+}
+
+unsigned long ftUtf8FirstCode(const std::string& s) {
+    if (s.empty()) return 0;
+    const unsigned char* b = reinterpret_cast<const unsigned char*>(s.data());
+    switch (ftUtf8ByteLenOfFirst(s)) {
+        case 1: return b[0];
+        case 2: return ((b[0] & 0x1Fu) << 6) | (b[1] & 0x3Fu);
+        case 3: return ((b[0] & 0x0Fu) << 12) | ((b[1] & 0x3Fu) << 6) | (b[2] & 0x3Fu);
+        default: return ((b[0] & 0x07u) << 18) | ((b[1] & 0x3Fu) << 12) | ((b[2] & 0x3Fu) << 6) | (b[3] & 0x3Fu);
+    }
+}
+
+void ftAppendUtf8Locked(unsigned long code) {
+    std::string ch;
+    if (code < 0x80) ch.push_back(static_cast<char>(code));
+    else if (code < 0x800) {
+        ch.push_back(static_cast<char>(0xC0 | (code >> 6)));
+        ch.push_back(static_cast<char>(0x80 | (code & 0x3F)));
+    } else if (code < 0x10000) {
+        ch.push_back(static_cast<char>(0xE0 | (code >> 12)));
+        ch.push_back(static_cast<char>(0x80 | ((code >> 6) & 0x3F)));
+        ch.push_back(static_cast<char>(0x80 | (code & 0x3F)));
+    } else {
+        ch.push_back(static_cast<char>(0xF0 | (code >> 18)));
+        ch.push_back(static_cast<char>(0x80 | ((code >> 12) & 0x3F)));
+        ch.push_back(static_cast<char>(0x80 | ((code >> 6) & 0x3F)));
+        ch.push_back(static_cast<char>(0x80 | (code & 0x3F)));
+    }
+    gKnown += ch;
+    gPassIdx += ch.size();
+}
+
+static bool ftEndsWithTerminal(const std::string& s);
+void flushLineLocked();
+
+void ftFeedCharLocked(unsigned long code) {
+    if (gPassIdx >= gKnown.size()) {
+        // 到句尾：首字符重复出现 = 新一轮整行重绘开始（打字机逐字重绘的特征）；
+        // 否则是新字符，追加
+        if (!gKnown.empty() && code == ftUtf8FirstCode(gKnown)) {
+            gPassIdx = ftUtf8ByteLenOfFirst(gKnown);
+            return;
+        }
+        ftAppendUtf8Locked(code);
+        return;
+    }
+    // 在已确认句内比对
+    size_t pos = gPassIdx;
+    unsigned long first = 0;
+    bool matched = false;
+    {
+        // 解出 known[pos] 处的一个码点并与 code 比较
+        const unsigned char* b = reinterpret_cast<const unsigned char*>(gKnown.data()) + pos;
+        size_t len = gKnown.size() - pos;
+        size_t chLen = *b < 0x80 ? 1 : *b < 0xE0 ? 2 : *b < 0xF0 ? 3 : 4;
+        if (chLen <= len) {
+            unsigned long c = 0;
+            if (chLen == 1) c = b[0];
+            else if (chLen == 2) c = ((b[0] & 0x1F) << 6) | (b[1] & 0x3F);
+            else if (chLen == 3) c = ((b[0] & 0x0F) << 12) | ((b[1] & 0x3F) << 6) | (b[2] & 0x3F);
+            else c = ((b[0] & 0x07) << 18) | ((b[1] & 0x3F) << 12) | ((b[2] & 0x3F) << 6) | (b[3] & 0x3F);
+            matched = (c == code);
+            first = chLen;  // 记录 known[0] 码点字节数备用
+            pos += chLen;
+        }
+    }
+    if (matched) {
+        gPassIdx = pos;
+        return;
+    }
+    if (gPassIdx > 0) {
+        // 与 known[0] 相同 → 新一轮重绘；否则视为换行/改写，从当前字符重开
+        //（known[0] 首码点重复出现即重绘标记）
+        const unsigned char* b0 = reinterpret_cast<const unsigned char*>(gKnown.data());
+        size_t firstLen = b0[0] < 0x80 ? 1 : b0[0] < 0xE0 ? 2 : b0[0] < 0xF0 ? 3 : 4;
+        unsigned long c0 = 0;
+        if (firstLen == 1) c0 = b0[0];
+        else if (firstLen == 2) c0 = ((b0[0] & 0x1F) << 6) | (b0[1] & 0x3F);
+        else if (firstLen == 3) c0 = ((b0[0] & 0x0F) << 12) | ((b0[1] & 0x3F) << 6) | (b0[2] & 0x3F);
+        else c0 = ((b0[0] & 0x07) << 18) | ((b0[1] & 0x3F) << 12) | ((b0[2] & 0x3F) << 6) | (b0[3] & 0x3F);
+        if (code == c0) {
+            gPassIdx = firstLen;
+            return;
+        }
+        gKnown.clear();
+        gPassIdx = 0;
+    }
+    ftAppendUtf8Locked(code);
+}
+
+bool ftEndsWithTerminal(const std::string& s) {
+    // 』 」 ！ ？ 。 …（UTF-8 尾字节判定）
+    static const char* kTerms[] = {"ã", "ã", "ã",
+                                   "ï¼", "ï¼", "ã",
+                                   "â¦"};
+    for (const char* t : kTerms) {
+        const size_t n = std::strlen(t);
+        if (s.size() >= n && s.compare(s.size() - n, n, t) == 0) return true;
+    }
+    return false;
+}
+
+void flushLineLocked() {
+    if (gKnown.empty() && gRawBuf.empty()) return;
+    // raw 流：重绘链原样（离线调试还原算法用）；gKnown：状态机还原结果
+    LOGI("ft raw : %s", gRawBuf.c_str());
+    if (!gKnown.empty()) {
+        std::string line;
+        line.swap(gKnown);
+        gPassIdx = 0;
+        line.insert(0, "[FTLN]");
+        LOGI("ft line: %s", line.c_str() + 6);
+        emitText(line.c_str());
+    }
+    gRawBuf.clear();
+}
+
+unsigned long hookedFTGetCharIndex(void* face, unsigned long code) {
+    const unsigned long idx = gOrigFTGetCharIndex != nullptr ? gOrigFTGetCharIndex(face, code) : 0;
+    if (gHookInstalled.load(std::memory_order_relaxed)
+            && code >= 0x20 && code < 0x110000 && code != gPrevCode) {
+        const auto now = std::chrono::steady_clock::now();
+        std::lock_guard<std::mutex> lock(gLineMutex);
+        if (!gKnown.empty()
+                && now - gLastCharAt > std::chrono::milliseconds(300)) {
+            flushLineLocked();  // 停顿结算（惰性：下一字符到达时触发）
+        }
+        ftFeedCharLocked(code);
+        {
+            // raw 码点流累积（调试）
+            const unsigned char* b = reinterpret_cast<const unsigned char*>(&code);
+            (void) b;
+            std::string ch;
+            if (code < 0x80) ch.push_back(static_cast<char>(code));
+            else if (code < 0x800) {
+                ch.push_back(static_cast<char>(0xC0 | (code >> 6)));
+                ch.push_back(static_cast<char>(0x80 | (code & 0x3F)));
+            } else if (code < 0x10000) {
+                ch.push_back(static_cast<char>(0xE0 | (code >> 12)));
+                ch.push_back(static_cast<char>(0x80 | ((code >> 6) & 0x3F)));
+                ch.push_back(static_cast<char>(0x80 | (code & 0x3F)));
+            } else {
+                ch.push_back(static_cast<char>(0xF0 | (code >> 18)));
+                ch.push_back(static_cast<char>(0x80 | ((code >> 12) & 0x3F)));
+                ch.push_back(static_cast<char>(0x80 | ((code >> 6) & 0x3F)));
+                ch.push_back(static_cast<char>(0x80 | (code & 0x3F)));
+            }
+            gRawBuf += ch;
+            if (gRawBuf.size() > 2048) gRawBuf.clear();
+        }
+        gLastCharAt = now;
+        if (gKnown.size() >= 600) flushLineLocked();  // 超长兜底
+    }
+    gPrevCode = code;
+    return idx;
 }
 
 }  // namespace
@@ -259,18 +437,16 @@ extern "C" bool krkr_install_extract_hook(void* gameHandle, JNIEnv* env) {
     return false;
 }
 
-/** FT_Load_Char 探针（诊断用；内核层文本渲染的 FreeType 来源观测）。 */
+/** FT 字符流钩子：GOT 补丁 FT_Get_Char_Index（对白渲染的 Unicode 必经点）。 */
 extern "C" bool krkr_install_ft_probe(void* gameHandle, const char* library) {
-    if (gameHandle == nullptr || library == nullptr || gOrigFTLoadChar != nullptr) return false;
-    void* target = dlsym(gameHandle, "FT_Load_Char");
-    if (target == nullptr) return false;
+    if (gameHandle == nullptr || library == nullptr || gOrigFTGetCharIndex != nullptr) return false;
     void* orig = nullptr;
-    if (!krkr_bridge_got_hook(library, "FT_Load_Char",
-                              reinterpret_cast<void*>(&hookedFTLoadChar), &orig)) {
+    if (!krkr_bridge_got_hook(library, "FT_Get_Char_Index",
+                              reinterpret_cast<void*>(&hookedFTGetCharIndex), &orig)) {
         LOGW("ft probe GOT hook failed");
         return false;
     }
-    gOrigFTLoadChar = reinterpret_cast<FTLoadCharFn>(orig);
-    LOGI("ft probe GOT hooked");
+    gOrigFTGetCharIndex = reinterpret_cast<FTGetCharIndexFn>(orig);
+    LOGI("ft probe GOT hooked (FT_Get_Char_Index)");
     return true;
 }

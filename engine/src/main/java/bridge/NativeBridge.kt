@@ -59,9 +59,13 @@ object NativeBridge {
         // KR2Activity.setExtractListener 独立通道，不经本方法。
         val m = krkrConsoleLine.find(text)
         val message = if (m != null) m.groupValues[2] else text
-        val dialogue = message.takeIf { it.startsWith("[TNEXT]") }
-            ?.removePrefix("[TNEXT]")?.trim()?.takeIf { it.isNotEmpty() }
-        if (dialogue == null) return
+        // 双通道：[TNEXT]=TJS 发射器标记行；[FTLN]=FT 字符流行（krkr_extract_hook
+        // 的 FT_Load_Char 钩子按停顿切行重建，纯运行时 hook、不改内核）
+        val dialogue = when {
+            message.startsWith("[TNEXT]") -> message.removePrefix("[TNEXT]").trim()
+            message.startsWith("[FTLN]") -> message.removePrefix("[FTLN]").trim()
+            else -> null
+        }?.takeIf { it.isNotEmpty() } ?: return
         Log.i("NativeBridge", "krkr text: $dialogue")
         try {
             val b64 = android.util.Base64.encodeToString(
