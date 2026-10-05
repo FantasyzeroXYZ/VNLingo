@@ -182,6 +182,7 @@ public class OnsExtractPanel {
         panelOpacity = prefs.getInt(KEY_OPACITY, OPACITY_STEPS[0]);
         // 词典库提前打开（导入/查词共用；后台线程 search 不依赖 context）
         OnsDictStore.get().init(activity);
+        OnsDeinflector.init(activity);  // 词形还原全量规则（assets/deinflect_ja.json）
     }
 
     private android.content.SharedPreferences ttsPrefs() {
