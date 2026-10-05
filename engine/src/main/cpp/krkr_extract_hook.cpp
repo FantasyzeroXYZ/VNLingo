@@ -301,18 +301,47 @@ void flushTimerLoop() {
     }
 }
 
+/**
+ * 从原始重绘链推导整页文本：最长重复后缀 = 倒数第二次整窗重绘快照，
+ * 末尾补上其后再出现的增量（最后一次重绘新增的字符）。两行窗口时
+ * 该快照含上/下行全部字符——修复"只显示最后一行"。
+ */
+std::string ftDerivePage(const std::string& raw) {
+    const size_t n = raw.size();
+    if (n == 0) return {};
+    for (size_t k = n - 1; k >= 2; --k) {
+        const std::string t = raw.substr(n - k);
+        const size_t first = raw.find(t);
+        if (first != std::string::npos && first < n - k) {
+            // 尾部补差：最后一份快照比倒数第二份多出的字符（最多一两个码点）
+            std::string page = t;
+            const size_t second = raw.rfind(t);
+            if (second != std::string::npos && second + k < n) {
+                page += raw.substr(second + k);
+            }
+            return page;
+        }
+    }
+    return raw;  // 单次快照（无重绘链）
+}
+
 void flushLineLocked() {
     if (gKnown.empty() && gRawBuf.empty()) return;
-    // raw 流：重绘链原样；gKnown：状态机还原结果。两者都上行——
-    // 面板提供「候选切换」（LunaTranslator 式），用户选最适配的显示
+    // raw 流：重绘链原样；主上行 = 从原始链推导的整页内容——
+    // 最长重复后缀 = 最后一次整窗重绘快照（含上/下行全部字符），只差最后
+    // 1-2 个刚打的字。状态机结果（单行易缺上行）降为回退。
     LOGI("ft raw : %s", gRawBuf.c_str());
-    if (!gKnown.empty()) {
-        std::string line;
-        line.swap(gKnown);
+    std::string derived = ftDerivePage(gRawBuf);
+    if (derived.empty() && !gKnown.empty()) {
+        derived.swap(gKnown);
         gPassIdx = 0;
-        line.insert(0, "[FTLN]");
-        LOGI("ft line: %s", line.c_str() + 6);
-        emitText(line.c_str());
+    }
+    gKnown.clear();
+    gPassIdx = 0;
+    if (!derived.empty()) {
+        derived.insert(0, "[FTLN]");
+        LOGI("ft line: %s", derived.c_str() + 6);
+        emitText(derived.c_str());
     }
     if (!gRawBuf.empty()) {
         std::string raw;

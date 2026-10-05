@@ -48,6 +48,15 @@ object NativeBridge {
      * 复用既有面板/Anki 管线。
      */
     /** 控制台行格式：`HH:MM:SS storage : message`。 */
+    /** CJK/假名判定（FT 钩子通道过滤启动期 UI 乱序字符流用）。 */
+    private fun hasCjk(s: String): Boolean {
+        if (s.length < 2) return false
+        for (c in s) {
+            if (c.code in 0x3040..0x30FF || c.code in 0x4E00..0x9FFF) return true
+        }
+        return false
+    }
+
     private val krkrConsoleLine = Regex("^\\d\\d:\\d\\d:\\d\\d (.*?) : (.*)$", RegexOption.DOT_MATCHES_ALL)
 
     @JvmStatic
@@ -65,7 +74,7 @@ object NativeBridge {
         //（候选，面板可切换显示——LunaTranslator 式「选最适配」）
         if (message.startsWith("[FTRAW]")) {
             val raw = message.removePrefix("[FTRAW]")
-            if (raw.isNotBlank()) {
+            if (raw.isNotBlank() && hasCjk(raw)) {
                 try {
                     val b64 = android.util.Base64.encodeToString(
                         raw.toByteArray(Charsets.UTF_8), android.util.Base64.NO_WRAP)
@@ -82,7 +91,7 @@ object NativeBridge {
             message.startsWith("[TNEXT]") -> message.removePrefix("[TNEXT]").trim()
             message.startsWith("[FTLN]") -> message.removePrefix("[FTLN]").trim()
             else -> null
-        }?.takeIf { it.isNotEmpty() } ?: return
+        }?.takeIf { it.isNotEmpty() && hasCjk(it) } ?: return
         Log.i("NativeBridge", "krkr text: $dialogue")
     }
 

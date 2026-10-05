@@ -75,6 +75,7 @@
     <string name="engine_ons_extract_candidate_pick">选择候选文本</string>
     <string name="engine_ons_extract_candidate_none">当前句无候选（等下一句出现）</string>
     <string name="engine_ons_extract_candidate_raw">原始流:</string>
+    <string name="engine_ons_extract_history_clear">清空</string>
     <string name="engine_ons_extract_standby">待机</string>
     <string name="engine_ons_extract_history_empty">暂无历史</string>
     <string name="engine_ons_extract_dict">词典</string>

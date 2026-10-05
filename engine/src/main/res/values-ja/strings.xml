@@ -75,6 +75,7 @@
     <string name="engine_ons_extract_candidate_pick">候補テキストを選択</string>
     <string name="engine_ons_extract_candidate_none">候補なし（次の行を待つ）</string>
     <string name="engine_ons_extract_candidate_raw">生ストリーム:</string>
+    <string name="engine_ons_extract_history_clear">クリア</string>
     <string name="engine_ons_extract_standby">待機</string>
     <string name="engine_ons_extract_history_empty">履歴はまだありません</string>
     <string name="engine_ons_extract_dict">辞書</string>

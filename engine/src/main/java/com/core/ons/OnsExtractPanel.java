@@ -287,7 +287,7 @@ public class OnsExtractPanel {
         sentenceView.setTextSize(16);
         sentenceView.setTextIsSelectable(false); // 点词查词，不与选中冲突
         sentenceView.setMovementMethod(LinkMovementMethod.getInstance());
-        sentenceView.setLineSpacing(0f, 2f); // webgametxt 句栏 lineHeight 2
+        sentenceView.setLineSpacing(0f, 1.25f); // 折行紧凑（2x 会被当成额外空行）
         sentenceView.setBreakStrategy(android.text.Layout.BREAK_STRATEGY_HIGH_QUALITY);
 
         listeningView = new TextView(activity);
@@ -365,10 +365,9 @@ public class OnsExtractPanel {
         actions.addView(makeAction(R.drawable.ic_translate, R.string.engine_ons_extract_translate, this::translateCurrent));
         actions.addView(makeAction(R.drawable.ic_card, R.string.engine_ons_extract_anki, this::sendToAnki));
         // 开关型：历史视图 / 听力模式 / TTS / 自动朗读（状态持久化）
-        historyToggle = makeToggle(R.drawable.ic_history, R.string.engine_ons_extract_history, historyMode, () -> {
-            historyMode = !historyMode;
-            applyHistoryMode();
-            return historyMode;
+        historyToggle = makeToggle(R.drawable.ic_history, R.string.engine_ons_extract_history, false, () -> {
+            toggleHistoryOverlay();  // 历史独立悬浮窗（用户要求与文本框分离）
+            return OnsHistoryOverlay.showing();
         });
         listeningToggle = makeToggle(R.drawable.ic_headphones, R.string.engine_ons_extract_listening, listeningMode, () -> {
             listeningMode = !listeningMode;
@@ -683,10 +682,9 @@ public class OnsExtractPanel {
                     return listeningMode;
                 }));
         box.addView(settingRow(R.drawable.ic_history,
-                R.string.engine_ons_extract_history, historyMode, () -> {
-                    historyMode = !historyMode;
-                    applyHistoryMode();
-                    return historyMode;
+                R.string.engine_ons_extract_history, OnsHistoryOverlay.showing(), () -> {
+                    toggleHistoryOverlay();
+                    return OnsHistoryOverlay.showing();
                 }));
 
         // 透明度行：显示当前百分比，点行循环档位
@@ -828,6 +826,29 @@ public class OnsExtractPanel {
         }
     }
 
+    /** 历史 → 独立悬浮窗：组装展示行（#序号 + 正文 + ♪语音名）并开/关。 */
+    private void toggleHistoryOverlay() {
+        if (OnsHistoryOverlay.showing()) {
+            OnsHistoryOverlay.hide();
+            return;
+        }
+        java.util.List<String> items = new java.util.ArrayList<>();
+        synchronized (this) {
+            for (int i = 0; i < history.size(); i++) {
+                HistoryEntry e = history.get(i);
+                items.add("#" + (history.size() - i) + " " + e.sentence
+                        + (e.voiceName.isEmpty() ? "" : "  ♪" + e.voiceName));
+            }
+        }
+        OnsHistoryOverlay.setOnClear(() -> {
+            synchronized (this) {
+                history.clear();
+                lastHistorySentence = "";
+            }
+        });
+        OnsHistoryOverlay.show(activity, items);
+    }
+
     private void applyHistoryMode() {
         historyScroller.setVisibility(historyMode ? View.VISIBLE : View.GONE);
         mainScroller.setVisibility(historyMode ? View.GONE : View.VISIBLE);
@@ -949,8 +970,19 @@ public class OnsExtractPanel {
         }
         // 历史累计：句增量非空且非重复才入列；翻句重置听力揭示态与选词
         if (!sentence.isEmpty() && !sentence.equals(lastHistorySentence)) {
+            // 部分行被完整行替换：打字中途的停顿 flush 会先产生半句，
+            // 完整句到达时若是其延伸则覆盖（不新增）
+            if (!history.isEmpty()
+                    && sentence.startsWith(history.get(history.size() - 1).sentence)) {
+                history.remove(history.size() - 1);
+            }
             history.add(new HistoryEntry(sentence, bridge.getVoiceName()));
             if (history.size() > HISTORY_MAX) history.remove(0);
+            if (OnsHistoryOverlay.showing()) {
+                HistoryEntry he = history.get(history.size() - 1);
+                OnsHistoryOverlay.addEntry(activity, "#" + HISTORY_MAX + " " + he.sentence
+                        + (he.voiceName.isEmpty() ? "" : "  ♪" + he.voiceName));
+            }
             // 主线程先取当句字节引用（配对时已缓存），后台只负责落盘，
             // 避免后台再取时缓存已被下一句覆盖
             byte[] pairedVoice = bridge.getVoiceName().isEmpty() ? null : bridge.ensureVoiceBytes();
