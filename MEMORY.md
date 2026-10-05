@@ -83,6 +83,11 @@
 
 ## 移植外事实（2026-10-05 会话二新增）
 
+- **KRKR 内核导出全套 FreeType（旧结论已推翻）**：libgame*.so 的 FT_* 在 dynsym
+  且 JUMP_SLOT 走自身 GOT——GOT 补丁可拦一切层文本渲染字符。对白路径 =
+  FT_Get_Char_Index→FT_Load_Glyph（FT_Load_Char 不被调）。KAG 打字机整行重绘，
+  码点流呈前缀链，还原需重绘状态机；说话人行（名字层+正文层双层重绘）有重复段
+  待精化。kirikiri 核心层文本处理符号仍隐藏（18559 个导出多为 cocos2d/STL）。
 - **品牌已更名 VNLingo（2026-10-05 会话五）**：app_name 与用户可见文案全部
   VNLingo；applicationId 保持 com.tyranor.next（包名兼容上游，勿改）。图标为
   PIL 程序生成（深靛蓝底白 V + 青条），源 PNG 可随时用同脚本重生成。

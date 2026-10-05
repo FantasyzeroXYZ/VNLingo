@@ -10,7 +10,8 @@
 - [x] 品牌更名 VNLingo + 图标重绘（程序生成简易图）+ 移除开场旧图
 
 ## 未完成 / 遗留 ⏳
-- [ ] KRKR 对白文本提取：需 krkr2-main 带钩内核构建（接收端已就绪）
+- [ ] KRKR 对白还原精化：说话人行重绘链去重（ft raw 原始流日志已备，离线调试）
+- [x] KRKR 纯运行时 hook：FT_Get_Char_Index 字符流已打通（fc94f92，不改内核）
 - [ ] Web 引擎（mukbang=MV / senhana=MZ）提取实测
 - [ ] Artemis SKIP 键（ctrl id 140）在 blossom 未观察到快进，待验证脚本消费
 - [ ] ONS 语音配对：esg 卡在姓名输入，待用 ym/monque 复测

@@ -4,6 +4,22 @@
 > `docs/游戏内提取制卡功能方案.md`（提取功能线方案）阅读。
 > 更新时间：2026-10-05
 
+## 2026-10-05 会话（六）：KRKR 纯运行时 hook 对白提取（用户方向：不走内部输出）
+
+- **推翻旧结论**：此前记录「层文本渲染符号未导出、调用不走 PLT、运行时不可拦截」
+  有误——`llvm-nm -D` 实测 libgame*.so **导出全套 FreeType API**（FT_* 150+ 符号），
+  且 JUMP_SLOT 重定位经自身 GOT（158 个 FT_ 槽），GOT 补丁直接可拦。
+- **对白渲染路径**（krkr2-main FreeType.cpp:651/670 源码证实）：
+  `FT_Get_Char_Index(face, unicode)` → `FT_Load_Glyph(face, index)`；
+  `FT_Load_Char` 从不被调（首版探针挂它因此零命中）。每个渲染字符的 Unicode 码点
+  全部流经 FT_Get_Char_Index——LunaTranslator「GetGlyphOutline 通用卡点」的 KRKR 等价物。
+- **打字机重绘状态机**：KAG 每加一字整行重绘，码点流呈前缀链；known 句 + 重绘轮
+  位置匹配，300ms 停顿结算。kazurauta 实测：旁白行『ずっと一緒にいようね』与
+  叙述行完全干净；说话人行（【詩折】开头）因名字层+正文层双层重绘含重复段，
+  还原精化待续（ft raw 原始流日志已备，离线调试即可）。
+- 通道：`[FTLN]` 前缀经 NativeBridge.onKrkrText 双通道分发（与 [TNEXT] 并列）。
+- 提交 fc94f92。遗留：重绘链去重精化；FT_Load_Char 钩子保留但不再记录。
+
 ## 2026-10-05 会话（五）：品牌更名 VNLingo + 图标重绘
 
 - 应用名全部改为 **VNLingo**（values / values-en / values-ja 的 app_name，
