@@ -11,6 +11,18 @@ import java.util.Locale
 object KrPathUtils {
     private const val TAG = "KrPathUtils"
 
+    /** 存档重定向日志限流：游戏会高频反复开关同一批存档文件（且备份名带时间戳
+     *  无法按路径去重），全量记录会以每秒数行的速度把 logcat 里有用的诊断
+     *  信息刷掉。首条照记，之后 5 秒最多一条。 */
+    private var lastRedirectLogAt = 0L
+
+    private fun logRedirectOnce(source: String, target: String) {
+        val now = android.os.SystemClock.elapsedRealtime()
+        if (now - lastRedirectLogAt < 5000) return
+        lastRedirectLogAt = now
+        Log.i(TAG, "redirect KR save $source -> $target")
+    }
+
     @JvmStatic
     fun currentActivity(): KR2Activity? {
         return KR2Activity.getInstance() ?: KR2Activity.GetInstance()
@@ -92,7 +104,7 @@ object KrPathUtils {
                 val out = if (rel.isEmpty()) dir else File(dir, rel)
                 val parent = if (out.isDirectory) out else out.parentFile
                 if (parent != null && !parent.exists()) parent.mkdirs()
-                Log.i(TAG, "redirect KR save $p -> ${out.absolutePath}")
+                logRedirectOnce(p, out.absolutePath)
                 return out.absolutePath
             }
             root = normalizeFilePath(activity.intent.getStringExtra(LaunchContract.PROJECT_ROOT))
@@ -102,7 +114,7 @@ object KrPathUtils {
             val out = if (rel.isEmpty()) dir else File(dir, rel)
             val parent = if (out.isDirectory) out else out.parentFile
             if (parent != null && !parent.exists()) parent.mkdirs()
-            Log.i(TAG, "redirect KR save $p -> ${out.absolutePath}")
+            logRedirectOnce(p, out.absolutePath)
             out.absolutePath
         } catch (t: Throwable) {
             Log.w(TAG, "redirect KR save failed path=$path", t)
