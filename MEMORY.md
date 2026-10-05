@@ -83,6 +83,12 @@
 
 ## 移植外事实（2026-10-05 会话二新增）
 
+- **品牌已更名 VNLingo（2026-10-05 会话五）**：app_name 与用户可见文案全部
+  VNLingo；applicationId 保持 com.tyranor.next（包名兼容上游，勿改）。图标为
+  PIL 程序生成（深靛蓝底白 V + 青条），源 PNG 可随时用同脚本重生成。
+- **模拟器抽屉里的 "Tyranor Next" 条目不是本项目**：是宿主脚本装的
+  `org.scummvm.scummvm.debug`（ScummVM debug，标签被改成 Tyranor Next），
+  看到它别误判更名失败。
 - **Artemis 左缘按键无效 = 内核 EmulateKeyEvent 是日志桩**（会话四实装修复）：
   注入走 `InjectHostKey` → EnqueueInput（与物理键同管线）；**key 是引擎官方 key id
   （13=ENTER、37-40=方向、140=ctrl），不是 Android keycode；status 0=down/非0=up**。

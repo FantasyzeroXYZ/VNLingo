@@ -1,5 +1,5 @@
 <resources>
-    <string name="app_name">Tyranor Next</string>
+    <string name="app_name">VNLingo</string>
     <string name="common_confirm">确定</string>
     <string name="common_done">完成</string>
     <string name="common_cancel">取消</string>
@@ -114,7 +114,7 @@
     <string name="update_download_http_failed">下载失败（HTTP %1$d），请稍后重试</string>
     <string name="update_install_failed">无法启动安装程序</string>
     <string name="update_channel_name">版本更新</string>
-    <string name="update_channel_description">发现 Tyranor Next 新版本时提醒</string>
+    <string name="update_channel_description">发现 VNLingo 新版本时提醒</string>
     <string name="update_notification_title">发现新版本 %1$s</string>
     <string name="update_notification_fallback_text">点击查看发布详情并下载</string>
     <string name="update_notification_big_text">%1$s\n点击查看 GitHub 发布详情并下载新版本。</string>

@@ -1,5 +1,5 @@
 <resources>
-    <string name="app_name">Tyranor Next</string>
+    <string name="app_name">VNLingo</string>
     <string name="common_confirm">OK</string>
     <string name="common_done">完了</string>
     <string name="common_cancel">キャンセル</string>
@@ -114,7 +114,7 @@
     <string name="update_download_http_failed">ダウンロードに失敗しました（HTTP %1$d）。しばらくしてから再試行してください</string>
     <string name="update_install_failed">インストーラーを起動できません</string>
     <string name="update_channel_name">バージョン更新</string>
-    <string name="update_channel_description">Tyranor Next の新しいバージョンを検出したときに通知します</string>
+    <string name="update_channel_description">VNLingo の新しいバージョンを検出したときに通知します</string>
     <string name="update_notification_title">新しいバージョン %1$s があります</string>
     <string name="update_notification_fallback_text">リリース詳細を表示してダウンロード</string>
     <string name="update_notification_big_text">%1$s\nGitHub のリリース詳細を開いて新しいバージョンをダウンロードします。</string>

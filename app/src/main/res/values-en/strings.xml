@@ -1,5 +1,5 @@
 <resources>
-    <string name="app_name">Tyranor Next</string>
+    <string name="app_name">VNLingo</string>
     <string name="common_confirm">OK</string>
     <string name="common_done">Done</string>
     <string name="common_cancel">Cancel</string>
@@ -114,7 +114,7 @@
     <string name="update_download_http_failed">Download failed (HTTP %1$d). Please try again later</string>
     <string name="update_install_failed">Unable to start the installer</string>
     <string name="update_channel_name">Version updates</string>
-    <string name="update_channel_description">Notify when a new Tyranor Next version is available</string>
+    <string name="update_channel_description">Notify when a new VNLingo version is available</string>
     <string name="update_notification_title">New version %1$s available</string>
     <string name="update_notification_fallback_text">View release details and download</string>
     <string name="update_notification_big_text">%1$s\nOpen the GitHub release details and download the new version.</string>
@@ -195,7 +195,7 @@
     <string name="game_add_folder">Add folder</string>
     <string name="game_no_match">No matching games found</string>
     <string name="game_auto_patch_title">Apply automatic patch</string>
-    <string name="game_auto_patch_message">The launch file for “%1$s” is packed inside a .pfs archive. On first launch, Tyranor Next needs to extract several base files (system.ini, window configuration, and videos) and adapt them for Android. Apply the patch?</string>
+    <string name="game_auto_patch_message">The launch file for “%1$s” is packed inside a .pfs archive. On first launch, VNLingo needs to extract several base files (system.ini, window configuration, and videos) and adapt them for Android. Apply the patch?</string>
     <string name="game_patch_always">Always</string>
     <string name="game_patch_never">Never</string>
     <string name="game_patch_once">This time</string>

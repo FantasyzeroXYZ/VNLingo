@@ -4,6 +4,20 @@
 > `docs/游戏内提取制卡功能方案.md`（提取功能线方案）阅读。
 > 更新时间：2026-10-05
 
+## 2026-10-05 会话（五）：品牌更名 VNLingo + 图标重绘
+
+- 应用名全部改为 **VNLingo**（values / values-en / values-ja 的 app_name，
+  以及更新渠道说明、自动补丁说明等用户可见文案；applicationId 仍为
+  com.tyranor.next，与上游包名兼容不变）。
+- 图标重绘为程序生成的简易图：深靛蓝渐变底 + 白色粗体 V + 青色横条
+  （#2DD4BF，词典/语言意象）——PIL 生成，替换自适应图标背景
+  ic_launcher_art.png、单色层 ic_launcher_monochrome.png 及五档 mipmap
+  （方/圆各一）；Android 12+ 启动画面直接用图标，开场旧图随换。
+- 删除无引用的开场旧图 `drawable-nodpi/engine_logo.png`。
+- 模拟器抽屉里仍会显示一个 "Tyranor Next" 条目：那是宿主脚本装的
+  `org.scummvm.scummvm.debug`（ScummVM debug 版，launcher 标签被改成
+  "Tyranor Next"），与本项目无关，VNLingo 本体已正确显示新名新图标。
+
 ## 2026-10-05 会话（三）：KRKR 文本提取基建（分支 feat/extract-suite）
 
 目标「让 krkr 所有版本支持文本读取」。结论：**接收端全链路就绪，对白数据源仍需带钩内核**

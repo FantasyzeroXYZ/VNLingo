@@ -1,0 +1,17 @@
+# 待办（2026-10-05 更新）
+
+## 已完成 ✅
+- [x] 去掉导航首页，引擎并入设置页；词典页加入底部导航
+- [x] 引擎裁剪：仅保留 krkr / ons / rpgmaker系列 / tyrano / renpy / web / artemis
+- [x] 词典/翻译等设置迁出游戏画面，归入主导航设置页
+- [x] 手柄信号接收 + 按键重映射（捕获式设置页）
+- [x] Artemis 文本/语音提取（带桥内核）+ 左缘按键修复 + 左右按键统一抽象
+- [x] 放大镜功能
+- [x] 品牌更名 VNLingo + 图标重绘（程序生成简易图）+ 移除开场旧图
+
+## 未完成 / 遗留 ⏳
+- [ ] KRKR 对白文本提取：需 krkr2-main 带钩内核构建（接收端已就绪）
+- [ ] Web 引擎（mukbang=MV / senhana=MZ）提取实测
+- [ ] Artemis SKIP 键（ctrl id 140）在 blossom 未观察到快进，待验证脚本消费
+- [ ] ONS 语音配对：esg 卡在姓名输入，待用 ym/monque 复测
+- [ ] 官方 revision Artemis 内核不挂钩、无提取（按需再评估）
