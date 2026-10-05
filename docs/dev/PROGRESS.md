@@ -4,6 +4,20 @@
 > `docs/说明/游戏内提取制卡功能方案.md`（提取功能线方案）阅读。
 > 更新时间：2026-10-05
 
+## 2026-10-05 会话（十五）：健壮性第七批（Zip Slip 防护）
+
+- **SaveZipUtil.unzipInto 补 Zip Slip 防护**：条目名直接 `new File(targetDir, name)`
+  拼路径且无校验——恶意/损坏的存档包（用户手选或云同步来源）可用 `../` 穿越
+  或绝对路径写出目标目录，覆盖应用任意文件。现对每条目做 canonicalPath 前缀
+  校验，越界即抛错中止导入。
+- **排查记录**：全仓共 4 处 ZipInputStream 解包——GameSaveManager（canonicalPath
+  校验 + safeZipEntryName + 重复条目/文件数上限）与 RpgMakerRuntimeEnvironment
+  （canonicalPath 校验）本就有防护；EnginePluginBootstrap 解 APK 内置 assets
+  （可信来源）；OnsDictStore 的 Yomichan zip 只按名读流不落盘（无此问题）。
+- **端到端实测**：构造含 `../zipslip_canary.txt` 的恶意 zip，走游戏内存档管理
+  → 覆盖导入 ZIP → SAF 选择——导入被拒（toast「压缩包包含非法路径：…」），
+  越界 canary 文件不存在，游戏存档（9 个文件）未受影响。
+
 ## 2026-10-05 会话（十四）：健壮性第六批（补丁完整性 + 扫描线程模型）
 
 - **内核补丁下载完整性校验**：KrkrOnlinePatchService.downloadToFile 此前只限大小

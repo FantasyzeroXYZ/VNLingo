@@ -63,17 +63,30 @@ public final class SaveZipUtil {
         }
     }
 
-    /** 解包输入流到目标目录（覆盖写入），返回文件数。 */
+    /** 解包输入流到目标目录（覆盖写入），返回文件数。
+     *  Zip Slip 防护：拒绝绝对路径与 ../ 穿越——存档可能来自任意来源
+     *  （用户手选/云同步），恶意或损坏的包不得写出目标目录覆盖其他文件。 */
     public static int unzipInto(InputStream input, File targetDir) throws IOException {
         if (input == null || targetDir == null) return 0;
         if (!targetDir.isDirectory() && !targetDir.mkdirs()) {
             throw new IOException("mkdirs failed: " + targetDir);
+        }
+        final String base;
+        try {
+            base = targetDir.getCanonicalPath() + File.separator;
+        } catch (IOException e) {
+            throw new IOException("canonical path failed: " + targetDir, e);
         }
         int count = 0;
         try (ZipInputStream zip = new ZipInputStream(input)) {
             ZipEntry entry;
             while ((entry = zip.getNextEntry()) != null) {
                 File out = new File(targetDir, entry.getName());
+                String canonical = out.getCanonicalPath();
+                if (!canonical.equals(base.substring(0, base.length() - 1))
+                        && !canonical.startsWith(base)) {
+                    throw new IOException("zip entry escapes target dir: " + entry.getName());
+                }
                 if (entry.isDirectory()) {
                     out.mkdirs();
                     continue;
