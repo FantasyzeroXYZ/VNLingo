@@ -668,6 +668,7 @@
     <string name="patch_index_fetch_failed_http">Patch index fetch failed: HTTP %1$d</string>
     <string name="patch_download_failed_http">Patch download failed: HTTP %1$d</string>
     <string name="patch_download_too_large">Patch file is too large; download stopped</string>
+    <string name="patch_download_truncated">Patch download incomplete (received %1$d of %2$d bytes); please retry</string>
     <string name="patch_error_open_write_stream">Unable to open the patch write stream</string>
     <string name="patch_error_write_game_dir">Unable to write to the game directory. Add the game folder again and grant write permission</string>
     <string name="game_add_pc_content_description">Add PC game</string>

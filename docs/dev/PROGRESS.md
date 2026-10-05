@@ -4,6 +4,19 @@
 > `docs/说明/游戏内提取制卡功能方案.md`（提取功能线方案）阅读。
 > 更新时间：2026-10-05
 
+## 2026-10-05 会话（十四）：健壮性第六批（补丁完整性 + 扫描线程模型）
+
+- **内核补丁下载完整性校验**：KrkrOnlinePatchService.downloadToFile 此前只限大小
+  不核长度——服务端提前断流时 read"正常"返回 -1，截断补丁被当成功装进游戏目录
+  = 坏内核（游戏无法启动且极难排查）。现在 Content-Length 可用（非 chunked）时
+  必须核对 total==expected，不符抛错走既有失败路径（临时文件清理）。
+  新文案 patch_download_truncated（已收/应收字节数，三语）。
+- **扫描线程模型**：scanFrom 每次点选 new Thread → 改单线程 ExecutorService 串行
+  （多线程查同一 SQLite 无增益）；配合代次早停，过期任务被消费到时立即返回，
+  不阻塞新扫描；daemon 线程不阻碍进程退出。
+- 冒烟：executor 模型下游戏内非首单位查词正常（続く 释义弹出）。
+- 审查记录：BackgroundUpdateWorker 只做检查通知不下载 APK，无完整性问题。
+
 ## 2026-10-05 会话（十三）：健壮性第五批（崩溃日志落盘 + 设置页查看/分享）
 
 - **CrashLogWriter**（新）：默认 UncaughtExceptionHandler 包装——未捕获异常先同步

@@ -136,6 +136,10 @@ object KrkrOnlinePatchService {
         }
         connection.use {
             if (responseCode !in 200..299) error(text(context, R.string.patch_download_failed_http, responseCode))
+            // 内容长度校验：服务端提前断流时 read 会"正常"返回 -1，截断的补丁
+            // 一旦被当成功装进游戏目录就是坏内核（游戏无法启动）。Content-Length
+            // 可用（非 chunked）时必须核对；chunked（-1）跳过
+            val expected = connection.contentLengthLong
             inputStream.use { input ->
                 target.outputStream().use { output ->
                     val buffer = ByteArray(DOWNLOAD_BUFFER_SIZE)
@@ -148,6 +152,11 @@ object KrkrOnlinePatchService {
                             throw IOException(text(context, R.string.patch_download_too_large))
                         }
                         output.write(buffer, 0, read)
+                    }
+                    if (expected > 0 && total != expected) {
+                        throw IOException(
+                            text(context, R.string.patch_download_truncated, total, expected),
+                        )
                     }
                 }
             }

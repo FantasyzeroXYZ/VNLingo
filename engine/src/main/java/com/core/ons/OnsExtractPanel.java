@@ -164,6 +164,14 @@ public class OnsExtractPanel {
     /** 查词/翻译请求代次号：翻句或重复请求后丢弃过期回调结果。 */
     private volatile int dictRequestId;
     private volatile int translateRequestId;
+    /** 扫描线程池：单线程串行化查词（多线程查同一 SQLite 无增益）。快速连按时
+     *  过期任务排队在前，但循环首行即代次检查、立刻返回，不阻塞新扫描。 */
+    private final java.util.concurrent.ExecutorService scanExecutor =
+            java.util.concurrent.Executors.newSingleThreadExecutor(r -> {
+                Thread t = new Thread(r, "ons-scan");
+                t.setDaemon(true);
+                return t;
+            });
     /** 面板不透明百分比（OPACITY_STEPS 档位之一，持久化）。 */
     private int panelOpacity;
     private TextView opacityToggle;
@@ -1225,7 +1233,7 @@ public class OnsExtractPanel {
     private void scanFrom(final int startPos) {
         final int requestId = ++dictRequestId;
         final String text = currentSentence;
-        new Thread(() -> {
+        scanExecutor.execute(() -> {
             try {
                 if (!OnsDictStore.get().hasDictionary()) {
                     main.post(() -> toast(R.string.engine_ons_extract_dict_none));
@@ -1250,7 +1258,7 @@ public class OnsExtractPanel {
             } catch (Throwable t) {
                 Log.w(TAG, "dict scan failed", t);
             }
-        }, "ons-scan").start();
+        });
     }
 
     private static final class ScanHit {
