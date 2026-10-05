@@ -2,12 +2,11 @@ cmake_minimum_required(VERSION 3.22.1)
 project(tyranor_native)
 
 add_library(krkr_bridge_v2 SHARED krkr_bridge.cpp krkr_extract_hook.cpp)
-# 提取钩子编入两库：loader 在 ANativeActivity_onCreate 早期装（实测可用），
-# audio_bridge 提供 JNI 入口供 Java 侧在早期失败（shadowhook_init errno=12）时延迟重试；
-# shadowhook 进程内单例，同一地址二次挂钩只会安全报错，不会叠加
+# 提取钩子只编入 audio_bridge：GOT 补丁不依赖安装时机，由 Java 侧
+#（ArtemisExtractFacade）经 nativeInstallExtractHook 统一安装，避免早期/延迟
+# 两份静态状态互相不知情、把同一 GOT 槽二次包裹造成事件重复上行
 add_library(artemis_audio_bridge SHARED artemis_audio_bridge.cpp artemis_extract_hook.cpp)
-add_library(artemis_loader SHARED artemis_loader.cpp artemis_extract_hook.cpp)
-target_compile_definitions(artemis_loader PRIVATE ARTEMIS_HOOK_LOADER)
+add_library(artemis_loader SHARED artemis_loader.cpp)
 add_library(siglus_bridge SHARED siglus_bridge.cpp)
 add_library(rfvp_bridge SHARED rfvp_bridge.cpp)
 add_library(games_bridge SHARED games_bridge.cpp)

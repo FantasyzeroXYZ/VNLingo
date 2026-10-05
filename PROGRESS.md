@@ -120,13 +120,18 @@
 
 ### 五、Artemis 两修复（用户补充）
 
-1. **面板读不到文本/语音**：根因是随包 Artemis 内核（含 clean 内核 .so）均无 extract_bridge
-   发射器（符号表验证，外部内核源码仓的带桥构建未随仓分发）。修复：新
-   `artemis_extract_hook.cpp`（并入 artemis_loader 库），dlopen shadowhook（jniLibs 真库，1.1.1）
-   对 clean 内核 `artc::Compositor::SetMessageLayered`（文本）与
-   `artc::AudioChannels::Play`（语音名）做 entry inline hook，经 `onArtemisExtract` 上行；
-   facade 增加 BGM 名过滤与游戏目录语音兜底探测。**限制**：语音名可配对显示，
-   packed 游戏语音字节暂不可播（语音副本落盘机制未随内核分发）；官方 revision 内核不挂钩。
+1. **面板读不到文本/语音（会话三彻底修复）**：真正根因是随包 libartemis-clean.so 是
+   无桥的旧构建——内核源码仓 `D:\Desktoprtemis-compat` 自带提取桥
+   （TagPrint/TagAudio 发射 + native_activity.cpp 自注册 + 语音副本落盘缓存），
+   AGENT.md 明确「宿主将 libartemis.so 打包为 libartemis-clean.so」。修复：
+   `llvm-strip --strip-debug` 后的带桥构建替换随包内核，`pluginVersion` 29→30
+   触发 EnginePluginBootstrap 自动重装（实测 re-provision 日志确认）。
+   `artemis_extract_hook.cpp` 保留为无桥内核的 GOT 兜底（DispatchTag/SetMessageLayered/
+   AudioChannels::Play），检测到 `SetExtractEmitter` 导出即整体跳过防双发射；
+   shadowhook inline 路线废弃（本环境 API 34+ linker `shadowhook_init` 即 errno=12）。
+   facade 语音配对改「只认纯语音事件 + 消费即清 + 同句粘滞（前缀延伸）」——旁白行
+   不再继承上一句语音，同句打字机分段不再冲掉 ♪ 标注。blossom 实测：对白文本
+   （寝坊した～っ！等）+ 语音 fem_him_00281/fem_rim_00238 配对正确、语音副本落盘可重播。
 2. **关闭面板后触摸失灵**：根因是 `WindowOverlayHost` 触摸放行只靠 OnLayoutChangeListener，
    VISIBLE→GONE 时 bounds 不变、回调不触发，全屏覆盖窗停留在可触摸态吃掉全部输入。
    修复：`OnsExtractPanel.setPanelVisibilityHook`，togglePanel 后显式同步（布局监听保留兜底）。
@@ -182,6 +187,15 @@
 - 提取面板（剧情文本框）改为**暗色圆钮**配色（对齐参考样式）：面板底 `0xE6101010`、
   按钮正圆 `0xFF2E2E2E` 白图标、语音行青色 `0xFF2DD4BF`、正文白、翻译浅灰、
   释义区暗色 chip、历史分隔线半透明白；弹窗（设置/词典/翻译测试）维持浅色。
+
+### 五.五、面板 UI 改版（用户反馈，会话三）
+
+- 按键排移到面板最下方并缩小（40dp→32dp，含 toggle/透明度按钮）；
+- 面板横屏不占全宽：`preferredWindowWidthPx()` 屏宽两侧各留 dp(64) 给左右按键列、
+  水平居中（Artemis 窗口宿主直接按此设窗宽）；正文分词 span 颜色 TEXT_BODY（近黑）
+  在深色面板上不可读 → 改纯白 TEXT_ON_DARK；
+- Artemis 左缘引擎按键（NEXT/SKIP/方向键）恢复：`installEngineLeftButtons()` 此前
+  重构后从未被调用，现接入 installPanels。
 
 ### 六、验证状态
 

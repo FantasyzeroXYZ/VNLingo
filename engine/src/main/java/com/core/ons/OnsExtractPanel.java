@@ -193,6 +193,22 @@ public class OnsExtractPanel {
         this.sideButtonsWindowMode = window;
     }
 
+    /**
+     * 独立安装（窗口承载宿主）：右缘按键组装为独立小窗；面板视图不加入任何父布局、
+     * 由宿主以独立 WindowManager 窗口承载（底部、可触摸、GONE 时窗口塌缩为 0 不挡游戏）。
+     * 返回面板根视图。
+     */
+    public LinearLayout installDetached(Runnable onMouseModeToggle,
+                                        java.util.function.Supplier<Boolean> mouseMode) {
+        sideButtons = OnsSideButtons.installAsWindow(activity, this::togglePanel,
+                this::captureScreenshot, this::showSettingsDialog,
+                onMouseModeToggle, mouseMode);
+        panel = buildPanel();
+        panel.setVisibility(View.GONE);
+        facade.setListener(this::refresh);
+        return panel;
+    }
+
     /** 在宿主覆盖层内安装右缘按键组（文本框开关/截图/设置/音量/点击模式/主页）与剧情文本框面板。 */
     public void install(android.view.ViewGroup overlay,
                         Runnable onMouseModeToggle, java.util.function.Supplier<Boolean> mouseMode) {
@@ -397,13 +413,13 @@ public class OnsExtractPanel {
         scroll.addView(actions);
         actionsScrollView = scroll;
 
-        // 按钮行置顶一行，♪ 语音状态行紧随其下
+        // ♪ 状态行 + 正文在顶，按键排置底（用户要求：按键在面板最下方）
         LinearLayout.LayoutParams actionsLp = new LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT);
-        panel.addView(scroll, actionsLp);
         panel.addView(statusView);
         panel.addView(mainScroller, mainLp);
         panel.addView(historyScroller, historyLp);
+        panel.addView(scroll, actionsLp);
         return panel;
     }
 
@@ -426,13 +442,13 @@ public class OnsExtractPanel {
         iv.setContentDescription(activity.getString(descRes));
         // 与左右缘按键组同款：深色半透明底 + 白色图标
         iv.setColorFilter(0xFFFFFFFF);
-        int side = dp(40);
+        int side = dp(32);
         LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(side, side);
         lp.rightMargin = dp(6);
         lp.leftMargin = dp(1);
-        int pad = dp(8);
+        int pad = dp(6);
         iv.setPadding(pad, pad, pad, pad);
-        iv.setBackground(rounded(BG_DARK, dp(20)));
+        iv.setBackground(rounded(BG_DARK, dp(16)));
         iv.setOnClickListener(v -> {
             try {
                 action.run();
@@ -455,7 +471,7 @@ public class OnsExtractPanel {
         tv.setMinWidth(dp(40));
         tv.setMinHeight(dp(40));
         LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.WRAP_CONTENT, dp(40));
+                LinearLayout.LayoutParams.WRAP_CONTENT, dp(32));
         lp.rightMargin = dp(6);
         lp.leftMargin = dp(1);
         tv.setBackground(rounded(BG_DARK, dp(20)));
@@ -479,6 +495,18 @@ public class OnsExtractPanel {
             final Runnable hook = panelVisibilityHook;
             main.post(hook);
         }
+    }
+
+    /**
+     * 窗口承载宿主（Artemis）的面板窗宽度：竖屏全宽；横屏两侧各留 dp(64)
+     * 给左缘/右缘按键列，面板水平居中不遮按键。
+     */
+    public int preferredWindowWidthPx() {
+        boolean landscape = activity.getResources().getConfiguration().orientation
+                == android.content.res.Configuration.ORIENTATION_LANDSCAPE;
+        int screenW = activity.getResources().getDisplayMetrics().widthPixels;
+        if (!landscape) return android.view.ViewGroup.LayoutParams.MATCH_PARENT;
+        return Math.max(dp(320), screenW - dp(64) * 2);
     }
 
     /**
@@ -969,7 +997,8 @@ public class OnsExtractPanel {
 
                 @Override
                 public void updateDrawState(TextPaint ds) {
-                    ds.setColor(TEXT_BODY);
+                    // 深色面板上的正文必须纯白：TEXT_BODY 近黑在 0xE6101010 底上不可读
+                    ds.setColor(TEXT_ON_DARK);
                     ds.setUnderlineText(false);
                 }
             }, start, end, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
@@ -1859,11 +1888,11 @@ public class OnsExtractPanel {
         final android.widget.ImageView[] holder = new android.widget.ImageView[1];
         android.widget.ImageView iv = makeAction(iconRes, descRes, () -> {
             boolean now = onToggle.get();
-            holder[0].setBackground(rounded(now ? ACCENT : BG_DARK, dp(20)));
+            holder[0].setBackground(rounded(now ? ACCENT : BG_DARK, dp(16)));
             applyOpacity(); // 新背景需继承面板透明度
         });
         holder[0] = iv;
-        iv.setBackground(rounded(active ? ACCENT : BG_DARK, dp(20)));
+        iv.setBackground(rounded(active ? ACCENT : BG_DARK, dp(16)));
         return iv;
     }
 

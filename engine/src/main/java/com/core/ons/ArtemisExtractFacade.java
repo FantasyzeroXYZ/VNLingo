@@ -56,22 +56,30 @@ public class ArtemisExtractFacade implements ExtractFacade {
     private void registerExtractListener() {
         ArtemisExtractBridge.setListener((text, voiceFile, voiceCached) -> {
             synchronized (this) {
-                // 语音先于文本到达（voplay/seplay 先行），挂到待配队列；
-                // BGM 走同一音频通道，按名字过滤避免错配到台词
-                if (voiceFile != null && !voiceFile.isEmpty() && !isBgmName(voiceFile)) {
+                // 只认纯语音事件（text 为空，voplay/seplay 专属发射）进入待配队列。
+                // 内核 EmitExtractText 还会把「最近一次 voplay」重复挂在每个文本
+                // 事件上且从不清除——若也接收，无语音的行将一直继承上一句语音
+                //（实测 Blossom 旁白行挂着上一台词的语音），配对必须按下述时序：
+                if ((text == null || text.isEmpty()) && voiceFile != null
+                        && !voiceFile.isEmpty() && !isBgmName(voiceFile)) {
                     pendingVoice = voiceFile;
                     voiceCachedPath = voiceCached == null ? "" : voiceCached;
                 }
                 if (text != null && !text.isEmpty()) {
+                    // 打字机分段：累积文本单调增长 = 同一句，语音标注保持粘滞
+                    //（否则同句后续分段会把 ♪ 标注冲掉，显示无语音却可重播）；
+                    // 句更替（文本非前缀延伸）才重置并消费待配语音
+                    boolean sameSentenceGrowing = sentence.length() > 0
+                            && text.length() > sentence.length()
+                            && text.startsWith(sentence.toString());
                     sentence.setLength(0);
                     sentence.append(text);
-                    // 时序消费：语音配给其后第一行文本（台词/旁白一视同仁，
-                    // 有旁白语音的游戏自然配对），消费后即失效，不随后续行滞留
+                    if (!sameSentenceGrowing) {
+                        voiceName = "";
+                    }
                     if (!pendingVoice.isEmpty()) {
                         voiceName = pendingVoice;
                         pendingVoice = "";
-                    } else {
-                        voiceName = "";
                     }
                 }
             }

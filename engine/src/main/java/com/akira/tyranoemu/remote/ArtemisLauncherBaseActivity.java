@@ -20,6 +20,8 @@ public abstract class ArtemisLauncherBaseActivity extends com.ies_net.artemis.Ar
     /** 存档/提取面板门面（游戏路径存在时安装，见 installPanels）。 */
     private com.core.ons.ArtemisExtractFacade facade;
     private boolean panelsInstalled;
+    /** 提取面板窗口内容（面板 GONE 时窗口塌缩，无残留遮挡）。 */
+    private android.view.View extractPanelView;
     /** 加载 revision-specific 的 Artemis native 库（如 libartemis.so），onCreate 一次性调用。 */
     public abstract void loadEngineLibrary();
 
@@ -97,47 +99,39 @@ public abstract class ArtemisLauncherBaseActivity extends com.ies_net.artemis.Ar
             if (path.startsWith("file://")) path = path.substring("file://".length());
             facade = new com.core.ons.ArtemisExtractFacade(this, path);
 
-            com.core.ons.WindowOverlayHost helper = new com.core.ons.WindowOverlayHost(this);
             com.core.ons.OnsExtractPanel extractPanel = new com.core.ons.OnsExtractPanel(facade);
-            // 右缘按键组走独立小窗；全屏覆盖层只承载面板本体
+            // 右缘按键组走独立小窗；面板自身承载为底部独立窗口（可触摸）：
+            // 旧方案（全屏覆盖窗随面板可见性切换触摸态）在面板开启时会吃掉全部
+            // 游戏触摸——触摸推进失效的根因。面板窗口只占面板自身区域，
+            // 其余触摸透传游戏；面板 GONE 时窗口塌缩为 0。
             extractPanel.setSideButtonsWindowMode(true);
-            extractPanel.install(helper.overlay(), null, null);
-
-            // 面板开合（含面板内 ✕/收起）都会改动可见性：布局变化即同步触摸放行
-            android.view.View.OnLayoutChangeListener sync =
-                    (v, a, b, c, d, e, f, g, h) -> helper.syncTouchability(extractPanel.panelView());
-            extractPanel.panelView().addOnLayoutChangeListener(sync);
-            // 显式开合回调：VISIBLE→GONE 不触发布局变化（bounds 不变），仅靠布局回调
-            // 会让覆盖窗停留在可触摸态吃掉游戏输入（触摸失灵），故开合后直接同步。
-            extractPanel.setPanelVisibilityHook(() -> helper.syncTouchability(extractPanel.panelView()));
-            helper.syncTouchability(extractPanel.panelView());
-
+            android.view.View panelView = extractPanel.installDetached(null, null);
             installEngineLeftButtons();
+
+            android.view.WindowManager.LayoutParams plp = new android.view.WindowManager.LayoutParams(
+                    extractPanel.preferredWindowWidthPx(),
+                    android.view.WindowManager.LayoutParams.WRAP_CONTENT,
+                    android.view.WindowManager.LayoutParams.TYPE_APPLICATION,
+                    android.view.WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE,
+                    android.graphics.PixelFormat.TRANSLUCENT);
+            plp.gravity = android.view.Gravity.BOTTOM | android.view.Gravity.CENTER_HORIZONTAL;
+            plp.y = navBarBottomInset();
+            getWindowManager().addView(panelView, plp);
+            extractPanelView = panelView;
+            Log.i("YukiArtemis", "extract panel installed (artemis, detached window)");
         } catch (Throwable t) {
             Log.w("YukiArtemis", "installPanels failed", t);
         }
     }
 
-    @Override
-    public final void onResume() {
-        super.onResume();
-        setRequestedOrientation(getIntent().getIntExtra(LaunchContract.ORIENTATION, 6));
-        nativeResumeAllSound();
-    }
-
-    @Override
-    protected void onPause() {
-        Log.i("YukiArtemis", "onPause finishing=" + isFinishing() + " pid=" + android.os.Process.myPid());
-        nativePauseAllSound();
-        super.onPause();
-    }
-
-    @Override
-    public boolean dispatchKeyEvent(KeyEvent event) {
-        // 注：面板手柄拦截（OnsExtractPanel.handleKey）在 NativeActivity 下
-        // 输入走 native 队列，此处不保证到达；内核文本钩子落地后再评估接入点
-        if (DoubleBackExit.dispatchBackKey(this, event, this::exitFromBack)) return true;
-        return super.dispatchKeyEvent(event);
+    /** 导航条高度（横屏底部 inset），面板窗口避开。 */
+    private int navBarBottomInset() {
+        try {
+            android.view.WindowInsets ins = getWindow().getDecorView().getRootWindowInsets();
+            if (ins != null) return ins.getInsets(android.view.WindowInsets.Type.systemBars()).bottom;
+        } catch (Throwable ignored) {
+        }
+        return 0;
     }
 
     /** 引擎键注入：经内核 EmulateKeyEvent（keycode 映射同 ArtemisActivity.dispatchKeyEvent）。 */

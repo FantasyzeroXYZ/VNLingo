@@ -32,6 +32,7 @@ typedef void (*OnCreateFn)(ANativeActivity*, void*, size_t);
 
 // artemis_extract_hook.cpp（编入本库与 audio_bridge 两份）：提取钩子
 extern "C" void artemis_install_extract_hook(void* kernelHandle, JavaVM* jvm);
+extern "C" void artemis_shadowhook_prepare();
 
 std::string getEngineLibName(JNIEnv* env, ANativeActivity* activity) {
     jclass activityCls = env->GetObjectClass(activity->clazz);
@@ -242,6 +243,7 @@ ANativeActivity_onCreate(ANativeActivity* activity, void* savedState, size_t sav
     // engineLibName 已通过白名单校验，此处拼接是安全的。
     const std::string libPath =
         filesDir + "/engine_plugins/artemis/current/arm64-v8a/lib" + engineLibName + ".so";
+
     LOGI("Artemis plugin: dlopen %s", libPath.c_str());
 
     void* handle = dlopen(libPath.c_str(), RTLD_NOW | RTLD_GLOBAL);
@@ -253,13 +255,8 @@ ANativeActivity_onCreate(ANativeActivity* activity, void* savedState, size_t sav
 
     // 必须早于引擎创建任何 CSoundTrack：此刻还没转发 ANativeActivity_onCreate。
     installCsReadStackGuard(handle);
-    // 提取钩子（剧情文本框数据源）尽早安装——整个进程周期实测可用；若本环境
-    // shadowhook_init 失败（errno=12），Java 侧经 nativeInstallExtractHook 延迟重试
-    //（audio_bridge 中的另一份实现；shadowhook 单例保证不会二次挂钩）。
-    JavaVM* extractJvm = nullptr;
-    if (activity->env != nullptr && activity->env->GetJavaVM(&extractJvm) == JNI_OK) {
-        artemis_install_extract_hook(handle, extractJvm);
-    }
+    // 提取钩子（剧情文本框数据源）由 Java 侧经 nativeInstallExtractHook 安装
+    //（artemis_audio_bridge；GOT 补丁不依赖安装时机，无需在此提前）。
 
     OnCreateFn onCreate = reinterpret_cast<OnCreateFn>(
             dlsym(handle, "ANativeActivity_onCreate"));

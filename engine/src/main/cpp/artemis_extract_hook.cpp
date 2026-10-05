@@ -1,24 +1,23 @@
 // artemis_extract_hook.cpp
-// Artemis 提取桥的原生侧补齐。编译进两库（CMakeLists 传 ARTEMIS_HOOK_LOADER 区分）：
-// - libartemis_loader（ARTEMIS_HOOK_LOADER）：ANativeActivity_onCreate 阶段的早期安装入口
-//   artemis_install_extract_hook；
-// - libartemis_audio_bridge：JNI 入口 nativeInstallExtractHook——早期失败时由 Java 侧
-//   （ArtemisExtractFacade 构造）延迟重试。
+// Artemis 提取桥的原生侧。编译进 libartemis_audio_bridge，由 Java 侧
+//（ArtemisActivity.nativeInstallExtractHook，ArtemisExtractFacade 构造时调用）安装。
 //
 // 背景：提取面板的 Java 侧依赖内核 extract_bridge 发射器回调
 // ArtemisActivity.onArtemisExtract，但随包 Artemis 内核（含 clean 内核
 // libartemis-clean.so）均无该发射器（外部内核源码仓的带桥构建未随本仓分发）。
 //
 // 方案：GOT 补丁（与 krkr_bridge relocate 的 open/fopen 钩子同款技术）——
-// clean 内核对自家导出的消息/音频函数经 PLT→GOT 调用（llvm-objdump 证实存在
-// `bl ...@plt` 调用点与 JUMP_SLOT 重定位），扫描内核 JMPREL 把对应槽改写为本钩子：
+// 内核对下列自家导出函数存在 `bl ...@plt` 调用点（llvm-objdump 证实），扫描全部
+// 已加载模块的 JMPREL，把对应 JUMP_SLOT 改写为本钩子：
+// - artc::LuaEngine::DispatchTag(name, params, bool) —— 脚本标签总分发口；
+//   对白正文以标签参数形态流经（具体标签键名由运行期 tag 日志确认）
 // - artc::Compositor::SetMessageLayered(const std::string&, bool) —— 消息层文本
-// - artc::AudioChannels::Play(const std::string&, const std::string&, ...) —— 首参音频名
+// - artc::AudioChannels::Play(const std::string&, const std::string&, ...) —— 音频名
 //   （voplay/se/bgm 共用通道，bgm 由 Java 侧按名字过滤）
-// 不做代码段 inline hook（shadowhook 在部分模拟器环境报 errno=12 "Init linker mod
-// failed"，GOT 补丁只动 RELRO 数据页，无此依赖）。官方 revision 内核（artemis::
-// 命名空间）符号布局不同，暂不挂钩，行为与现状一致。所有步骤失败均静默降级（记录
-// 日志），不影响游戏运行。
+// 不做代码段 inline hook：shadowhook 1.1.1 在部分模拟器环境（API 34+ linker）
+// shadowhook_init 即报 errno=12 "Init linker mod failed"，GOT 补丁只动 RELRO
+// 数据页，无此依赖。官方 revision 内核（artemis:: 命名空间）符号布局不同，
+// 暂不挂钩，行为与现状一致。所有步骤失败均静默降级（记录日志），不影响游戏运行。
 
 #include <dlfcn.h>
 #include <android/log.h>
@@ -31,6 +30,7 @@
 #include <cstring>
 #include <mutex>
 #include <string>
+#include <vector>
 
 #define TAG "ArtemisExtract"
 #define LOGI(...) __android_log_print(ANDROID_LOG_INFO, TAG, __VA_ARGS__)
@@ -38,8 +38,10 @@
 
 namespace {
 
-// libartemis-clean.so（artc 命名空间）导出符号
-constexpr const char* kKernelLibBasename = "libartemis-clean.so";
+// 目标符号（artc 命名空间导出；调用方可能在任何 DSO，故补丁扫描全部模块的 GOT）
+constexpr const char* kDispatchTag =
+    "_ZN4artc9LuaEngine11DispatchTagERKNSt6__ndk112basic_stringIcNS1_11char_traitsIcEEN"
+    "S1_9allocatorIcEEEERKNS1_6vectorINS1_4pairIS7_S7_EENS5_ISC_EEEEb";
 constexpr const char* kSetMessageLayered =
     "_ZN4artc10Compositor17SetMessageLayeredERKNSt6__ndk112basic_stringIcNS1_11char_"
     "traitsIcEENS1_9allocatorIcEEEEb";
@@ -50,9 +52,11 @@ constexpr const char* kAudioPlay =
 using SetMessageLayeredFn = void (*)(void* self, const std::string& text, bool flag);
 using AudioPlayFn = void (*)(void* self, const std::string& a, const std::string& b,
                              bool flag1, int int1, int int2, double dbl, bool flag2);
+using DispatchTagFn = bool (*)(void* self, const void* name, const void* params, bool flag);
 
 SetMessageLayeredFn gOrigSetMessageLayered = nullptr;
 AudioPlayFn gOrigAudioPlay = nullptr;
+DispatchTagFn gOrigDispatchTag = nullptr;
 JavaVM* gJvm = nullptr;
 jclass gBridgeClass = nullptr;
 jmethodID gOnTextMethod = nullptr;
@@ -113,15 +117,36 @@ void emitText(const char* text, const char* voice) {
     if (attached) jvm->DetachCurrentThread();
 }
 
+/**
+ * 读 libc++（__ndk1）std::string。布局由内核反汇编证实（TagChgMsg 读参序列：
+ * 长串 cap 在首字、size 在 +8、data 在 +0x10；短串首字节 = size<<1，数据内联）。
+ * 仅在长串标志（首字节 LSB=1）成立时解引用 data，size 一律钳制，防错读崩栈。
+ */
+std::string readStdString(const void* p) {
+    if (p == nullptr) return {};
+    const unsigned char* b = static_cast<const unsigned char*>(p);
+    if ((b[0] & 1u) != 0) {
+        const size_t size = *reinterpret_cast<const size_t*>(b + 8);
+        const char* data = *reinterpret_cast<const char* const*>(b + 16);
+        if (data == nullptr || size == 0) return {};
+        return std::string(data, size > 4096 ? 4096 : size);
+    }
+    return std::string(reinterpret_cast<const char*>(b + 1), b[0] >> 1);
+}
+
+/** UTF-8 是否含三字节以上序列（CJK/假名区间的粗判，用于过滤内部控制文本）。 */
+bool hasCjk(const std::string& s) {
+    for (unsigned char c : s) {
+        if (c >= 0xE0) return true;
+    }
+    return false;
+}
+
 void hookedSetMessageLayered(void* self, const std::string& text, bool flag) {
     const SetMessageLayeredFn original = gOrigSetMessageLayered;
     if (original != nullptr) original(self, text, flag);
-    // 只放行疑似对白的文本（含 CJK 假名/汉字），过滤内部标签（znotify 等）
-    bool hasCjk = false;
-    for (unsigned char c : text) {
-        if (c >= 0xE0) { hasCjk = true; break; }  // UTF-8 三字节以上即 CJK 区间
-    }
-    if (!hasCjk || text.size() < 6) return;
+    // 只放行疑似对白的文本（含 CJK），过滤内部标签（znotify 等）
+    if (!hasCjk(text) || text.size() < 6) return;
     emitText(text.c_str(), "");
 }
 
@@ -138,6 +163,43 @@ void hookedAudioPlay(void* self, const std::string& a, const std::string& b,
                               : a.size() >= b.size() ? a : b;
     if (!name.empty()) emitText("", name.c_str());
 }
+
+/**
+ * 标签分发兜底钩子（仅供无桥的官方 revision 内核；带桥内核已跳过）：
+ * 把携带 CJK 正文的标签参数值上行提取（台词正文以标签参数形态流经）。
+ */
+bool hookedDispatchTag(void* self, const void* name, const void* params, bool flag) {
+    const DispatchTagFn original = gOrigDispatchTag;
+    const bool result = original != nullptr ? original(self, name, params, flag) : false;
+    (void) self;
+    if (name == nullptr || params == nullptr) return result;
+    const std::string tag = readStdString(name);
+    if (tag.empty() || tag.size() > 64) return result;
+    // libc++ vector：{begin, end, cap}；元素 pair<string,string> 为 0x30 字节，
+    // second 在 +0x18（由 DispatchTag 反汇编 add x22, x8, #0x18 证实）。
+    void* const* v = static_cast<void* const*>(params);
+    const uintptr_t begin = reinterpret_cast<uintptr_t>(v[0]);
+    const uintptr_t end = reinterpret_cast<uintptr_t>(v[1]);
+    if (begin == 0 || end <= begin || (end - begin) % 0x30 != 0 || end - begin > 0x3000) {
+        return result;
+    }
+    const size_t count = (end - begin) / 0x30;
+    for (size_t i = 0; i < count && i < 24; ++i) {
+        const std::string val = readStdString(
+                reinterpret_cast<const void*>(begin + i * 0x30 + 0x18));
+        if (val.size() >= 6 && hasCjk(val)) {
+            emitText(val.c_str(), "");
+            break;
+        }
+    }
+    return result;
+}
+
+}  // namespace
+
+// ---- GOT 补丁核心（与 krkr_bridge relocate 钩子同款技术）----
+
+namespace {
 
 uintptr_t loadedAddress(uintptr_t base, ElfW(Addr) value) {
     const uintptr_t address = static_cast<uintptr_t>(value);
@@ -163,22 +225,19 @@ bool patchGotSlot(void** slot, void* replacement, void** original) {
 }
 
 struct GotHookRequest {
-    const char* libraryBasename;
     const char* symbol;
     void* replacement;
     void* original = nullptr;
     int patched = 0;
 };
 
+/** 遍历所有已加载模块补丁 symbol 的 JUMP_SLOT；返回 0 继续 dl_iterate_phdr。 */
 int patchLoadedLibrary(struct dl_phdr_info* info, size_t, void* data) {
     auto* request = static_cast<GotHookRequest*>(data);
-    if (info == nullptr || request == nullptr || request->libraryBasename == nullptr) return 0;
-    const char* loaded = info->dlpi_name == nullptr ? "" : info->dlpi_name;
-    const char* loadedBase = std::strrchr(loaded, '/');
-    loadedBase = loadedBase == nullptr ? loaded : loadedBase + 1;
-    if (*loaded == '\0' || std::strcmp(loadedBase, request->libraryBasename) != 0) return 0;
-
+    if (info == nullptr || request == nullptr) return 0;
     const uintptr_t base = static_cast<uintptr_t>(info->dlpi_addr);
+    if (base == 0) return 0;
+
     ElfW(Dyn)* dynamic = nullptr;
     for (ElfW(Half) i = 0; i < info->dlpi_phnum; ++i) {
         if (info->dlpi_phdr[i].p_type == PT_DYNAMIC) {
@@ -186,7 +245,7 @@ int patchLoadedLibrary(struct dl_phdr_info* info, size_t, void* data) {
             break;
         }
     }
-    if (dynamic == nullptr) return 1;
+    if (dynamic == nullptr) return 0;
 
     ElfW(Sym)* symbols = nullptr;
     const char* strings = nullptr;
@@ -210,7 +269,7 @@ int patchLoadedLibrary(struct dl_phdr_info* info, size_t, void* data) {
                 break;
         }
     }
-    if (symbols == nullptr || strings == nullptr || relocations == nullptr) return 1;
+    if (symbols == nullptr || strings == nullptr || relocations == nullptr) return 0;
 
     const size_t count = relocationSize / sizeof(ElfW(Rela));
     for (size_t i = 0; i < count; ++i) {
@@ -221,12 +280,12 @@ int patchLoadedLibrary(struct dl_phdr_info* info, size_t, void* data) {
             if (patchGotSlot(slot, request->replacement, &request->original)) request->patched++;
         }
     }
-    return 1;
+    return 0;
 }
 
-/** 补丁内核自身 GOT 的 symbol 槽；返回是否成功且拿到原函数。 */
+/** 补丁全部已加载模块 GOT 的 symbol 槽；返回是否成功且拿到原函数。 */
 bool hookKernelGot(const char* symbol, void* replacement, void** original) {
-    GotHookRequest request{kKernelLibBasename, symbol, replacement};
+    GotHookRequest request{symbol, replacement};
     dl_iterate_phdr(patchLoadedLibrary, &request);
     if (original != nullptr) *original = request.original;
     LOGI("extract hook: GOT %s patched=%d original=%p", symbol, request.patched,
@@ -235,6 +294,13 @@ bool hookKernelGot(const char* symbol, void* replacement, void** original) {
 }
 
 void installHooksLocked() {
+    if (hookKernelGot(kDispatchTag,
+                      reinterpret_cast<void*>(&hookedDispatchTag),
+                      reinterpret_cast<void**>(&gOrigDispatchTag))) {
+        LOGI("extract hook: DispatchTag armed (tag/text stream)");
+    } else {
+        LOGW("extract hook: DispatchTag GOT hook failed");
+    }
     if (hookKernelGot(kSetMessageLayered,
                       reinterpret_cast<void*>(&hookedSetMessageLayered),
                       reinterpret_cast<void**>(&gOrigSetMessageLayered))) {
@@ -252,7 +318,7 @@ void installHooksLocked() {
     gHookInstalled.store(true, std::memory_order_relaxed);
 }
 
-/** 缓存上行 JNI 引用（仅 audio_bridge 编译目标需要；Java env 可用）。 */
+/** 缓存上行 JNI 引用（Java env 可绑定 com/ies_net/artemis/ArtemisActivity）。 */
 bool cacheJniRefs(JNIEnv* env) {
     if (gJvm == nullptr) env->GetJavaVM(&gJvm);
     if (gBridgeClass == nullptr) {
@@ -280,21 +346,6 @@ bool cacheJniRefs(JNIEnv* env) {
 
 }  // namespace
 
-#ifdef ARTEMIS_HOOK_LOADER
-
-/** 早期安装入口：ANativeActivity_onCreate 阶段（内核 dlopen 后、引擎启动前）调用。 */
-extern "C" void artemis_install_extract_hook(void* kernelHandle, JavaVM* jvm) {
-    (void) kernelHandle;
-    if (jvm == nullptr) return;
-    std::lock_guard<std::mutex> lock(gInstallMutex);
-    if (gHookInstalled.load(std::memory_order_relaxed)) return;
-    gJvm = jvm;
-    LOGI("extract hook: installing (early, GOT patch)");
-    installHooksLocked();
-}
-
-#else  // !ARTEMIS_HOOK_LOADER —— audio_bridge 编译目标：JNI 入口（app 类加载器可绑定）
-
 extern "C" JNIEXPORT void JNICALL
 Java_com_ies_1net_artemis_ArtemisActivity_nativeSetExtractCacheDir(JNIEnv*, jobject) {
     // 缓存目录注册：带桥内核才有的导出；本实现不发号施令，语音副本暂不落盘
@@ -302,16 +353,24 @@ Java_com_ies_1net_artemis_ArtemisActivity_nativeSetExtractCacheDir(JNIEnv*, jobj
     LOGI("nativeSetExtractCacheDir (hook path, no-op)");
 }
 
-/** 延迟安装：早期未装时由 Java 侧重试（含上行 JNI 引用缓存）。 */
+/** 安装入口：ArtemisExtractFacade 构造时由 Java 侧调用（内核 dlopen 之后）。 */
 extern "C" JNIEXPORT jboolean JNICALL
 Java_com_ies_1net_artemis_ArtemisActivity_nativeInstallExtractHook(JNIEnv* env, jobject) {
     if (gHookInstalled.load(std::memory_order_relaxed)) return JNI_TRUE;
     if (env == nullptr) return JNI_FALSE;
     std::lock_guard<std::mutex> lock(gInstallMutex);
+    if (gHookInstalled.load(std::memory_order_relaxed)) return JNI_TRUE;
+    // 带桥内核（build-android/libartemis.so 自带 extract_bridge，TagPrint/TagAudio
+    // 直接发射）不装 GOT 钩子：内核已在 TagPrint 处发射文本，本文件的
+    // SetMessageLayered/AudioChannels::Play 钩子再发射会造成语音事件重复。
+    if (dlsym(RTLD_DEFAULT,
+              "_ZN4artc17SetExtractEmitterEPFvRKNS_12ExtractEventEPvES3_") != nullptr) {
+        gHookInstalled.store(true, std::memory_order_relaxed);
+        LOGI("extract hook: kernel has built-in extract bridge; GOT hooks skipped");
+        return JNI_TRUE;
+    }
     if (!cacheJniRefs(env)) return JNI_FALSE;
-    LOGI("extract hook: installing (late, GOT patch)");
+    LOGI("extract hook: installing (GOT patch)");
     installHooksLocked();
     return JNI_TRUE;
 }
-
-#endif  // ARTEMIS_HOOK_LOADER

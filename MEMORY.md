@@ -83,11 +83,17 @@
 
 ## 移植外事实（2026-10-05 会话二新增）
 
-- **随包 Artemis 内核（含 libartemis-clean.so）均无 extract_bridge 发射器**：`llvm-nm -D`
-  全部 .so 查无 `onArtemisExtract`/`getExtractCacheDir` 字符串。提取数据源由
-  `artemis_extract_hook.cpp`（shadowhook 1.1.1 经 dlsym 使用，Java 包装是编译桩）对 clean
-  内核 `artc::Compositor::SetMessageLayered` / `artc::AudioChannels::Play` inline hook 补齐；
-  官方 revision 内核（artemis:: 命名空间）符号布局不同，不挂钩、无提取。
+- **Artemis 文本提取的正解是带桥内核，不是运行时 hook（2026-10-05 会话三修正）**：
+  内核源码仓在本地 `D:\Desktoprtemis-compat`（README/AGENT.md 齐全），其
+  `build-android/libartemis.so` 即「带桥构建」（导出 SetExtractEmitter 全套，
+  TagPrint/TagAudio 直接发射，native_activity.cpp 启动自注册）——此前反汇编盲找
+  hook 点绕了远路，用户提醒「源码就在本地」后一步到位。随包 libartemis-clean.so
+  已替换为该构建（llvm-strip 后 3.5MB），`pluginVersion` 29→30 触发自动重装；
+  `nativeInstallExtractHook` 检测到 `SetExtractEmitter` 导出即跳过 GOT 钩子（防双发射）。
+  语音配对：只认纯语音事件（text 空），消费即清 + 同句打字机分段粘滞（前缀延伸判定），
+  否则无 voplay 的行会继承上一句语音 / 同句分段冲掉 ♪ 标注。GOT 钩子保留作无桥内核兜底；
+  shadowhook inline 在本模拟器环境 `shadowhook_init` 即报 errno=12（API 34+ linker），
+  与安装时机无关，别再往这个方向试。
 - **游戏内面板与引擎进程跨进程读同份 SQLite/prefs**：`OnsDictStore`（ons_dict.db）多进程
   文件锁天然可用；SharedPreferences 必须显式 `MODE_MULTI_PROCESS`（OnsTranslateClient 已改），
   否则引擎进程读到陈旧缓存。
