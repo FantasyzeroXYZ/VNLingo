@@ -4,6 +4,22 @@
 > `docs/说明/游戏内提取制卡功能方案.md`（提取功能线方案）阅读。
 > 更新时间：2026-10-05
 
+## 2026-10-05 会话（十一）：健壮性第三批（授权链路打通 + 悬浮窗 token 安全）
+
+- **AnkiDroid 授权链路首次真正可用**：requestPermissions 此前在制卡后台线程直呼，
+  系统授权框从不出现（用户卡死在「词卡需要授权」循环，只能靠 pm grant）。
+  改为主线程 Handler post 发起。实测闭环：revoke → 制卡 → 弹窗出现 → 允许
+  → 再点制卡 → 「词卡已添加到 Anki」（granted=true USER_SET）。
+- **历史悬浮窗 token 安全**：悬浮窗静态持有首个 Activity 的 WindowManager/视图，
+  旋转重建或重开游戏后旧 token 作废——show() 用旧 wm addView 会抛
+  BadTokenException，或内容永远挂在已死的旧窗口上（showing() 恒 true 不再重挂）。
+  改为记录 owner Activity，换实例整体重建；所有 wm 操作 try/catch 兜底，
+  失败丢弃引用下次重建。
+- **词典导入中被删除的孤儿防护**：导入完成回写 count 时校验 UPDATE 是否命中，
+  落空（词典已被删）即清理孤儿词条并报导入失败（同进程 delete 有锁串行，
+  此为未来多入口的防御）。
+- 冒烟：授权全链路 + 游戏内查词正常。
+
 ## 2026-10-05 会话（十）：健壮性第二批 + 冒烟中自曝自修
 
 - **历史语音缓存封顶**：persistHistoryVoice 落盘后裁剪目录，只留最近 100 条

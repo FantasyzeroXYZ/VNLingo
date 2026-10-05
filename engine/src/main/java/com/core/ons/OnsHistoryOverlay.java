@@ -24,6 +24,9 @@ public final class OnsHistoryOverlay {
     private static WindowManager.LayoutParams lp;
     private static LinearLayout list;
     private static Runnable onClear;
+    /** 创建悬浮窗所用的 Activity：换实例（旋转重建/重开游戏）时旧 token 作废，
+     *  必须整体重建，否则 addView 抛 BadTokenException / 内容挂在已死的旧窗口上。 */
+    private static Activity owner;
 
     /** 注册「清空」回调（面板清空历史数据）。 */
     public static void setOnClear(Runnable r) {
@@ -35,7 +38,11 @@ public final class OnsHistoryOverlay {
 
     /** 打开（已开则更新内容）。items = 已格式化的历史行。 */
     public static void show(Activity activity, List<String> items) {
-        if (root == null) create(activity);
+        if (root == null || owner != activity) {
+            detach();
+            create(activity);
+            owner = activity;
+        }
         list.removeAllViews();
         int n = 1;
         for (String item : items) {
@@ -56,11 +63,31 @@ public final class OnsHistoryOverlay {
             empty.setPadding(dp(activity, 10), dp(activity, 10), dp(activity, 10), dp(activity, 10));
             list.addView(empty);
         }
-        if (root.getParent() == null) {
-            wm.addView(root, lp);
-        } else {
-            wm.updateViewLayout(root, lp);
+        // token 可能随 Activity 销毁失效（旋转重建/游戏退出），wm 操作全部兜底，
+        // 失败时丢弃旧窗口引用，下次 show 用新 Activity 重建
+        try {
+            if (root.getParent() == null) {
+                wm.addView(root, lp);
+            } else {
+                wm.updateViewLayout(root, lp);
+            }
+        } catch (Throwable t) {
+            android.util.Log.w("OnsHistoryOverlay", "show failed (stale token?)", t);
+            detach();
         }
+    }
+
+    /** 完全丢弃当前悬浮窗（视图与窗口分离），下次 show 按 Activity 重建。 */
+    private static void detach() {
+        try {
+            if (root != null && root.getParent() != null && wm != null) {
+                wm.removeView(root);
+            }
+        } catch (Throwable ignored) {
+        }
+        root = null;
+        list = null;
+        owner = null;
     }
 
     /** 悬浮窗开着时增量追加一条（不重建，保持滚动位置）。 */
@@ -83,8 +110,11 @@ public final class OnsHistoryOverlay {
     }
 
     public static void hide() {
-        if (root != null && root.getParent() != null && wm != null) {
-            wm.removeView(root);
+        try {
+            if (root != null && root.getParent() != null && wm != null) {
+                wm.removeView(root);
+            }
+        } catch (Throwable ignored) {
         }
     }
 

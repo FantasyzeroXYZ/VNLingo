@@ -149,6 +149,17 @@
 - **手柄重映射**：GamepadRemap 快照式（宿主 onResume 刷新），映射在 dispatchKeyEvent
   最前端生效，先于提取面板/虚拟鼠标/游戏链路。
 
+## 实测踩坑（2026-10-05 会话十一新增：授权框与窗口 token）
+
+1. **Activity.requestPermissions 必须主线程发起**：后台线程调用时系统授权框
+   静默不弹（无异常、无日志），用户视角就是「点了没反应」。制卡等后台流程里
+   请求权限一律 Handler(mainLooper).post。
+2. **TYPE_APPLICATION 悬浮窗（游戏内面板/悬浮框）跟着 Activity token 走**：
+   Activity 旋转重建后旧 token 作废，静态持有旧 WindowManager 的悬浮窗
+   addView/updateViewLayout 会抛 BadTokenException 或永远挂在死窗口上
+   （showing() 还返回 true 导致永不重挂）。跨重建的悬浮窗要记录 owner Activity，
+   换实例整体重建 + 所有 wm 操作 try/catch。
+
 ## 实测踩坑（2026-10-05 会话十新增：PRAGMA/导航模式）
 
 1. **PRAGMA 带结果行必须 rawQuery**：`execSQL("PRAGMA busy_timeout = 5000")` 在

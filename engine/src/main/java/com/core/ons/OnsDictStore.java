@@ -287,7 +287,16 @@ public final class OnsDictStore {
                             ? importYomichanZip(in2, database, dictId, progress)
                             : importJsonl(in2, fileName, database, dictId, progress);
                 }
-                database.execSQL("UPDATE dicts SET count=? WHERE id=?", new Object[]{total, dictId});
+                // 导入期间词典被删除：UPDATE 落空 = 孤儿词条，清掉并报错
+                // （catch 分支的 DELETE FROM entries WHERE dict_id=? 兜底同效）
+                android.database.sqlite.SQLiteStatement setCount = database
+                        .compileStatement("UPDATE dicts SET count=? WHERE id=?");
+                setCount.bindLong(1, total);
+                setCount.bindLong(2, dictId);
+                int updated = setCount.executeUpdateDelete();
+                if (updated == 0) {
+                    throw new IllegalStateException("dictionary deleted during import");
+                }
             } catch (Throwable t) {
                 database.execSQL("DELETE FROM entries WHERE dict_id=?", new Object[]{dictId});
                 database.execSQL("DELETE FROM dicts WHERE id=?", new Object[]{dictId});

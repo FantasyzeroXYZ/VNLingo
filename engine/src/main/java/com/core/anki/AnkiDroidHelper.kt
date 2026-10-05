@@ -71,10 +71,18 @@ class AnkiDroidHelper(private val context: Context) {
     /**
      * 发起 READ_WRITE_DATABASE 运行时权限申请（AnkiDroid 定义，系统路由到
      * AnkiDroid 授权页）。无 NEW_TASK 无法从 Activity 以外的上下文启动。
+     * 授权窗必须主线程发起：制卡流程在后台线程跑，直接调用时系统授权框
+     * 实测不会弹出（静默无框，用户以为点了没反应）。
      */
     fun requestPermission(activity: android.app.Activity) {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
-            activity.requestPermissions(arrayOf(PERMISSION), REQUEST_PERMISSION_CODE)
+            android.os.Handler(android.os.Looper.getMainLooper()).post {
+                try {
+                    activity.requestPermissions(arrayOf(PERMISSION), REQUEST_PERMISSION_CODE)
+                } catch (t: Throwable) {
+                    Log.w(TAG, "requestPermissions failed", t)
+                }
+            }
         }
     }
 
