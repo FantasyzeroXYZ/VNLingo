@@ -115,7 +115,8 @@ public final class EngineLeftButtons {
                 ViewGroup.LayoutParams.WRAP_CONTENT,
                 ViewGroup.LayoutParams.WRAP_CONTENT,
                 WindowManager.LayoutParams.TYPE_APPLICATION,
-                WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE,
+                WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE
+                        | WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN,
                 android.graphics.PixelFormat.TRANSLUCENT);
         lp.gravity = Gravity.TOP | Gravity.START;  // 必须显式：缺省 gravity 会让 x/y 不按左上锚定
         // 横屏左缘系统栏占位：按 insets 锚定 TOP|START
@@ -129,7 +130,48 @@ public final class EngineLeftButtons {
         lp.x = leftInset + dp(activity, EDGE_MARGIN_DP);
         lp.y = topInset + dp(activity, TOP_MARGIN_DP);
         activity.getWindowManager().addView(container, lp);
+        reanchorOnInsets(activity, container, false);
         return container;
+    }
+
+    /**
+     * 悬浮窗锚定校准：创建时状态栏可能尚未隐去（游戏稍后才进沉浸式），按 display
+     * inset 计算的 y 会永久错位一个状态栏高度（右缘实测 y=159 vs 左缘 32）。改为
+     * 锚定活动自身窗口 frame（decorView 位置/宽度随系统栏显隐由系统自动更新），
+     * attach、布局、insets 变化与延时多重触发，左右两缘恒同一原点。
+     */
+    private static void reanchorOnInsets(Activity activity, View container, boolean rightEdge) {
+        View decor = activity.getWindow().getDecorView();
+        Runnable reanchor = () -> {
+            try {
+                int[] loc = new int[2];
+                decor.getLocationOnScreen(loc);
+                WindowManager.LayoutParams lp =
+                        (WindowManager.LayoutParams) container.getLayoutParams();
+                int ny = loc[1] + dp(activity, TOP_MARGIN_DP);
+                int nx = lp.x;
+                if (rightEdge) {
+                    int w = container.getWidth();
+                    if (w > 0) nx = loc[0] + decor.getWidth() - w - dp(activity, EDGE_MARGIN_DP);
+                } else {
+                    nx = loc[0] + dp(activity, EDGE_MARGIN_DP);
+                }
+                if (nx != lp.x || ny != lp.y) {
+                    lp.x = nx;
+                    lp.y = ny;
+                    activity.getWindowManager().updateViewLayout(container, lp);
+                }
+            } catch (Throwable ignored) {
+            }
+        };
+        container.post(reanchor);
+        container.postDelayed(reanchor, 1000);
+        container.postDelayed(reanchor, 3000);
+        container.addOnLayoutChangeListener((v, l, t, r, b, ol, ot, or2, ob) -> reanchor.run());
+        container.setOnApplyWindowInsetsListener((v, insets) -> {
+            reanchor.run();
+            return insets;
+        });
     }
 
     /** 展开显示（visible=false 折叠）按键列并持久化、同步折叠键图标。 */

@@ -76,8 +76,12 @@ public class OnsSideButtons {
                 android.view.ViewGroup.LayoutParams.WRAP_CONTENT,
                 android.view.ViewGroup.LayoutParams.WRAP_CONTENT,
                 android.view.WindowManager.LayoutParams.TYPE_APPLICATION,
-                android.view.WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE,
+                android.view.WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE
+                        | android.view.WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN,
                 android.graphics.PixelFormat.TRANSLUCENT);
+        // 必须显式 TOP|START：NO_GRAVITY(0) 下 WM 对 x/y 另有居中语义，
+        // 请求 (2290,32) 会落成 frame (2295,159)——比左缘低一个状态栏高度的根因
+        lp.gravity = Gravity.TOP | Gravity.START;
         // 横屏时系统导航栏占右侧（应用窗 2274 ≠ 屏宽 2400）：按系统栏 insets
         // 计算可用区，TOP|START 绝对锚定（insets 适配标志在这类窗口上表现不一致）
         int[] anchor = anchorTopEnd(activity, dp(activity, BUTTON_DP + 4),
@@ -85,6 +89,37 @@ public class OnsSideButtons {
         lp.x = anchor[0];
         lp.y = anchor[1];
         activity.getWindowManager().addView(container, lp);
+        // 创建时状态栏可能尚未隐去（沉浸式稍后才进），按 display inset 算的 y 会
+        // 永久压低一个状态栏高度、与左缘起点错位：锚定活动自身窗口 frame
+        //（decorView 随系统栏显隐自动更新），attach/布局/insets/延时多重触发校准
+        android.view.View decor = activity.getWindow().getDecorView();
+        Runnable reanchor = () -> {
+            try {
+                int[] loc = new int[2];
+                decor.getLocationOnScreen(loc);
+                android.view.WindowManager.LayoutParams wlp =
+                        (android.view.WindowManager.LayoutParams) container.getLayoutParams();
+                int ny = loc[1] + dp(activity, TOP_MARGIN_DP);
+                int w = container.getWidth();
+                int nx = w > 0
+                        ? loc[0] + decor.getWidth() - w - dp(activity, EDGE_MARGIN_DP)
+                        : wlp.x;
+                if (nx != wlp.x || ny != wlp.y) {
+                    wlp.x = nx;
+                    wlp.y = ny;
+                    activity.getWindowManager().updateViewLayout(container, wlp);
+                }
+            } catch (Throwable ignored) {
+            }
+        };
+        container.post(reanchor);
+        container.postDelayed(reanchor, 1000);
+        container.postDelayed(reanchor, 3000);
+        container.addOnLayoutChangeListener((v, l, t, r, b, ol, ot, or2, ob) -> reanchor.run());
+        container.setOnApplyWindowInsetsListener((v, insets) -> {
+            reanchor.run();
+            return insets;
+        });
         return container;
     }
 
