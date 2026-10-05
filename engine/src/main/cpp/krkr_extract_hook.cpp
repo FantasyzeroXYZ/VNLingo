@@ -161,6 +161,7 @@ using FTLoadCharFn = unsigned long (*)(void* face, unsigned long code, int flags
 FTLoadCharFn gOrigFTLoadChar = nullptr;
 std::mutex gLineMutex;
 std::chrono::steady_clock::time_point gLastCharAt;
+std::chrono::steady_clock::time_point gLastEmitAt = std::chrono::steady_clock::time_point::min();
 
 unsigned long hookedFTLoadChar(void* face, unsigned long code, int flags) {
     const unsigned long err = gOrigFTLoadChar != nullptr ? gOrigFTLoadChar(face, code, flags) : 0;
@@ -291,7 +292,7 @@ bool ftEndsWithTerminal(const std::string& s) {
 std::atomic<bool> gFlushThreadRunning{false};
 
 std::string gPage;        // 累计整页（跨 flush 周期持久）
-std::string gLastEmitted; // 上次上行内容（变更才发）
+std::string gLastEmitted;
 
 /**
  * 页缓冲增量模型（核心）：在原始链里 rfind 已知页——
@@ -306,8 +307,9 @@ void deriveAndMaybeEmitLocked(bool force) {
     if (gRawBuf.empty()) return;
     std::string derived = ftDerivePage(gRawBuf);
     if (derived.empty()) {
-        if (!force) return;
-        derived = gRawBuf;  // 长停顿兜底：链未完成也上行（可能含半句）
+        // 无重复快照 = 打字未达 2 次重绘（或 UI 字体图集一次性绘制）：
+        // 前者下一轮重绘会补齐，后者是启动期垃圾——一律跳过，不上行
+        return;
     }
     if (!gPage.empty()) {
         // 段拼接：本段与页尾最大重叠 → 只追加增量；无重叠 = 翻页
@@ -331,7 +333,10 @@ void deriveAndMaybeEmitLocked(bool force) {
         gRawBuf.erase(0, p == std::string::npos ? gRawBuf.size() / 3 : p);
     }
     if (!gPage.empty() && gPage != gLastEmitted) {
+        const auto sinceEmit = std::chrono::steady_clock::now() - gLastEmitAt;
+        if (!force && sinceEmit < std::chrono::milliseconds(300)) return;  // 打字中节流
         gLastEmitted = gPage;
+        gLastEmitAt = std::chrono::steady_clock::now();
         std::string out = gPage;
         out.insert(0, "[FTLN]");
         LOGI("ft line: %s", out.c_str() + 6);
@@ -373,6 +378,11 @@ void flushTimerLoop() {
 std::string ftDerivePage(const std::string& raw) {
     const size_t n = raw.size();
     if (n == 0) return {};
+    if (n > 2048) {
+        // 过长截尾：派生基于尾部（最近重绘）即可，防止巨型页拖垮主线程
+        const std::string trimmed = raw.substr(n - 2048);
+        return ftDerivePage(trimmed);
+    }
     for (size_t k = n - 1; k >= 2; --k) {
         const std::string t = raw.substr(n - k);
         const size_t first = raw.find(t);

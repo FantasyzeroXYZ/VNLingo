@@ -155,7 +155,7 @@ public class OnsExtractPanel {
     private boolean listeningMode;
     private boolean listeningRevealed;
     /** 词元（标点/空格切分）char 区间与当前选中序号；-1 未选中。 */
-    private final List<int[]> tokenRanges = new ArrayList<>();
+    private final List<int[]> unitRanges = new ArrayList<>();
     private int selectedToken = -1;
     private SpannableString sentenceSpan;
     /** 最近一次查词结果（词卡用）。 */
@@ -1050,36 +1050,121 @@ public class OnsExtractPanel {
     }
 
     // ------------------------------------------------------------------
-    // 词元化与查词（参考 anki 项目：标点/空格切分 + 最长前缀分层搜索）
+    // 选词与查词（TrackReader 对齐：text-utils splitWords 选词单位规则 +
+    // dictionary-query decrementalScan 递减扫描——CJK 逐字递减、空格分词
+    // 语言两阶段扫描；命中跨度高亮，说话人行/多行通用）
     // ------------------------------------------------------------------
 
+    /** 当前句文本（renderSentence 时缓存，扫描线程用）。 */
+    private String currentSentence = "";
+    /** 命中跨度（递减扫描结果；非空时高亮它而非选中单元）。 */
+    private int[] matchedRange;
+
+    private static boolean isCjkChar(char c) {
+        return (c >= 0x4E00 && c <= 0x9FFF) || (c >= 0x3400 && c <= 0x4DBF)
+                || (c >= 0xF900 && c <= 0xFAFF) || (c >= 0x3040 && c <= 0x30FF)
+                || (c >= 0xAC00 && c <= 0xD7AF);
+    }
+
+    /** CJK 判定（TrackReader isCJK：CJK 字符占比 > 50%）。 */
+    private static boolean isCjkText(String text) {
+        if (text == null || text.isEmpty()) return false;
+        int cjk = 0;
+        for (int i = 0; i < text.length(); i++) {
+            if (isCjkChar(text.charAt(i))) cjk++;
+        }
+        return cjk * 2 > text.length();
+    }
+
+    /** 纯标点/空白候选拒判（TrackReader tryMatchTermOnly 的正则等价）。 */
     private static boolean isTokenSeparator(char c) {
         if (Character.isWhitespace(c)) return true;
-        return "、。！？，,.!?::;；()（）「」『』《》〈〉・〜~—–…‥\"'“”‘’【】〔〕※♪"
+        return "、。！？，,.!?::;；()（）「」『』《》〈〉・〜~—–…※♪"
                 .indexOf(c) >= 0;
     }
 
-    private void renderSentence(String text) {
-        tokenRanges.clear();
-        SpannableString ss = new SpannableString(text);
-        int i = 0;
-        int n = text.length();
+    private static boolean isRejectable(String s) {
+        if (s == null || s.isEmpty()) return true;
+        for (int i = 0; i < s.length(); i++) {
+            char c = s.charAt(i);
+            if (!Character.isWhitespace(c) && !isTokenSeparator(c)) return false;
+        }
+        return true;
+    }
+
+    private static boolean isWordChar(char c) {
+        return Character.isLetterOrDigit(c);
+    }
+
+    /** 空格分词语言的词跨度（内部撇号/连字符保留：don't / well-being）。 */
+    private static java.util.List<int[]> buildWordSpans(String text) {
+        java.util.List<int[]> spans = new java.util.ArrayList<>();
+        int i = 0, n = text.length();
         while (i < n) {
-            char c = text.charAt(i);
-            if (isTokenSeparator(c)) {
+            if (isWordChar(text.charAt(i))) {
+                int j = i + 1;
+                while (j < n) {
+                    char c = text.charAt(j);
+                    if (isWordChar(c)) { j++; continue; }
+                    if ((c == '\'' || c == '\u2019' || c == '-') && j + 1 < n
+                            && isWordChar(text.charAt(j + 1))) { j += 2; continue; }
+                    break;
+                }
+                spans.add(new int[]{i, j});
+                i = j;
+            } else {
                 i++;
-                continue;
             }
-            int j = i + 1;
-            while (j < n && !isTokenSeparator(text.charAt(j))) j++;
-            final int start = i;
-            final int end = j;
-            final int idx = tokenRanges.size();
-            tokenRanges.add(new int[]{start, end});
+        }
+        return spans;
+    }
+
+    /** 找包含 pos 的词；落在空白则取右侧最近词（TrackReader findWordIndex）。 */
+    private static int findWordIndex(java.util.List<int[]> spans, int pos) {
+        for (int i = 0; i < spans.size(); i++) {
+            if (pos >= spans.get(i)[0] && pos < spans.get(i)[1]) return i;
+        }
+        for (int i = 0; i < spans.size(); i++) {
+            if (spans.get(i)[0] >= pos) return i;
+        }
+        return spans.size() - 1;
+    }
+
+    private void renderSentence(String text) {
+        unitRanges.clear();
+        // 懒渲染：超长页只保留尾部 240 字符参与选词（完整内容走历史悬浮窗），
+        // 防止巨型页每字符建 ClickableSpan 拖垮主线程（此前 ANR 根因）
+        if (text.length() > 240) text = text.substring(text.length() - 240);
+        currentSentence = text;
+        matchedRange = null;
+        selectedToken = -1;
+        SpannableString ss = new SpannableString(text);
+        boolean cjk = isCjkText(text);
+        int n = text.length();
+        int i = 0;
+        while (i < n) {
+            int start, end;
+            if (cjk) {
+                // CJK：逐字拆为单字选择单位（跳过空白）
+                if (Character.isWhitespace(text.charAt(i))) { i++; continue; }
+                start = i; end = i + 1;
+            } else {
+                // 空格分词语言：按空格划分词作为点击单位（原始词，含附着标点）
+                while (i < n && Character.isWhitespace(text.charAt(i))) i++;
+                if (i >= n) break;
+                start = i;
+                int j = i + 1;
+                while (j < n && !Character.isWhitespace(text.charAt(j))) j++;
+                end = j;
+                i = end;
+            }
+            final int idx = unitRanges.size();
+            final int s0 = start, e0 = end;
+            unitRanges.add(new int[]{s0, e0});
             ss.setSpan(new ClickableSpan() {
                 @Override
                 public void onClick(View widget) {
-                    selectToken(idx);
+                    selectUnit(idx, s0);
                 }
 
                 @Override
@@ -1088,8 +1173,7 @@ public class OnsExtractPanel {
                     ds.setColor(TEXT_ON_DARK);
                     ds.setUnderlineText(false);
                 }
-            }, start, end, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
-            i = j;
+            }, s0, e0, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
         }
         sentenceSpan = ss;
         applyTokenSelection();
@@ -1101,40 +1185,127 @@ public class OnsExtractPanel {
                 0, sentenceSpan.length(), BackgroundColorSpan.class)) {
             sentenceSpan.removeSpan(span);
         }
-        if (selectedToken >= 0 && selectedToken < tokenRanges.size()) {
-            int[] r = tokenRanges.get(selectedToken);
+        int[] r = matchedRange;
+        if (r == null && selectedToken >= 0 && selectedToken < unitRanges.size()) {
+            r = unitRanges.get(selectedToken);
+        }
+        if (r != null) {
             sentenceSpan.setSpan(new BackgroundColorSpan(SELECT_BG),
                     r[0], r[1], Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
         }
         sentenceView.setText(sentenceSpan);
     }
 
-    private void selectToken(int idx) {
-        if (idx < 0 || idx >= tokenRanges.size() || sentenceSpan == null) return;
+    /** 点选单元：高亮该单元，并以其起点做递减扫描查词。 */
+    private void selectUnit(int idx, int start) {
+        if (idx < 0 || idx >= unitRanges.size() || sentenceSpan == null) return;
         selectedToken = idx;
+        matchedRange = null;
         applyTokenSelection();
-        int[] r = tokenRanges.get(idx);
-        String word = sentenceSpan.toString().substring(r[0], r[1]).trim();
-        if (!word.isEmpty()) lookupToken(word);
+        scanFrom(start);
     }
 
-    /** 后台线程查词典，结果刷新到释义区；代次号丢弃过期结果（快速连按选词）。 */
-    private void lookupToken(String word) {
+    /** 后台扫描：结果刷新到释义区；代次号丢弃过期结果（快速连按选词）。 */
+    private void scanFrom(final int startPos) {
         final int requestId = ++dictRequestId;
+        final String text = currentSentence;
         new Thread(() -> {
-            List<OnsDictStore.Group> groups = OnsDictStore.get().search(word, 5);
-            if (requestId != dictRequestId) return; // 已有更新请求/翻句
-            if (groups.isEmpty() && !OnsDictStore.get().hasDictionary()) {
-                defGroups = null;
-                defSentence = null;
+            if (!OnsDictStore.get().hasDictionary()) {
                 main.post(() -> toast(R.string.engine_ons_extract_dict_none));
-                main.post(this::refresh);
                 return;
             }
-            defGroups = groups;
-            defSentence = word;
+            ScanHit hit = isCjkText(text)
+                    ? scanByChar(text, startPos)
+                    : scanByWordTwoPhase(text, startPos);
+            if (requestId != dictRequestId) return;
+            if (hit == null) {
+                main.post(() -> toast(R.string.engine_ons_extract_dict_none));
+                return;
+            }
+            defGroups = hit.groups;
+            defSentence = hit.matched;
+            matchedRange = hit.range;
             main.post(this::refresh);
-        }, "ons-dict").start();
+        }, "ons-scan").start();
+    }
+
+    private static final class ScanHit {
+        final String matched;
+        final int[] range;
+        final List<OnsDictStore.Group> groups;
+
+        ScanHit(String matched, int[] range, List<OnsDictStore.Group> groups) {
+            this.matched = matched;
+            this.range = range;
+            this.groups = groups;
+        }
+    }
+
+    /** 词典查一个候选（含词形还原变体），命中返回释义组。 */
+    private List<OnsDictStore.Group> searchWithDeinflect(String cand) {
+        List<OnsDictStore.Group> groups = OnsDictStore.get().search(cand, 5);
+        if (groups != null && !groups.isEmpty()) return groups;
+        for (String root : OnsDeinflector.deinflect(cand)) {
+            if (root.equals(cand)) continue;
+            groups = OnsDictStore.get().search(root, 5);
+            if (groups != null && !groups.isEmpty()) return groups;
+        }
+        return null;
+    }
+
+    /** CJK 逐字递减扫描：从 startPos 起逐次缩短尾部长度，首个命中即返回。 */
+    private ScanHit scanByChar(String text, int startPos) {
+        final int maxLen = Math.min(text.length() - startPos, 40);
+        for (int len = maxLen; len >= 1; len--) {
+            String cand = text.substring(startPos, startPos + len);
+            if (isRejectable(cand)) continue;
+            List<OnsDictStore.Group> groups = searchWithDeinflect(cand);
+            if (groups != null && !groups.isEmpty()) {
+                return new ScanHit(cand, new int[]{startPos, startPos + len}, groups);
+            }
+        }
+        return null;
+    }
+
+    /**
+     * 空格分词语言两阶段扫描（TrackReader _decrementalScanByWordTwoPhase）：
+     * 阶段一：首词词形还原，构建「原句 + 还原句」车队；
+     * 阶段二：每辆车做纯精确词递减扫描（首词起到尾词止）。
+     */
+    private ScanHit scanByWordTwoPhase(String text, int startPos) {
+        java.util.List<int[]> origSpans = buildWordSpans(text);
+        if (origSpans.isEmpty()) return null;
+        int startIdx = findWordIndex(origSpans, startPos);
+        if (startIdx < 0) return null;
+        String firstWord = text.substring(origSpans.get(startIdx)[0], origSpans.get(startIdx)[1]);
+
+        // 车队：原句 + 首词替换为各还原形的句子
+        java.util.List<String> vehicles = new java.util.ArrayList<>();
+        vehicles.add(text);
+        for (String root : OnsDeinflector.deinflect(firstWord)) {
+            if (root.equals(firstWord)) continue;
+            String replaced = text.substring(0, origSpans.get(startIdx)[0]) + root
+                    + text.substring(origSpans.get(startIdx)[1]);
+            if (!vehicles.contains(replaced)) vehicles.add(replaced);
+        }
+
+        for (String vehicle : vehicles) {
+            java.util.List<int[]> vSpans = buildWordSpans(vehicle);
+            int vi = findWordIndex(vSpans, origSpans.get(startIdx)[0]);
+            if (vi < 0) continue;
+            for (int e = vSpans.size() - 1; e >= vi; e--) {
+                String cand = vehicle.substring(vSpans.get(vi)[0], vSpans.get(e)[1]);
+                if (isRejectable(cand)) continue;
+                List<OnsDictStore.Group> groups = OnsDictStore.get().search(cand, 5);
+                if (groups != null && !groups.isEmpty()) {
+                    // 命中跨度映射回原句（还原句与原句共享起点，尾词按原句词跨度折算）
+                    int endIdx = Math.min(startIdx + (e - vi), origSpans.size() - 1);
+                    int[] range = {origSpans.get(startIdx)[0], origSpans.get(endIdx)[1]};
+                    return new ScanHit(cand, range, groups);
+                }
+            }
+        }
+        return null;
     }
 
     private void dismissDef() {
@@ -1743,8 +1914,8 @@ public class OnsExtractPanel {
                 return true;
             case KeyEvent.KEYCODE_BUTTON_A:
                 // webgametxt 词典语义 A=确认查词；未选词时回退播放（朗读/重播）
-                if (!historyMode && selectedToken >= 0 && selectedToken < tokenRanges.size()) {
-                    selectToken(selectedToken);
+                if (!historyMode && selectedToken >= 0 && selectedToken < unitRanges.size()) {
+                    selectUnit(selectedToken, unitRanges.get(selectedToken)[0]);
                 } else {
                     playVoice();
                 }
@@ -1789,15 +1960,15 @@ public class OnsExtractPanel {
     }
 
     private void moveTokenSelection(int dir) {
-        if (historyMode || tokenRanges.isEmpty()) return;
+        if (historyMode || unitRanges.isEmpty()) return;
         int next;
         if (selectedToken < 0) {
-            next = dir > 0 ? 0 : tokenRanges.size() - 1;
+            next = dir > 0 ? 0 : unitRanges.size() - 1;
         } else {
             next = selectedToken + dir;
-            if (next < 0 || next >= tokenRanges.size()) return; // 已在边界
+            if (next < 0 || next >= unitRanges.size()) return; // 已在边界
         }
-        selectToken(next);
+        selectUnit(next, unitRanges.get(next)[0]);
     }
 
     /** 两步退出（webgametxt B/Esc 语义）：先收释义区，再揭示听力文本/收面板。 */
