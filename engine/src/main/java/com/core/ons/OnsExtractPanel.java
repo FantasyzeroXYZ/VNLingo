@@ -514,8 +514,35 @@ public class OnsExtractPanel {
 
     /**
      * 面板宽度：竖屏全宽；横屏水平居中、宽度以按钮行自然宽度为准
-     * （一排按键正好放下，不遮过多画面）。
+     * （一排按键正好放下，不遮过多画面）。量不到按钮行宽（开面板早于首次
+     * 布局）时有界重试——一次性 fallback 会让面板永久停在兜底宽度。
      */
+    private int panelWidthRetry;
+    private final Runnable applyPanelWidthOnce = new Runnable() {
+        @Override
+        public void run() {
+            if (panel == null || !expanded) return;
+            int buttonsWidth = 0;
+            if (actionsScrollView != null && actionsScrollView.getChildCount() > 0) {
+                buttonsWidth = actionsScrollView.getChildAt(0).getWidth();
+            }
+            if (buttonsWidth <= 0 && panelWidthRetry < 5) {
+                panelWidthRetry++;
+                panel.postDelayed(this, 100);
+                return;
+            }
+            int screenW = activity.getResources().getDisplayMetrics().widthPixels;
+            int w = buttonsWidth > 0
+                    ? Math.min(buttonsWidth + dp(28), screenW - dp(24))
+                    : Math.min(dp(560), screenW - dp(24));
+            android.widget.FrameLayout.LayoutParams flp =
+                    (android.widget.FrameLayout.LayoutParams) panel.getLayoutParams();
+            flp.width = w;
+            flp.gravity = Gravity.BOTTOM | Gravity.CENTER_HORIZONTAL;
+            panel.setLayoutParams(flp);
+        }
+    };
+
     private void applyPanelWidth() {
         if (panel == null) return;
         boolean landscape = activity.getResources().getConfiguration().orientation
@@ -528,22 +555,8 @@ public class OnsExtractPanel {
             panel.setLayoutParams(lp);
             return;
         }
-        panel.post(() -> {
-            if (panel == null || !expanded) return;
-            int buttonsWidth = 0;
-            if (actionsScrollView != null && actionsScrollView.getChildCount() > 0) {
-                buttonsWidth = actionsScrollView.getChildAt(0).getWidth();
-            }
-            int screenW = activity.getResources().getDisplayMetrics().widthPixels;
-            int w = buttonsWidth > 0
-                    ? Math.min(buttonsWidth + dp(28), screenW - dp(24))
-                    : Math.min(dp(560), screenW - dp(24));
-            android.widget.FrameLayout.LayoutParams flp =
-                    (android.widget.FrameLayout.LayoutParams) panel.getLayoutParams();
-            flp.width = w;
-            flp.gravity = Gravity.BOTTOM | Gravity.CENTER_HORIZONTAL;
-            panel.setLayoutParams(flp);
-        });
+        panelWidthRetry = 0;
+        panel.post(applyPanelWidthOnce);
     }
 
     /**
