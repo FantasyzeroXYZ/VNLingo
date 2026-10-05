@@ -388,6 +388,79 @@ fun SettingsScreen(modifier: Modifier = Modifier) {
                                 startAction = { SettingsItemIcon(R.drawable.ic_settings) },
                                 onClick = { startActivityWithPageTransition(ctx, com.tyranor.next.ui.gamepad.GamepadSettingsActivity.createIntent(ctx)) },
                             )
+                            // 崩溃日志：CrashLogWriter 落盘的未捕获异常堆栈（含引擎子进程），
+                            // 现场设备上凭此定位问题；点击条目用系统分享面板发出
+                            var showCrashDialog by remember { mutableStateOf(false) }
+                            val crashFiles = remember(showCrashDialog) {
+                                File(ctx.filesDir, "crash").listFiles()
+                                    ?.sortedByDescending { it.name } ?: emptyList<File>()
+                            }
+                            ArrowPreference(
+                                title = stringResource(R.string.settings_crash_log),
+                                summary = if (crashFiles.isEmpty()) {
+                                    stringResource(R.string.settings_crash_log_none)
+                                } else {
+                                    stringResource(R.string.settings_crash_log_hint, crashFiles.size)
+                                },
+                                startAction = { SettingsItemIcon(R.drawable.ic_settings) },
+                                onClick = { showCrashDialog = true },
+                            )
+                            if (showCrashDialog) {
+                                AppAlertDialog(
+                                    onDismissRequest = { showCrashDialog = false },
+                                    title = {
+                                        Text(
+                                            stringResource(R.string.settings_crash_log),
+                                            style = MaterialTheme.typography.titleMedium,
+                                            fontWeight = FontWeight.Bold,
+                                            color = MaterialTheme.colorScheme.onSurface,
+                                        )
+                                    },
+                                    text = {
+                                        Column {
+                                            if (crashFiles.isEmpty()) {
+                                                Text(
+                                                    stringResource(R.string.settings_crash_log_none),
+                                                    style = MaterialTheme.typography.bodyMedium,
+                                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                                )
+                                            }
+                                            for (f in crashFiles) {
+                                                Text(
+                                                    f.name + "（" + formatUpdateBytes(f.length()) + "）",
+                                                    style = MaterialTheme.typography.bodyMedium,
+                                                    color = MaterialTheme.colorScheme.primary,
+                                                    modifier = Modifier
+                                                        .fillMaxWidth()
+                                                        .clickable {
+                                                            runCatching {
+                                                                val uri = FileProvider.getUriForFile(
+                                                                    ctx, ctx.packageName + ".fileprovider", f,
+                                                                )
+                                                                ctx.startActivity(
+                                                                    Intent.createChooser(
+                                                                        Intent(Intent.ACTION_SEND).apply {
+                                                                            type = "text/plain"
+                                                                            putExtra(Intent.EXTRA_STREAM, uri)
+                                                                            putExtra(Intent.EXTRA_SUBJECT, f.name)
+                                                                        },
+                                                                        f.name,
+                                                                    ),
+                                                                )
+                                                            }
+                                                        }
+                                                        .padding(vertical = 10.dp),
+                                                )
+                                            }
+                                        }
+                                    },
+                                    confirmButton = {
+                                        TextButton(onClick = { showCrashDialog = false }) {
+                                            Text(stringResource(R.string.common_close))
+                                        }
+                                    },
+                                )
+                            }
                             ArrowPreference(
                                 title = if (checkingUpdate) stringResource(R.string.settings_update_checking) else stringResource(R.string.settings_update_check),
                                 summary = stringResource(R.string.settings_update_check_summary),

@@ -24,6 +24,9 @@
     <string name="dict_manager_content_description">Dictionaries</string>
     <string name="settings_extract_translate">Translation settings</string>
     <string name="settings_gamepad">Gamepad settings</string>
+    <string name="settings_crash_log">Crash logs</string>
+    <string name="settings_crash_log_none">No crash records</string>
+    <string name="settings_crash_log_hint">%1$d records, tap to view/share</string>
     <string name="engine_settings_krkr_extract_tjs">Story text extraction (experimental)</string>
     <string name="engine_settings_krkr_extract_tjs_summary">Routes dialogue to the console via a TJS emitter for the text panel; only plain KAGParser games are supported and some games may fail to boot</string>
     <string name="gamepad_settings_title">Gamepad</string>

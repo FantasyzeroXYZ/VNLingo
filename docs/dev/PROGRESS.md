@@ -4,6 +4,21 @@
 > `docs/说明/游戏内提取制卡功能方案.md`（提取功能线方案）阅读。
 > 更新时间：2026-10-05
 
+## 2026-10-05 会话（十三）：健壮性第五批（崩溃日志落盘 + 设置页查看/分享）
+
+- **CrashLogWriter**（新）：默认 UncaughtExceptionHandler 包装——未捕获异常先同步
+  写 filesDir/crash/crash_<时间戳>.txt（时间/进程/线程/版本/系统/机型 + 堆栈），
+  再交还系统原 handler（崩溃对话框与杀进程行为不变）；保留最近 3 份；写日志全程
+  try 包裹不二次抛出。Application.onCreate 最早安装 → 主进程与引擎子进程
+  （:kirikiri2）都覆盖，引擎崩溃同样有迹可查。
+- **设置页「崩溃日志」入口**：列出记录（文件名+大小），点击经 FileProvider +
+  ACTION_SEND 系统分享面板发出——现场设备（无 adb）用户可直接把日志发回来。
+- **端到端实测**：`am crash com.tyranor.next` 触发真实崩溃 → 日志落盘（840B，
+  上下文完整）→ 设置页显示「1 份记录」→ 弹窗列出文件 → 分享面板带 URI 弹出。
+- 审查结论（无需改动）：KrkrOnlinePatchService（超时 12s/20s、12s/60s + 临时文件
+  finally 清理 + 崩溃残留 .tmp 处理）、EngineScanner（runCatching 全覆盖 + IO
+  调度）、OnsSideButtons（无常量外静态）、OnsTranslateClient（线程 + 15s/60s 超时）。
+
 ## 2026-10-05 会话（十二）：健壮性第四批（面板宽度量测重试）
 
 - **applyPanelWidth 有界重试**：横屏面板宽度以按钮行自然宽度为准，但开面板早于
