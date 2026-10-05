@@ -4,6 +4,22 @@
 > `docs/说明/游戏内提取制卡功能方案.md`（提取功能线方案）阅读。
 > 更新时间：2026-10-05
 
+## 2026-10-05 会话（八）：词典页改版——搜索为主体，管理收悬浮框
+
+- **页面重构**（DictionaryScreen）：主体改为单词搜索查询——AppSearchField 输入 +
+  250ms 防抖，IO 线程走 OnsDictStore.search（最长前缀 + 词形还原分层，与游戏内
+  查词同管线），结果卡片=词条 + 【读音】+ 释义多行；空查询显示当前词典状态
+  （名称 + 条数），无词典/未命中各有提示卡。
+- **词典管理悬浮框**：右上角入口（ic_engine_manage）弹出 AppAlertDialog 底部弹入
+  悬浮框，内含导入入口（SAF 选 Yomichan zip / MDX jsonl）+ 词典行（启停开关/
+  设为当前/删除，删除有二级确认）。管理操作后刷新词典状态与在途搜索。
+- **模拟器实测**：搜索 tsuzuku（romaji 种子别名）正确出卡 tsuzuku【つづく】；
+  悬浮框导入/词典行/开关/完成均正常呈现。adb 无法直输 CJK（input text 非 ASCII
+  报 NPE），测试词典补了 romaji 别名词条（.tmp-test/dict_alias.sql）。
+- **已知 i18n 混排（en-US 模拟器特有，未处理）**：设备 en-US 下 engine 的
+  values-en 命中部分 key（如词条数「N entries」），app/engine 其余 key 回退默认
+  中文，界面中英混排；zh 设备全部走默认中文不受影响。待办已记 i18n 清理项。
+
 ## 2026-10-05 会话（七）：模拟器实测非首单位选词查词 + 实际制卡通过（三修复）
 
 - **renderSentence CJK 死循环（ANR 根因）**：CJK 分支漏了 `i = end` 推进——任何 CJK 句

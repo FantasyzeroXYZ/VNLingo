@@ -26,6 +26,8 @@
 - [ ] Artemis SKIP 键（ctrl id 140）在 blossom 未观察到快进，待验证脚本消费
 - [ ] ONS 语音配对：esg 卡在姓名输入，待用 ym/monque 复测
 - [ ] 官方 revision Artemis 内核不挂钩、无提取（按需再评估）
-- [ ] 正式词典导入：模拟器现为 17 词条种子词典（仅覆盖测试句），正式使用需用户
-      经词典页导入 Yomichan zip / jsonl 全量词典
+- [ ] 正式词典导入：模拟器现为种子词典（17 词条 + 5 条 romaji 测试别名），正式
+      使用需用户经词典页「词典管理」导入 Yomichan zip / jsonl 全量词典
 - [ ] 制卡引导：AnkiDroid 未安装/未授权时仅 toast 提示，可加跳转安装/授权引导
+- [ ] i18n 清理：en-US 系统语言下 engine values-en 部分命中导致界面中英混排
+      （如词条数「N entries」），app 默认中文与系统语言回退策略需统一

@@ -6,6 +6,7 @@ import android.widget.Toast
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
@@ -13,12 +14,15 @@ import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
@@ -28,6 +32,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
@@ -36,39 +41,51 @@ import com.core.engine.R as EngineR
 import com.core.ons.OnsDictStore
 import com.tyranor.next.R
 import com.tyranor.next.theme.AppComponentCornerRadius
-import com.tyranor.next.theme.DialogItemSurface
 import com.tyranor.next.theme.MiuixSettingsTheme
-import com.tyranor.next.theme.NavWhite
 import com.tyranor.next.theme.glassBorder
 import com.tyranor.next.theme.glassShadow
 import com.tyranor.next.ui.common.AppAlertDialog
+import com.tyranor.next.ui.common.AppSearchField
 import com.tyranor.next.ui.common.AppTopBar
+import com.tyranor.next.ui.common.TopBarIcon
 import com.tyranor.next.ui.common.glassNavBottomInset
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import top.yukonga.miuix.kmp.basic.Card as MiuixCard
 import top.yukonga.miuix.kmp.basic.Scaffold as MiuixScaffold
 import top.yukonga.miuix.kmp.preference.ArrowPreference
-import top.yukonga.miuix.kmp.theme.MiuixTheme
 
 /**
- * 词典页（底栏 Tab）：多词典管理与导入（Yomichan zip / MDX jsonl）。
- * 数据源为 engine 的 [OnsDictStore]（SQLite，跨进程文件锁串行化，低频操作），
- * 与游戏内查词共用同一份词典库。
+ * 词典页（底栏 Tab）：主体为单词搜索查询（输入即查，走 OnsDictStore.search
+ * 的最长前缀 + 词形还原分层，与游戏内查词同一份词典库）；
+ * 词典管理（导入 / 启停 / 设当前 / 删除）收进右上角入口的底部悬浮框。
  */
 @Composable
 fun DictionaryScreen(modifier: Modifier = Modifier) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
-    var dicts by remember { mutableStateOf(OnsDictStore.get().listDicts(context)) }
+    // 管理操作（导入/启停/设当前/删除）后递增：驱动词典状态与搜索重算
+    var dictsVersion by remember { mutableIntStateOf(0) }
+    var query by remember { mutableStateOf("") }
+    var results by remember { mutableStateOf<List<OnsDictStore.Group>>(emptyList()) }
+    var searching by remember { mutableStateOf(false) }
+    var showManager by remember { mutableStateOf(false) }
     var importing by remember { mutableStateOf(false) }
     var deleteTarget by remember { mutableStateOf<OnsDictStore.DictInfo?>(null) }
     val importFailedMessage = stringResource(R.string.dict_import_failed)
 
+    var dicts by remember { mutableStateOf(OnsDictStore.get().listDicts(context)) }
+
+    val hasDict = remember(dictsVersion) { OnsDictStore.get().hasDictionary() }
+    val dictName = remember(dictsVersion) { OnsDictStore.get().getDictName() }
+    val entryCount = remember(dictsVersion) { OnsDictStore.get().getEntryCount() }
+
     fun refresh() {
         dicts = OnsDictStore.get().listDicts(context)
+        dictsVersion++
     }
 
     val importPicker = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
@@ -97,21 +114,97 @@ fun DictionaryScreen(modifier: Modifier = Modifier) {
         }
     }
 
+    // 防抖搜索：SQLite 查询（最长前缀 + 词形还原）走 IO 线程；query 变化自动取消上一轮
+    LaunchedEffect(query, dictsVersion) {
+        if (query.isBlank()) {
+            results = emptyList()
+            searching = false
+            return@LaunchedEffect
+        }
+        searching = true
+        delay(250)
+        val found = withContext(Dispatchers.IO) {
+            runCatching { OnsDictStore.get().search(query.trim(), 20) }.getOrDefault(emptyList())
+        }
+        results = found
+        searching = false
+    }
+
     MiuixSettingsTheme {
         MiuixScaffold(
             modifier = modifier.fillMaxSize(),
             containerColor = androidx.compose.ui.graphics.Color.Transparent,
             contentWindowInsets = WindowInsets(0.dp),
-            topBar = { AppTopBar(title = stringResource(R.string.nav_dict)) },
+            topBar = {
+                AppTopBar(
+                    title = stringResource(R.string.nav_dict),
+                    trailing = {
+                        TopBarIcon(
+                            painterResource(R.drawable.ic_engine_manage),
+                            stringResource(R.string.dict_manager_content_description),
+                            MaterialTheme.colorScheme.primary,
+                        ) { showManager = true }
+                    },
+                )
+            },
         ) { innerPadding ->
-            LazyColumn(
+            Column(
                 modifier = Modifier.fillMaxSize()
                     .padding(horizontal = 12.dp)
                     .padding(top = innerPadding.calculateTopPadding()),
-                contentPadding = PaddingValues(top = 12.dp, bottom = 24.dp + glassNavBottomInset()),
-                verticalArrangement = Arrangement.spacedBy(12.dp),
             ) {
-                item {
+                AppSearchField(query = query, onQueryChange = { query = it })
+                when {
+                    !hasDict -> DictHint(stringResource(R.string.dict_search_no_dict))
+                    query.isBlank() -> DictHint(
+                        stringResource(R.string.dict_search_idle, dictName, entryCount)
+                    )
+                    else -> Box(Modifier.weight(1f)) {
+                        LazyColumn(
+                            modifier = Modifier.fillMaxSize(),
+                            contentPadding = PaddingValues(top = 12.dp, bottom = 24.dp + glassNavBottomInset()),
+                            verticalArrangement = Arrangement.spacedBy(12.dp),
+                        ) {
+                            if (searching && results.isEmpty()) {
+                                item {
+                                    Row(
+                                        modifier = Modifier.fillMaxWidth().padding(top = 24.dp),
+                                        horizontalArrangement = Arrangement.Center,
+                                    ) {
+                                        CircularProgressIndicator(modifier = Modifier.size(24.dp))
+                                    }
+                                }
+                            }
+                            if (!searching && results.isEmpty()) {
+                                item {
+                                    DictHint(
+                                        stringResource(EngineR.string.engine_ons_extract_def_none)
+                                    )
+                                }
+                            }
+                            items(results) { group ->
+                                DictEntryCard(group)
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    if (showManager) {
+        AppAlertDialog(
+            onDismissRequest = { showManager = false },
+            title = {
+                Text(
+                    stringResource(EngineR.string.engine_ons_dict_manager),
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.Bold,
+                    color = MaterialTheme.colorScheme.onSurface,
+                )
+            },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
                     MiuixCard(
                         modifier = Modifier.fillMaxWidth().glassShadow().glassBorder(),
                         cornerRadius = AppComponentCornerRadius,
@@ -128,38 +221,38 @@ fun DictionaryScreen(modifier: Modifier = Modifier) {
                             )
                         }
                     }
-                }
-                if (dicts.isEmpty()) {
-                    item {
-                        MiuixCard(
-                            modifier = Modifier.fillMaxWidth().glassShadow().glassBorder(),
-                            cornerRadius = AppComponentCornerRadius,
-                        ) {
-                            Text(
-                                stringResource(EngineR.string.engine_ons_dict_empty),
-                                style = MaterialTheme.typography.bodyMedium,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                modifier = Modifier.fillMaxWidth().padding(16.dp),
+                    if (dicts.isEmpty()) {
+                        Text(
+                            stringResource(EngineR.string.engine_ons_dict_empty),
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            modifier = Modifier.fillMaxWidth().padding(vertical = 8.dp),
+                        )
+                    }
+                    LazyColumn(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                        items(dicts, key = { it.id }) { dict ->
+                            DictRow(
+                                dict = dict,
+                                onEnabledChanged = { enabled ->
+                                    OnsDictStore.get().setEnabled(context, dict.id, enabled)
+                                    refresh()
+                                },
+                                onSetCurrent = {
+                                    OnsDictStore.get().setCurrent(context, dict.id)
+                                    refresh()
+                                },
+                                onDelete = { deleteTarget = dict },
                             )
                         }
                     }
                 }
-                items(dicts, key = { it.id }) { dict ->
-                    DictRow(
-                        dict = dict,
-                        onEnabledChanged = { enabled ->
-                            OnsDictStore.get().setEnabled(context, dict.id, enabled)
-                            refresh()
-                        },
-                        onSetCurrent = {
-                            OnsDictStore.get().setCurrent(context, dict.id)
-                            refresh()
-                        },
-                        onDelete = { deleteTarget = dict },
-                    )
+            },
+            confirmButton = {
+                TextButton(onClick = { showManager = false }) {
+                    Text(stringResource(R.string.common_done))
                 }
-            }
-        }
+            },
+        )
     }
 
     deleteTarget?.let { target ->
@@ -190,6 +283,61 @@ fun DictionaryScreen(modifier: Modifier = Modifier) {
                 TextButton(onClick = { deleteTarget = null }) { Text(stringResource(R.string.common_cancel)) }
             },
         )
+    }
+}
+
+/** 查询区提示卡（无词典 / 空查询状态 / 未查到）。 */
+@Composable
+private fun DictHint(text: String) {
+    MiuixCard(
+        modifier = Modifier.fillMaxWidth().padding(top = 12.dp).glassShadow().glassBorder(),
+        cornerRadius = AppComponentCornerRadius,
+    ) {
+        Text(
+            text,
+            style = MaterialTheme.typography.bodyMedium,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            modifier = Modifier.fillMaxWidth().padding(16.dp),
+        )
+    }
+}
+
+/** 单条查询结果：词条 + 读音 + 释义多行。 */
+@Composable
+private fun DictEntryCard(group: OnsDictStore.Group) {
+    MiuixCard(
+        modifier = Modifier.fillMaxWidth().glassShadow().glassBorder(),
+        cornerRadius = AppComponentCornerRadius,
+    ) {
+        Column(Modifier.padding(horizontal = 16.dp, vertical = 12.dp)) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text(
+                    group.term,
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.Bold,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier.weight(1f, fill = false),
+                )
+                if (group.reading.isNotEmpty() && group.reading != group.term) {
+                    Text(
+                        "【" + group.reading + "】",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.padding(start = 8.dp),
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                }
+            }
+            for (gloss in group.glosses) {
+                Text(
+                    gloss,
+                    style = MaterialTheme.typography.bodyMedium,
+                    modifier = Modifier.padding(top = 2.dp),
+                )
+            }
+        }
     }
 }
 

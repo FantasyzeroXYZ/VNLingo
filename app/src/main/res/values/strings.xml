@@ -19,6 +19,9 @@
     <string name="nav_settings">设置</string>
     <string name="dict_import_failed">导入失败</string>
     <string name="dict_delete_title">删除词典</string>
+    <string name="dict_search_idle">当前词典：%1$s（%2$d 条），输入单词开始查询</string>
+    <string name="dict_search_no_dict">暂无词典，点右上角「词典管理」导入</string>
+    <string name="dict_manager_content_description">词典管理</string>
     <string name="settings_extract_translate">翻译设置</string>
     <string name="settings_gamepad">手柄设置</string>
     <string name="engine_settings_krkr_extract_tjs">剧情文本框提取（实验性）</string>

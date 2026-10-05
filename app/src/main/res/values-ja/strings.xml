@@ -19,6 +19,9 @@
     <string name="nav_settings">設定</string>
     <string name="dict_import_failed">インポートに失敗しました</string>
     <string name="dict_delete_title">辞書を削除</string>
+    <string name="dict_search_idle">現在の辞書：%1$s（%2$d 条）。単語を入力して検索します。</string>
+    <string name="dict_search_no_dict">辞書がありません。右上の「辞書管理」からインポートしてください。</string>
+    <string name="dict_manager_content_description">辞書管理</string>
     <string name="settings_extract_translate">翻訳設定</string>
     <string name="settings_gamepad">コントローラー設定</string>
     <string name="engine_settings_krkr_extract_tjs">セリフ抽出（実験的）</string>
