@@ -41,6 +41,9 @@ if [[ ! -f "$APK" ]]; then
     exit 1
 fi
 
+# 构建时间打印：与源码修改时间对照，识别「改动未进包」的旧包误导
+echo "[install] APK: $(ls -l "$APK" | awk '{print $6, $7, $8}') ($(du -h "$APK" | cut -f1))"
+
 "$ADB" -s "$SERIAL" install -r --abi arm64-v8a "$APK"
 echo "[install] installed to $SERIAL: $PACKAGE"
 

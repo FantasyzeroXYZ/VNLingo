@@ -132,13 +132,18 @@ class AnkiDroidHelper(private val context: Context) {
         )
     }
 
-    /** 取或建牌组。 */
+    /** 取或建牌组。API 返回 null（提供方拒绝/集合未就绪）与异常分开记日志，
+     *  制卡失败的「静默无果」路径必须可在 logcat 定位。 */
     fun getOrCreateDeck(deckName: String): Long? {
         findDeckId(deckName)?.let { return it }
         return try {
-            api?.addNewDeck(deckName)?.also { id ->
+            val id = api?.addNewDeck(deckName)
+            if (id == null) {
+                Log.w(TAG, "addNewDeck returned null: $deckName (provider denied or collection not ready)")
+            }
+            id?.also { cached ->
                 context.getSharedPreferences(DECK_REF_DB, Context.MODE_PRIVATE)
-                    .edit().putLong(deckName, id).apply()
+                    .edit().putLong(deckName, cached).apply()
             }
         } catch (t: Throwable) {
             Log.w(TAG, "addNewDeck failed: $deckName", t)
@@ -150,9 +155,13 @@ class AnkiDroidHelper(private val context: Context) {
     fun getOrCreateModel(modelName: String): Long? {
         findModelId(modelName)?.let { return it }
         return try {
-            api?.addNewBasicModel(modelName)?.also { id ->
+            val id = api?.addNewBasicModel(modelName)
+            if (id == null) {
+                Log.w(TAG, "addNewBasicModel returned null: $modelName")
+            }
+            id?.also { cached ->
                 context.getSharedPreferences(MODEL_REF_DB, Context.MODE_PRIVATE)
-                    .edit().putLong(modelName, id).apply()
+                    .edit().putLong(modelName, cached).apply()
             }
         } catch (t: Throwable) {
             Log.w(TAG, "addNewBasicModel failed: $modelName", t)
@@ -167,7 +176,7 @@ class AnkiDroidHelper(private val context: Context) {
     fun getOrCreateWordModel(modelName: String = DEFAULT_WORD_MODEL): Long? {
         findModelId(modelName)?.let { return it }
         return try {
-            api?.addNewCustomModel(
+            val id = api?.addNewCustomModel(
                 modelName,
                 arrayOf("Word", "Reading", "Meaning", "Sentence"),
                 arrayOf("Card 1"),
@@ -176,9 +185,13 @@ class AnkiDroidHelper(private val context: Context) {
                 ".card { font-family: sans-serif; font-size: 20px; text-align: center; }",
                 null,
                 0
-            )?.also { id ->
+            )
+            if (id == null) {
+                Log.w(TAG, "addNewCustomModel returned null: $modelName")
+            }
+            id?.also { cached ->
                 context.getSharedPreferences(MODEL_REF_DB, Context.MODE_PRIVATE)
-                    .edit().putLong(modelName, id).apply()
+                    .edit().putLong(modelName, cached).apply()
             }
         } catch (t: Throwable) {
             Log.w(TAG, "addNewCustomModel failed: $modelName", t)
@@ -233,9 +246,12 @@ class AnkiDroidHelper(private val context: Context) {
 
     // ─── 笔记 ───────────────────────────────────────────────────────────
 
-    /** 添加单条笔记，返回 noteId（负值/异常视为失败）。 */
+    /** 添加单条笔记，返回 noteId（负值/异常视为失败）。null = API 无果（可能字段
+     *  与既有模型不符），与异常分开记日志便于定位。 */
     fun addNote(modelId: Long, deckId: Long, fields: Array<String>, tags: Set<String>?): Long? = try {
-        api?.addNote(modelId, deckId, fields, tags)?.takeIf { it > 0 }
+        val id = api?.addNote(modelId, deckId, fields, tags)?.takeIf { it > 0 }
+        if (id == null) Log.w(TAG, "addNote returned null (modelId=$modelId deckId=$deckId)")
+        id
     } catch (t: Throwable) {
         Log.w(TAG, "addNote failed", t)
         null

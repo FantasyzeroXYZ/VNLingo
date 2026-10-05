@@ -162,8 +162,8 @@ public class OnsExtractPanel {
     private List<OnsDictStore.Group> defGroups;
     private String defSentence;
     /** 查词/翻译请求代次号：翻句或重复请求后丢弃过期回调结果。 */
-    private int dictRequestId;
-    private int translateRequestId;
+    private volatile int dictRequestId;
+    private volatile int translateRequestId;
     /** 面板不透明百分比（OPACITY_STEPS 档位之一，持久化）。 */
     private int panelOpacity;
     private TextView opacityToggle;
@@ -1206,27 +1206,33 @@ public class OnsExtractPanel {
         scanFrom(start);
     }
 
-    /** 后台扫描：结果刷新到释义区；代次号丢弃过期结果（快速连按选词）。 */
+    /** 后台扫描：结果刷新到释义区；代次号丢弃过期结果（快速连按选词）。
+     *  扫描循环内也查代次——过期扫描立刻中止，不再空跑几十次词典查询；
+     *  全程捕获异常：词典库异常（损坏/满盘）降级为无结果，不杀进程。 */
     private void scanFrom(final int startPos) {
         final int requestId = ++dictRequestId;
         final String text = currentSentence;
         new Thread(() -> {
-            if (!OnsDictStore.get().hasDictionary()) {
-                main.post(() -> toast(R.string.engine_ons_extract_dict_none));
-                return;
+            try {
+                if (!OnsDictStore.get().hasDictionary()) {
+                    main.post(() -> toast(R.string.engine_ons_extract_dict_none));
+                    return;
+                }
+                ScanHit hit = isCjkText(text)
+                        ? scanByChar(text, startPos, requestId)
+                        : scanByWordTwoPhase(text, startPos, requestId);
+                if (requestId != dictRequestId) return;
+                if (hit == null) {
+                    main.post(() -> toast(R.string.engine_ons_extract_dict_none));
+                    return;
+                }
+                defGroups = hit.groups;
+                defSentence = hit.matched;
+                matchedRange = hit.range;
+                main.post(this::refresh);
+            } catch (Throwable t) {
+                Log.w(TAG, "dict scan failed", t);
             }
-            ScanHit hit = isCjkText(text)
-                    ? scanByChar(text, startPos)
-                    : scanByWordTwoPhase(text, startPos);
-            if (requestId != dictRequestId) return;
-            if (hit == null) {
-                main.post(() -> toast(R.string.engine_ons_extract_dict_none));
-                return;
-            }
-            defGroups = hit.groups;
-            defSentence = hit.matched;
-            matchedRange = hit.range;
-            main.post(this::refresh);
         }, "ons-scan").start();
     }
 
@@ -1254,10 +1260,12 @@ public class OnsExtractPanel {
         return null;
     }
 
-    /** CJK 逐字递减扫描：从 startPos 起逐次缩短尾部长度，首个命中即返回。 */
-    private ScanHit scanByChar(String text, int startPos) {
+    /** CJK 逐字递减扫描：从 startPos 起逐次缩短尾部长度，首个命中即返回。
+     *  requestId 过期（新一轮点选/翻句）立即中止。 */
+    private ScanHit scanByChar(String text, int startPos, int requestId) {
         final int maxLen = Math.min(text.length() - startPos, 40);
         for (int len = maxLen; len >= 1; len--) {
+            if (requestId != dictRequestId) return null;
             String cand = text.substring(startPos, startPos + len);
             if (isRejectable(cand)) continue;
             List<OnsDictStore.Group> groups = searchWithDeinflect(cand);
@@ -1273,7 +1281,7 @@ public class OnsExtractPanel {
      * 阶段一：首词词形还原，构建「原句 + 还原句」车队；
      * 阶段二：每辆车做纯精确词递减扫描（首词起到尾词止）。
      */
-    private ScanHit scanByWordTwoPhase(String text, int startPos) {
+    private ScanHit scanByWordTwoPhase(String text, int startPos, int requestId) {
         java.util.List<int[]> origSpans = buildWordSpans(text);
         if (origSpans.isEmpty()) return null;
         int startIdx = findWordIndex(origSpans, startPos);
@@ -1291,10 +1299,12 @@ public class OnsExtractPanel {
         }
 
         for (String vehicle : vehicles) {
+            if (requestId != dictRequestId) return null;
             java.util.List<int[]> vSpans = buildWordSpans(vehicle);
             int vi = findWordIndex(vSpans, origSpans.get(startIdx)[0]);
             if (vi < 0) continue;
             for (int e = vSpans.size() - 1; e >= vi; e--) {
+                if (requestId != dictRequestId) return null;
                 String cand = vehicle.substring(vSpans.get(vi)[0], vSpans.get(e)[1]);
                 if (isRejectable(cand)) continue;
                 List<OnsDictStore.Group> groups = OnsDictStore.get().search(cand, 5);

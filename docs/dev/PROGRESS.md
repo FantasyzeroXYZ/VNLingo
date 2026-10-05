@@ -4,6 +4,27 @@
 > `docs/说明/游戏内提取制卡功能方案.md`（提取功能线方案）阅读。
 > 更新时间：2026-10-05
 
+## 2026-10-05 会话（九）：健壮性批次（实测暴露的静默失败/无兜底类）
+
+- **游戏内扫描查词**：scanFrom 全程 try/catch（词典库异常降级为无结果，不再有
+  杀进程风险）；scanByChar / scanByWordTwoPhase 循环内检查代次号——快速连按
+  时过期扫描立即中止，不再空跑至多 40 次词典查询；dictRequestId/
+  translateRequestId 改 volatile 保证跨线程可见。
+- **OnsDictStore.search 顶层兜底**：库损坏/满盘/并发写冲突降级为空结果 + 日志，
+  游戏内扫描与词典页两处调用方都不再因库异常崩溃（exactLookup 原有内层捕获）。
+- **AnkiDroidHelper 静默 null 补日志**：addNewDeck / addNewBasicModel /
+  addNewCustomModel / addNote 的「API 返回 null」路径与异常分开记 warning——
+  本次制卡排查中「无日志可看」的根因即此类路径（provider 拒绝/集合未就绪时
+  AddContentApi 返 null 不抛异常）。
+- **OnsFreeTranslate 缓存**：裸 HashMap（后台线程并发读写）改 synchronizedMap +
+  访问序 LinkedHashMap + 64 条 LRU 上限。
+- **词典页导入进度**：importFromFile 的 Progress 回调接入悬浮框导入行摘要
+  （term_bank 分包粒度），大词典分钟级导入不再像卡死。
+- **install-debug-apk.sh**：安装前打印 APK 构建时间与体积——识别「改动未进包」
+  的旧包误导（本会话两次踩到）。
+- 冒烟回归：词典页搜索/状态行正常（zh locale 下 22 条中文显示，证实上一会话的
+  混排确为 en-US locale 所致）；游戏内非首单位点选查词（続く）正常命中。
+
 ## 2026-10-05 会话（八）：词典页改版——搜索为主体，管理收悬浮框
 
 - **页面重构**（DictionaryScreen）：主体改为单词搜索查询——AppSearchField 输入 +

@@ -491,9 +491,23 @@ public final class OnsDictStore {
     /** 查词：对 query 取最长有命中前缀，返回该层的释义组（最多 maxGroups 组）。
      *  范围：当前词典优先，其次其余启用词典（对齐参考的 current-dictionary
      *  模型 + 跨启用词典回退）。 */
+    /** 查询：最长前缀 + 词形还原分层（japanese_search.dart tier 思路）。
+     *  顶层兜底：词典库异常（损坏/满盘/并发写冲突）降级为空结果并记日志，
+     *  查词方（游戏内扫描/词典页）不因库异常崩溃。 */
     public List<Group> search(String query, int maxGroups) {
         List<Group> empty = new ArrayList<>();
         if (query == null) return empty;
+        try {
+            List<Group> out = searchInner(query, maxGroups);
+            return out == null ? empty : out;
+        } catch (Throwable t) {
+            Log.w(TAG, "search failed for " + query, t);
+            return empty;
+        }
+    }
+
+    private List<Group> searchInner(String query, int maxGroups) {
+        List<Group> empty = new ArrayList<>();
         String q = query.trim();
         if (q.isEmpty()) return empty;
         if (q.length() > 20) q = q.substring(0, 20);

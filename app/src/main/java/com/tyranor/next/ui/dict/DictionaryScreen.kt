@@ -74,6 +74,9 @@ fun DictionaryScreen(modifier: Modifier = Modifier) {
     var searching by remember { mutableStateOf(false) }
     var showManager by remember { mutableStateOf(false) }
     var importing by remember { mutableStateOf(false) }
+    // 导入进度（term_bank 分包粒度，回调在 IO 线程）：大词典导入耗时分钟级，
+    // 无进度反馈易被误判为卡死
+    var importProgress by remember { mutableStateOf("") }
     var deleteTarget by remember { mutableStateOf<OnsDictStore.DictInfo?>(null) }
     val importFailedMessage = stringResource(R.string.dict_import_failed)
 
@@ -91,10 +94,11 @@ fun DictionaryScreen(modifier: Modifier = Modifier) {
     val importPicker = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
         if (uri != null) {
             importing = true
+            importProgress = ""
             scope.launch {
                 val result = runCatching {
                     withContext(Dispatchers.IO) {
-                        OnsDictStore.get().importFromFile(context, uri) { }
+                        OnsDictStore.get().importFromFile(context, uri) { importProgress = it }
                     }
                 }
                 importing = false
@@ -212,10 +216,10 @@ fun DictionaryScreen(modifier: Modifier = Modifier) {
                         Column(Modifier.padding(vertical = 4.dp)) {
                             ArrowPreference(
                                 title = stringResource(EngineR.string.engine_ons_dict_import),
-                                summary = if (importing) {
-                                    stringResource(EngineR.string.engine_ons_extract_dict_importing)
-                                } else {
-                                    null
+                                summary = when {
+                                    importProgress.isNotEmpty() -> importProgress
+                                    importing -> stringResource(EngineR.string.engine_ons_extract_dict_importing)
+                                    else -> null
                                 },
                                 onClick = { if (!importing) importPicker.launch(arrayOf("*/*")) },
                             )

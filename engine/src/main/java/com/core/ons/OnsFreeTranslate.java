@@ -11,7 +11,7 @@ import java.net.HttpURLConnection;
 import java.net.URL;
 import java.net.URLEncoder;
 import java.nio.charset.StandardCharsets;
-import java.util.HashMap;
+import java.util.LinkedHashMap;
 import java.util.Map;
 
 /**
@@ -30,7 +30,15 @@ public final class OnsFreeTranslate {
 
     private static final String TAG = "OnsFreeTranslate";
     private static final String TARGET_LANG = "zh-CN";
-    private static final Map<String, String> CACHE = new HashMap<>();
+    /** 翻译缓存：有界 LRU（访问序 + 64 条上限），synchronizedMap 包装——
+     *  翻译在后台线程发生，裸 HashMap 并发读写有结构性损坏风险。 */
+    private static final Map<String, String> CACHE =
+            java.util.Collections.synchronizedMap(new LinkedHashMap<String, String>(32, 0.75f, true) {
+                @Override
+                protected boolean removeEldestEntry(Map.Entry<String, String> eldest) {
+                    return size() > 64;
+                }
+            });
 
     /** 翻译回调（回调线程 = 后台线程，实现方自行切主线程）。 */
     public interface Callback {
