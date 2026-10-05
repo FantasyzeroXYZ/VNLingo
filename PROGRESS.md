@@ -287,6 +287,13 @@
 
 ## 进行中 ⏸
 
+- **KRKR 对白完整还原（用户同意暂缓）**：现状=FT 字符流钩子全量命中，但 KAG
+  多行页的后续行字符只查询一次，自动还原可能只含末段/带重绘链；候选切换
+  （原始流/最适后缀）+ 历史悬浮窗已兜底。两个备选方案已评估待实施：
+  A=字符串层 native 钩子（TVPCreateAndAddWindow 锚点 + krkr2-main 对齐偏移 +
+  arm64 跳板，每内核一次）；B=修 TJS 发射器 KAG3.32 SIGSEGV（延迟注入或
+  非替换式包装，建议先做）。
+
 - `feat/extract-suite` 分支本次新增 3 个提交（Artemis 修复 / 导航与裁剪 / 手柄重映射）未推送。
 - 遗留：packed Artemis 游戏语音字节不可播（需内核侧语音副本机制）；官方 revision 内核无提取；
   外置模拟器（PPSSPP/Eden/Winlator）基础设施代码保留但无入口。

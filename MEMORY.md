@@ -83,6 +83,12 @@
 
 ## 移植外事实（2026-10-05 会话二新增）
 
+- **KRKR 对白完整还原的两个备选（已评估，暂缓实施）**：
+  A=字符串层 native 钩子——锚点：TVPCreateAndAddWindow(tTJSNI_Window*) 已导出
+  （libgame.so 可见核心符号不止 GDI 桩），krkr2-main 源码对齐消息层文本函数偏移，
+  arm64 手写跳板（本机 shadowhook 不可用）；B=TJS 发射器 KAG3.32 SIGSEGV 修复
+  （延迟注入/非替换式包装）。LunaTranslator 对 KiriKiri 亦无自动多行重组，
+  其方案=引擎签名钩子（字符串层）+ HCODE + 用户选候选，与我们的候选机制同构。
 - **KRKR 内核导出全套 FreeType（旧结论已推翻）**：libgame*.so 的 FT_* 在 dynsym
   且 JUMP_SLOT 走自身 GOT——GOT 补丁可拦一切层文本渲染字符。对白路径 =
   FT_Get_Char_Index→FT_Load_Glyph（FT_Load_Char 不被调）。KAG 打字机整行重绘，
