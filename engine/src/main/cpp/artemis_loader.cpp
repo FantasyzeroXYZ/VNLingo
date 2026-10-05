@@ -217,6 +217,8 @@ void installCsReadStackGuard(void* handle) {
 
 }  // namespace
 
+extern "C" bool artemis_official_install(void* kernelHandle, JavaVM* jvm);
+
 extern "C" JNIEXPORT void JNICALL
 ANativeActivity_onCreate(ANativeActivity* activity, void* savedState, size_t savedStateSize) {
     const std::string engineLibName = getEngineLibName(activity->env, activity);
@@ -255,6 +257,14 @@ ANativeActivity_onCreate(ANativeActivity* activity, void* savedState, size_t sav
 
     // 必须早于引擎创建任何 CSoundTrack：此刻还没转发 ANativeActivity_onCreate。
     installCsReadStackGuard(handle);
+    // 官方 revision 内核的字符串层提取钩子（dlsym 探测 CBackLog::Add——
+    // 官方内核命中并装内联钩子；clean 内核无此符号自动跳过，其提取走内置桥）
+    {
+        JavaVM* jvm = nullptr;
+        if (activity->env != nullptr && activity->env->GetJavaVM(&jvm) == JNI_OK) {
+            artemis_official_install(handle, jvm);
+        }
+    }
     // 提取钩子（剧情文本框数据源）由 Java 侧经 nativeInstallExtractHook 安装
     //（artemis_audio_bridge；GOT 补丁不依赖安装时机，无需在此提前）。
 

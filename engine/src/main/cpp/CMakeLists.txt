@@ -6,7 +6,7 @@ add_library(krkr_bridge_v2 SHARED krkr_bridge.cpp krkr_extract_hook.cpp)
 #（ArtemisExtractFacade）经 nativeInstallExtractHook 统一安装，避免早期/延迟
 # 两份静态状态互相不知情、把同一 GOT 槽二次包裹造成事件重复上行
 add_library(artemis_audio_bridge SHARED artemis_audio_bridge.cpp artemis_extract_hook.cpp)
-add_library(artemis_loader SHARED artemis_loader.cpp)
+add_library(artemis_loader SHARED artemis_loader.cpp artemis_official_hook.cpp)
 add_library(siglus_bridge SHARED siglus_bridge.cpp)
 add_library(rfvp_bridge SHARED rfvp_bridge.cpp)
 add_library(games_bridge SHARED games_bridge.cpp)
