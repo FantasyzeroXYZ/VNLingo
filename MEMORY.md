@@ -83,6 +83,13 @@
 
 ## 移植外事实（2026-10-05 会话二新增）
 
+- **Artemis 左缘按键无效 = 内核 EmulateKeyEvent 是日志桩**（会话四实装修复）：
+  注入走 `InjectHostKey` → EnqueueInput（与物理键同管线）；**key 是引擎官方 key id
+  （13=ENTER、37-40=方向、140=ctrl），不是 Android keycode；status 0=down/非0=up**。
+  点按式注入要 down+延时 up（120ms），跨帧才保证 IsPush/DownEdge 可见。
+- **左缘按键统一抽象 EngineLeftButtons**（ONS/KRKR/Artemis 共用）：ButtonSpec 三语义
+  （action 点按 / hold 按住 / toggled 高亮）、ONS chevron 折叠键在顶、圆角矩形 10dp；
+  ONScripter 自制左列已删迁（autoButtons/styleVirtualButton 等一并移除）。
 - **Artemis 文本提取的正解是带桥内核，不是运行时 hook（2026-10-05 会话三修正）**：
   内核源码仓在本地 `D:\Desktoprtemis-compat`（README/AGENT.md 齐全），其
   `build-android/libartemis.so` 即「带桥构建」（导出 SetExtractEmitter 全套，

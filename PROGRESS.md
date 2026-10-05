@@ -188,6 +188,21 @@
   按钮正圆 `0xFF2E2E2E` 白图标、语音行青色 `0xFF2DD4BF`、正文白、翻译浅灰、
   释义区暗色 chip、历史分隔线半透明白；弹窗（设置/词典/翻译测试）维持浅色。
 
+### 五.六、左缘按键统一抽象 + Artemis 按键修复（会话四）
+
+- **Artemis 左缘按键无效的根因在内核**：clean 内核 `EmulateKeyEvent` JNI 是日志桩
+  （jni_bridge.cpp 只打日志）。已在内核源码仓实装 `InjectHostKey`（与物理键同管线
+  EnqueueInput 入队 → 引擎线程 PushKeyDown/Up 排空；key=官方 key id，
+  status 对齐 Android action 0=down/1=up），随带桥构建入仓（pluginVersion 31）。
+  宿主 `artTap`（down + 120ms up）替代原「action=2」误用语义；blossom 实测
+  NEXT 推进对白、新行 ♪ 语音标注正确。
+- **左缘按键统一抽象**：`EngineLeftButtons` 扩展为三语义（点按/按住 hold/开关高亮
+  toggled）+ ONS 同款 chevron 折叠键（在顶、折叠态持久化）；形状统一圆角矩形
+  radius 10dp（原圆形），规格对齐 ONS（40dp、间距 5、距顶 12、贴缘 2+inset）。
+  ONScripter 左列（原自制 toggleButton+buildControlColumn 约 150 行）迁移至该抽象，
+  ESC/SKIP(按住 Ctrl)/AUTO(高亮)/MENU/OK/NEXT 语义保留；KRKR/Artemis 同款渲染。
+- 面板底部按键排水平居中（Gravity.CENTER，超出仍可滚动）。
+
 ### 五.五、面板 UI 改版（用户反馈，会话三）
 
 - 按键排移到面板最下方并缩小（40dp→32dp，含 toggle/透明度按钮）；

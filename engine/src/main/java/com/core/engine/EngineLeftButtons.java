@@ -1,9 +1,12 @@
 package com.core.engine;
 
 import android.app.Activity;
+import android.graphics.Color;
 import android.graphics.drawable.GradientDrawable;
 import android.view.Gravity;
 import android.widget.FrameLayout;
+import android.widget.ImageButton;
+import android.view.MotionEvent;
 import android.view.View;
 import android.view.ViewGroup;
 import android.view.WindowManager;
@@ -11,45 +14,88 @@ import android.widget.LinearLayout;
 import android.widget.TextView;
 
 import java.util.List;
+import java.util.function.BooleanSupplier;
 
 /**
- * 游戏画面左缘竖排按键组（引擎适配按钮，样式对齐 OnsSideButtons 右缘按键）：
- * 顶部折叠键（折叠后仍可见）+ 宿主自定义按键列（40dp 圆形，深色半透明底 + 白字）。
+ * 游戏画面左缘竖排按键组（引擎适配按键的统一抽象，ONScripter/KRKR/Artemis 共用）：
+ * 折叠键（ONS 同款 chevron 图标，折叠态持久化）+ 按键列。规格对齐 ONS 虚拟按键：
+ * 40dp 圆角矩形（radius 10dp）、深色半透明底白字、激活态蓝底白描边、
+ * 间距 5dp、距顶 12dp、贴缘 2dp + 系统栏 inset。
  * 两种安装形态：
- * - {@link #install(ViewGroup, String, List)}：加入宿主视图树（同进程视图合成的宿主，如 KRKR）；
+ * - {@link #install(ViewGroup, String, List)}：加入宿主视图树（同进程视图合成的宿主，如 ONS/KRKR）；
  * - {@link #installAsWindow(Activity, String, List)}：独立小悬浮窗锚定左上
  *   （NativeActivity 宿主，如 Artemis——窗口只占按键自身区域，触摸不遮挡游戏）。
- * 贴缘边距含系统栏左 inset（三键导航/挖孔避让）。
+ * 按键语义：
+ * - 点按式（{@link ButtonSpec#action}）：点击 = 按下+抬起；
+ * - 按住式（{@link ButtonSpec#press}/{@link ButtonSpec#release}）：触摸按下/抬起
+ *   （ONS SKIP=按住 Ctrl）；
+ * - 高亮态（{@link ButtonSpec#active}）：AUTO 等开关态蓝底显示，
+ *   状态变化后由宿主调 {@link #refreshActive(View)}。
  */
 public final class EngineLeftButtons {
 
     private static final String PREFS = "engine_left_buttons";
-    /** 对齐 OnsSideButtons 非激活配色。 */
+    /** 对齐 ONScripter.makeVirtualButtonBackground 非激活/激活配色。 */
     private static final int BG = 0xA6101010;
     private static final int STROKE = 0x87FFFFFF;
-    private static final int BUTTON_DP = 40;
-    private static final int GAP_DP = 5;
+    private static final int ACTIVE_BG = 0xD2007AFF;
+    private static final int BUTTON_DP = 40;   // ONScripter.CONTROL_BUTTON_SIZE_DP
+    private static final int GAP_DP = 5;       // ONScripter.CONTROL_BUTTON_GAP_DP
     private static final int EDGE_MARGIN_DP = 2;
     private static final int TOP_MARGIN_DP = 12;
 
-    /** 单个按键：短标签（1-4 字符）+ 点击动作。 */
+    /** 单个按键：短标签（1-4 字符）+ 三种可选语义（见类注释）。 */
     public static final class ButtonSpec {
         public final String label;
+        /** 点按式：点击触发（按下+抬起）。 */
         public final Runnable action;
+        /** 按住式：触摸按下触发。与 action 互斥，设置后 action 被忽略。 */
+        public final Runnable press;
+        /** 按住式：触摸抬起/取消触发。 */
+        public final Runnable release;
+        /** 高亮态查询（null = 普通键）；变化后宿主调 {@link #refreshActive}。 */
+        public final BooleanSupplier active;
 
         public ButtonSpec(String label, Runnable action) {
+            this(label, action, null, null, null);
+        }
+
+        /** 按住式按键（如 SKIP=按住 Ctrl）。 */
+        public static ButtonSpec hold(String label, Runnable press, Runnable release) {
+            return new ButtonSpec(label, null, press, release, null);
+        }
+
+        /** 点按 + 开关高亮（如 AUTO）。 */
+        public static ButtonSpec toggled(String label, Runnable action, BooleanSupplier active) {
+            return new ButtonSpec(label, action, null, null, active);
+        }
+
+        public ButtonSpec(String label, Runnable action, Runnable press, Runnable release,
+                          BooleanSupplier active) {
             this.label = label;
             this.action = action;
+            this.press = press;
+            this.release = release;
+            this.active = active;
         }
     }
 
     private EngineLeftButtons() {
     }
 
-    /** 加入宿主视图树左缘（overlay 顶层）。返回按键组根视图。 */
+    /** 加入宿主视图树左缘（overlay 顶层），内置折叠键。返回按键组根视图。 */
     public static View install(ViewGroup overlay, String prefsKey, List<ButtonSpec> buttons) {
+        return install(overlay, prefsKey, buttons, true);
+    }
+
+    /**
+     * 加入宿主视图树左缘。builtInToggle=false 时不装折叠键
+     * （宿主自有开关经 {@link #applyVisibility} 驱动）。返回按键组根视图。
+     */
+    public static View install(ViewGroup overlay, String prefsKey, List<ButtonSpec> buttons,
+                               boolean builtInToggle) {
         Activity activity = (Activity) overlay.getContext();
-        LinearLayout container = buildContainer(activity, prefsKey, buttons);
+        LinearLayout container = buildContainer(activity, prefsKey, buttons, builtInToggle);
         FrameLayout.LayoutParams lp = new FrameLayout.LayoutParams(
                 FrameLayout.LayoutParams.WRAP_CONTENT,
                 FrameLayout.LayoutParams.WRAP_CONTENT,
@@ -62,9 +108,9 @@ public final class EngineLeftButtons {
         return container;
     }
 
-    /** 独立小悬浮窗锚定左上（NativeActivity 宿主用）。返回按键组根视图。 */
+    /** 独立小悬浮窗锚定左上（NativeActivity 宿主用），内置折叠键。返回按键组根视图。 */
     public static View installAsWindow(Activity activity, String prefsKey, List<ButtonSpec> buttons) {
-        LinearLayout container = buildContainer(activity, prefsKey, buttons);
+        LinearLayout container = buildContainer(activity, prefsKey, buttons, true);
         WindowManager.LayoutParams lp = new WindowManager.LayoutParams(
                 ViewGroup.LayoutParams.WRAP_CONTENT,
                 ViewGroup.LayoutParams.WRAP_CONTENT,
@@ -86,60 +132,151 @@ public final class EngineLeftButtons {
         return container;
     }
 
-    private static LinearLayout buildContainer(Activity activity, String prefsKey, List<ButtonSpec> buttons) {
+    /** 展开显示（visible=false 折叠）按键列并持久化、同步折叠键图标。 */
+    public static void applyVisibility(View container, boolean visible) {
+        if (container == null || !(container.getTag() instanceof ColumnTag)) return;
+        ColumnTag tag = (ColumnTag) container.getTag();
+        if (!tag.selfToggle) return;  // 宿主自有开关时不接管
+        setColumnVisible(container, visible);
+        container.getContext().getSharedPreferences(PREFS, Activity.MODE_PRIVATE)
+                .edit().putBoolean(tag.prefsKey, visible).apply();
+        if (tag.toggleView != null) {
+            tag.toggleView.setImageResource(visible
+                    ? com.core.engine.R.drawable.ons_toggle_up
+                    : com.core.engine.R.drawable.ons_toggle_down);
+        }
+    }
+
+    /** 重算全部高亮态（AUTO 等开关状态变化后由宿主调用）。 */
+    public static void refreshActive(View container) {
+        if (container == null || !(container.getTag() instanceof ColumnTag)) return;
+        ColumnTag tag = (ColumnTag) container.getTag();
+        for (int i = 0; i < tag.column.getChildCount(); i++) {
+            View child = tag.column.getChildAt(i);
+            if (!(child instanceof TextView) || !(child.getTag() instanceof ButtonSpec)) continue;
+            ButtonSpec spec = (ButtonSpec) child.getTag();
+            styleButton((TextView) child, spec.active != null && spec.active.getAsBoolean());
+        }
+    }
+
+    private static final class ColumnTag {
+        LinearLayout column;
+        ImageButton toggleView;
+        String prefsKey;
+        boolean selfToggle;
+    }
+
+    private static LinearLayout buildContainer(Activity activity, String prefsKey,
+                                               List<ButtonSpec> buttons, boolean builtInToggle) {
         LinearLayout container = new LinearLayout(activity);
         container.setOrientation(LinearLayout.VERTICAL);
+        ColumnTag tag = new ColumnTag();
+        tag.prefsKey = prefsKey;
+        tag.selfToggle = builtInToggle;
 
         LinearLayout column = new LinearLayout(activity);
         column.setOrientation(LinearLayout.VERTICAL);
         for (ButtonSpec spec : buttons) {
-            column.addView(button(activity, spec.label, spec.action));
+            TextView tv = button(activity, spec);
+            tv.setTag(spec);
+            column.addView(tv);
         }
-        container.addView(column);
+        tag.column = column;
 
         boolean visible = activity.getSharedPreferences(PREFS, Activity.MODE_PRIVATE)
                 .getBoolean(prefsKey, true);
         column.setVisibility(visible ? View.VISIBLE : View.GONE);
-        TextView toggle = button(activity, visible ? "«" : "»", null);
-        toggle.setOnClickListener(v -> {
-            boolean now = column.getVisibility() != View.VISIBLE;
-            column.setVisibility(now ? View.VISIBLE : View.GONE);
-            toggle.setText(now ? "«" : "»");
-            activity.getSharedPreferences(PREFS, Activity.MODE_PRIVATE)
-                    .edit().putBoolean(prefsKey, now).apply();
-        });
-        container.addView(toggle);
+
+        if (builtInToggle) {
+            ImageButton toggle = new ImageButton(activity);
+            toggle.setImageResource(visible
+                    ? com.core.engine.R.drawable.ons_toggle_up
+                    : com.core.engine.R.drawable.ons_toggle_down);
+            toggle.setScaleType(android.widget.ImageView.ScaleType.CENTER_INSIDE);
+            toggle.setColorFilter(Color.WHITE);
+            int pad = dp(activity, 8);
+            toggle.setPadding(pad, pad, pad, pad);
+            LinearLayout.LayoutParams tlp = new LinearLayout.LayoutParams(
+                    dp(activity, BUTTON_DP), dp(activity, BUTTON_DP));
+            tlp.bottomMargin = dp(activity, GAP_DP);
+            toggle.setLayoutParams(tlp);
+            toggle.setOnClickListener(v -> {
+                boolean now = column.getVisibility() != View.VISIBLE;
+                applyVisibility(container, now);
+            });
+            tag.toggleView = toggle;
+            container.addView(toggle);  // 折叠键在顶（对齐 ONS 参考实现）
+        }
+        container.addView(column);
+        container.setTag(tag);
         return container;
     }
 
-    private static TextView button(Activity activity, String label, Runnable action) {
+    private static void setColumnVisible(View container, boolean visible) {
+        if (!(container.getTag() instanceof ColumnTag)) return;
+        ((ColumnTag) container.getTag()).column.setVisibility(
+                visible ? View.VISIBLE : View.GONE);
+    }
+
+    private static TextView button(Activity activity, ButtonSpec spec) {
         TextView tv = new TextView(activity);
-        tv.setText(label);
+        tv.setText(spec.label);
         tv.setTextColor(0xFFFFFFFF);
         tv.setTextSize(13);
         tv.setTypeface(android.graphics.Typeface.DEFAULT_BOLD);
         tv.setGravity(Gravity.CENTER);
         tv.setSingleLine(true);
         int side = dp(activity, BUTTON_DP);
-        int margin = dp(activity, GAP_DP);
         LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(side, side);
-        lp.topMargin = margin;
+        lp.topMargin = dp(activity, GAP_DP);
         tv.setLayoutParams(lp);
         tv.setPadding(dp(activity, 2), 0, dp(activity, 2), 0);
-        GradientDrawable bg = new GradientDrawable();
-        bg.setShape(GradientDrawable.OVAL);
-        bg.setColor(BG);
-        bg.setStroke(dp(activity, 1), STROKE);
-        tv.setBackground(bg);
-        if (action != null) {
+        styleButton(tv, spec.active != null && spec.active.getAsBoolean());
+        if (spec.press != null || spec.release != null) {
+            // 按住式：触摸按下/抬起（SKIP=按住 Ctrl；alpha 反馈对齐 ONS）
+            tv.setOnTouchListener((v, e) -> {
+                if (e.getActionMasked() == MotionEvent.ACTION_DOWN) {
+                    v.setAlpha(0.65f);
+                    if (spec.press != null) {
+                        try {
+                            spec.press.run();
+                        } catch (Throwable ignored) {
+                        }
+                    }
+                    return true;
+                }
+                if (e.getActionMasked() == MotionEvent.ACTION_UP
+                        || e.getActionMasked() == MotionEvent.ACTION_CANCEL) {
+                    v.setAlpha(1f);
+                    if (spec.release != null) {
+                        try {
+                            spec.release.run();
+                        } catch (Throwable ignored) {
+                        }
+                    }
+                    return true;
+                }
+                return false;
+            });
+        } else if (spec.action != null) {
             tv.setOnClickListener(v -> {
                 try {
-                    action.run();
+                    spec.action.run();
                 } catch (Throwable ignored) {
                 }
             });
         }
         return tv;
+    }
+
+    private static void styleButton(TextView tv, boolean active) {
+        Activity activity = (Activity) tv.getContext();
+        GradientDrawable bg = new GradientDrawable();
+        // 圆角矩形 radius 10dp：与 OnsSideButtons 右缘/ONS 虚拟按键同形
+        bg.setCornerRadius(dp(activity, 10));
+        bg.setColor(active ? ACTIVE_BG : BG);
+        bg.setStroke(dp(activity, active ? 2 : 1), active ? 0xE6FFFFFF : STROKE);
+        tv.setBackground(bg);
     }
 
     /** 左缘边距 = EDGE_MARGIN_DP + 系统栏左 inset；attach 后校准（insets 未就绪兜底）。 */

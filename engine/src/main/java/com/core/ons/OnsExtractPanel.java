@@ -356,7 +356,8 @@ public class OnsExtractPanel {
         // 图标按钮排（置于面板顶部）：播放/复制/翻译/制卡；截图/存语音已由右缘按键承担
         LinearLayout actions = new LinearLayout(activity);
         actions.setOrientation(LinearLayout.HORIZONTAL);
-        actions.setGravity(Gravity.CENTER_VERTICAL);
+        // 按键少于行宽时整排水平居中（超出可滚动，HorizontalScrollView 兜底）
+        actions.setGravity(Gravity.CENTER);
         actions.addView(makeAction(R.drawable.ic_play, R.string.engine_ons_extract_play, this::playVoice));
         actions.addView(makeAction(R.drawable.ic_copy, R.string.engine_ons_extract_copy_text, this::copyText));
         actions.addView(makeAction(R.drawable.ic_translate, R.string.engine_ons_extract_translate, this::translateCurrent));

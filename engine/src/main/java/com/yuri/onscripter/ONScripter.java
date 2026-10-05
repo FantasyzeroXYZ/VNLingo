@@ -62,10 +62,9 @@ public class ONScripter extends SDLActivity {
     private boolean ignoreCutout = true;
     private String gameRoot;
     private FrameLayout onsOverlay;
-    private LinearLayout leftControls;
     private LinearLayout rightControls;
-    private ImageButton toggleButton;
-    private final ArrayList<TextView> autoButtons = new ArrayList<>();
+    /** 左缘按键组（EngineLeftButtons 统一抽象；折叠态持久化在其自身 prefs）。 */
+    private View leftButtons;
     private boolean controlsVisible = true;
     private boolean autoMode = false;
     /** 视频覆盖播放控制器：在本 Activity 窗口内覆盖播放，不启动独立 Activity。 */
@@ -323,34 +322,50 @@ public class ONScripter extends SDLActivity {
             onsOverlay.setClickable(false);
             onsOverlay.setFocusable(false);
 
-            // 左列 = 顶部折叠键 + 按键列：同列同大小（40dp），折叠只藏按键；
-            // 折叠键与右缘同一水平面（距顶 12dp），整列贴左缘（避开系统导航条）
-            LinearLayout leftWrap = new LinearLayout(this);
-            leftWrap.setOrientation(LinearLayout.VERTICAL);
-            toggleButton = makeToggleButton();
-            LinearLayout.LayoutParams toggleLp = new LinearLayout.LayoutParams(
-                    dp(CONTROL_BUTTON_SIZE_DP), dp(CONTROL_BUTTON_SIZE_DP));
-            toggleLp.bottomMargin = dp(CONTROL_BUTTON_GAP_DP);
-            toggleLp.gravity = Gravity.CENTER_HORIZONTAL;
-            leftWrap.addView(toggleButton, toggleLp);
-            leftControls = buildControlColumn();
-            leftControls.setVisibility(controlsVisible ? View.VISIBLE : View.GONE);
-            leftWrap.addView(leftControls);
+            // 左列 = EngineLeftButtons 统一抽象（折叠键 + 按键列，规格/样式/语义
+            // 与 KRKR/Artemis 左缘按键一致）；迁移老开关态（KEY_OVERLAY_VISIBLE）
+            java.util.List<com.core.engine.EngineLeftButtons.ButtonSpec> leftSpecs =
+                    new java.util.ArrayList<>();
+            leftSpecs.add(new com.core.engine.EngineLeftButtons.ButtonSpec("ESC",
+                    () -> tapKey(KeyEvent.KEYCODE_ESCAPE)));
+            leftSpecs.add(com.core.engine.EngineLeftButtons.ButtonSpec.hold("SKIP",
+                    () -> SDLActivity.onNativeKeyDown(KeyEvent.KEYCODE_CTRL_LEFT),
+                    () -> SDLActivity.onNativeKeyUp(KeyEvent.KEYCODE_CTRL_LEFT)));
+            leftSpecs.add(com.core.engine.EngineLeftButtons.ButtonSpec.toggled("AUTO",
+                    () -> {
+                        autoMode = !autoMode;
+                        com.core.engine.EngineLeftButtons.refreshActive(leftButtons);
+                    }, () -> autoMode));
+            leftSpecs.add(new com.core.engine.EngineLeftButtons.ButtonSpec("MENU",
+                    () -> tapKey(KeyEvent.KEYCODE_MENU)));
+            leftSpecs.add(new com.core.engine.EngineLeftButtons.ButtonSpec("OK",
+                    () -> tapKey(KeyEvent.KEYCODE_ENTER)));
+            leftSpecs.add(new com.core.engine.EngineLeftButtons.ButtonSpec("NEXT",
+                    () -> tapKey(KeyEvent.KEYCODE_SPACE)));
+            leftButtons = com.core.engine.EngineLeftButtons.install(
+                    onsOverlay, "ons_left", leftSpecs);
+            if (!controlsVisible) {
+                // 旧版折叠态迁移：折叠 + 持久化到新 prefs（仅一次，此后由新 prefs 接管）
+                com.core.engine.EngineLeftButtons.applyVisibility(leftButtons, false);
+                getSharedPreferences(PREF_OVERLAY, MODE_PRIVATE).edit()
+                        .putBoolean(KEY_OVERLAY_VISIBLE, true).apply();
+                controlsVisible = true;
+            }
             rightControls = null;
-            FrameLayout.LayoutParams leftLp = new FrameLayout.LayoutParams(FrameLayout.LayoutParams.WRAP_CONTENT, FrameLayout.LayoutParams.WRAP_CONTENT, Gravity.START | Gravity.TOP);
-            leftLp.topMargin = dp(12);
-            leftLp.leftMargin = leftEdgeMargin();
-            onsOverlay.addView(leftWrap, leftLp);
-            leftWrap.post(this::recalibrateLeftEdge);
 
             addContentView(onsOverlay, new WindowManager.LayoutParams(WindowManager.LayoutParams.MATCH_PARENT, WindowManager.LayoutParams.MATCH_PARENT));
-            applyVirtualControlsVisibility();
             // 手柄方向键/左摇杆虚拟鼠标（覆盖层纯绘制 + 按键前置拦截 + 光标命中面板优先）
             virtualMouse = new OnsVirtualMouse(onsOverlay, () -> mSurface, this::injectTapAtCursor,
                     (x, y) -> extractPanel != null && extractPanel.dispatchCursorClick(x, y));
         } catch (Throwable t) {
             Log.w(TAG, "setupVirtualControls failed", t);
         }
+    }
+
+    /** 点按注入：SDL 键按下 + 抬起（左缘点按式按键共用）。 */
+    private void tapKey(int keyCode) {
+        SDLActivity.onNativeKeyDown(keyCode);
+        SDLActivity.onNativeKeyUp(keyCode);
     }
 
     private static final int REQ_EXPORT_SAVES = 42001;
@@ -573,174 +588,11 @@ public class ONScripter extends SDLActivity {
         return new android.os.Handler(android.os.Looper.getMainLooper());
     }
 
-    private void toggleVirtualControls() {
-        controlsVisible = !controlsVisible;
-        getSharedPreferences(PREF_OVERLAY, MODE_PRIVATE).edit().putBoolean(KEY_OVERLAY_VISIBLE, controlsVisible).apply();
-        applyVirtualControlsVisibility();
-    }
 
-    private void applyVirtualControlsVisibility() {
-        int vis = controlsVisible ? View.VISIBLE : View.GONE;
-        if (leftControls != null) leftControls.setVisibility(vis);
-        if (rightControls != null) rightControls.setVisibility(vis);
-        if (toggleButton != null) toggleButton.setImageResource(
-                controlsVisible ? R.drawable.ons_toggle_up : R.drawable.ons_toggle_down);
-    }
 
-    private LinearLayout buildControlColumn() {
-        LinearLayout column = new LinearLayout(this);
-        column.setOrientation(LinearLayout.VERTICAL);
-        column.setGravity(Gravity.CENTER);
-        int[] keys = new int[]{
-                KeyEvent.KEYCODE_ESCAPE,
-                KeyEvent.KEYCODE_CTRL_LEFT,
-                KeyEvent.KEYCODE_A,
-                KeyEvent.KEYCODE_MENU,
-                KeyEvent.KEYCODE_ENTER,
-                KeyEvent.KEYCODE_SPACE
-        };
-        String[] labels = new String[]{
-                "ESC",
-                "SKIP",
-                "AUTO",
-                "MENU",
-                "OK",
-                "NEXT"
-        };
-        for (int i = 0; i < keys.length; i++) {
-            TextView button = makeActionButton(labels[i], keys[i], false);
-            if (labels[i].contains("AUTO")) autoButtons.add(button);
-            LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(dp(CONTROL_BUTTON_SIZE_DP), dp(CONTROL_BUTTON_SIZE_DP));
-            lp.topMargin = dp(CONTROL_BUTTON_GAP_DP);
-            lp.bottomMargin = dp(CONTROL_BUTTON_GAP_DP);
-            column.addView(button, lp);
-        }
-        return column;
-    }
 
-    private void updateAutoButtons() {
-        for (TextView b : autoButtons) {
-            if (b == null) continue;
-            styleVirtualButton(b, autoMode, false);
-            b.setText("AUTO");
-        }
-    }
 
-    private void styleVirtualButton(TextView tv, boolean active, boolean toggle) {
-        tv.setBackground(makeVirtualButtonBackground(active, toggle));
-        tv.setTextColor(Color.WHITE);
-    }
 
-    private GradientDrawable makeVirtualButtonBackground(boolean active, boolean toggle) {
-        GradientDrawable bg = new GradientDrawable();
-        bg.setCornerRadius(dp(toggle ? 11 : 10));
-        if (active) {
-            bg.setColor(Color.argb(210, 0, 122, 255));
-            bg.setStroke(dp(2), Color.argb(230, 255, 255, 255));
-        } else {
-            bg.setColor(Color.argb(166, 16, 16, 16));
-            bg.setStroke(dp(1), Color.argb(135, 255, 255, 255));
-        }
-        return bg;
-    }
-
-    @SuppressLint("AppCompatCustomView") // SDLActivity is a platform Activity; its lightweight overlay intentionally uses platform widgets.
-    private TextView makeActionButton(String label, int keyCode, boolean toggle) {
-        TextView tv = new TextView(this) {
-            @Override
-            public boolean performClick() {
-                return super.performClick();
-            }
-        };
-        tv.setText(label);
-        tv.setTextColor(Color.WHITE);
-        tv.setTextSize(toggle ? 16 : 9);
-        tv.setTypeface(Typeface.DEFAULT_BOLD);
-        tv.setGravity(Gravity.CENTER);
-        tv.setLines(toggle ? 1 : 2);
-        tv.setIncludeFontPadding(false);
-        tv.setLineSpacing(0f, 0.92f);
-        tv.setTag(label.contains("AUTO") ? "auto" : "normal");
-        styleVirtualButton(tv, label.contains("AUTO") && autoMode, toggle);
-        FrameLayout.LayoutParams lp = new FrameLayout.LayoutParams(
-                toggle ? dp(TOGGLE_BUTTON_SIZE_DP) : dp(CONTROL_BUTTON_SIZE_DP),
-                toggle ? dp(TOGGLE_BUTTON_SIZE_DP) : dp(CONTROL_BUTTON_SIZE_DP));
-        tv.setLayoutParams(lp);
-        tv.setPadding(dp(1), dp(3), dp(1), dp(3));
-        final boolean[] touchActivation = {false};
-        tv.setOnClickListener(v -> {
-            if (touchActivation[0]) return;
-            if (toggle) {
-                toggleVirtualControls();
-            } else {
-                SDLActivity.onNativeKeyDown(keyCode);
-                SDLActivity.onNativeKeyUp(keyCode);
-                if ("auto".equals(v.getTag())) {
-                    autoMode = !autoMode;
-                    updateAutoButtons();
-                }
-            }
-        });
-        tv.setOnTouchListener((v, e) -> {
-            if (e.getAction() == MotionEvent.ACTION_DOWN) {
-                v.setAlpha(0.65f);
-                if (!toggle) {
-                    SDLActivity.onNativeKeyDown(keyCode);
-                }
-                return true;
-            } else if (e.getAction() == MotionEvent.ACTION_UP || e.getAction() == MotionEvent.ACTION_CANCEL) {
-                v.setAlpha(1f);
-                if (toggle) {
-                    toggleVirtualControls();
-                } else {
-                    SDLActivity.onNativeKeyUp(keyCode);
-                    if ("auto".equals(v.getTag())) {
-                        autoMode = !autoMode;
-                        updateAutoButtons();
-                    }
-                }
-                if (e.getAction() == MotionEvent.ACTION_UP) {
-                    touchActivation[0] = true;
-                    try {
-                        v.performClick();
-                    } finally {
-                        touchActivation[0] = false;
-                    }
-                }
-                return true;
-            }
-            return true;
-        });
-        return tv;
-    }
-
-    @SuppressLint("AppCompatCustomView") // SDLActivity is a platform Activity; its lightweight overlay intentionally uses platform widgets.
-    private ImageButton makeToggleButton() {
-        ImageButton button = new ImageButton(this);
-        button.setImageResource(controlsVisible ? R.drawable.ons_toggle_up : R.drawable.ons_toggle_down);
-        button.setScaleType(ImageView.ScaleType.CENTER_INSIDE);
-        button.setBackground(makeVirtualButtonBackground(false, false));
-        button.setColorFilter(Color.WHITE);
-        // 与按键列同款尺寸/内边距
-        int pad = dp(8);
-        button.setPadding(pad, pad, pad, pad);
-        button.setLayoutParams(new FrameLayout.LayoutParams(dp(CONTROL_BUTTON_SIZE_DP), dp(CONTROL_BUTTON_SIZE_DP)));
-        button.setOnClickListener(v -> toggleVirtualControls());
-        button.setOnTouchListener((v, e) -> {
-            if (e.getAction() == MotionEvent.ACTION_DOWN) {
-                v.setAlpha(0.65f);
-                return true;
-            } else if (e.getAction() == MotionEvent.ACTION_UP || e.getAction() == MotionEvent.ACTION_CANCEL) {
-                v.setAlpha(1f);
-                if (e.getAction() == MotionEvent.ACTION_UP) {
-                    v.performClick();
-                }
-                return true;
-            }
-            return true;
-        });
-        return button;
-    }
 
     private int dp(int value) {
         return Math.round(value * getResources().getDisplayMetrics().density);
@@ -766,30 +618,8 @@ public class ONScripter extends SDLActivity {
     }
 
     /** 左缘贴边边距 = 2dp + 左侧系统栏 inset。 */
-    private int leftEdgeMargin() {
-        try {
-            android.view.WindowInsets ins = getWindow().getDecorView().getRootWindowInsets();
-            if (ins != null) {
-                return dp(2) + ins.getInsets(android.view.WindowInsets.Type.systemBars()).left;
-            }
-        } catch (Throwable ignored) {
-        }
-        return dp(2);
-    }
 
     /** onCreate 时 insets 未就绪：attach 后再校准左缘边距。 */
-    private void recalibrateLeftEdge() {
-        try {
-            LinearLayout wrap = (LinearLayout) leftControls.getParent();
-            FrameLayout.LayoutParams lp = (FrameLayout.LayoutParams) wrap.getLayoutParams();
-            int margin = leftEdgeMargin();
-            if (lp.leftMargin != margin) {
-                lp.leftMargin = margin;
-                wrap.setLayoutParams(lp);
-            }
-        } catch (Throwable ignored) {
-        }
-    }
 
     private void ensureDefaultFont() {
         if (gameRoot == null || gameRoot.isEmpty()) return;
