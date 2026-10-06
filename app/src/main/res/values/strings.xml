@@ -24,6 +24,9 @@
     <string name="dict_manager_content_description">词典管理</string>
     <string name="settings_extract_translate">翻译设置</string>
     <string name="settings_anki_card">制卡设置</string>
+    <string name="settings_anki">Anki 设置</string>
+    <string name="settings_tts">TTS 设置</string>
+    <string name="settings_dict_page">词典设置</string>
     <string name="settings_gamepad">手柄设置</string>
     <string name="settings_crash_log">崩溃日志</string>
     <string name="settings_crash_log_none">无崩溃记录</string>

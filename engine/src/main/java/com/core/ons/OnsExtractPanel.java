@@ -1360,6 +1360,10 @@ public class OnsExtractPanel {
     /** TTS 静默合成（MultiTTS 已启用才有值；失败返回 null）——制卡音频槽位用。 */
     private byte[] ttsSynthesizeQuiet(String text) {
         if (!multiTtsEnabled || text == null || text.isEmpty()) return null;
+        String engine = OnsTtsEngines.engine(activity);
+        if (OnsTtsEngines.ENGINE_HTTP.equals(engine)) {
+            return OnsTtsEngines.httpSynthesize(activity, text);
+        }
         try {
             int speed = Math.round(50f * ttsRate / 100f);
             return MultiTtsClient.synthesize(text, null, speed, 50, 25);
@@ -2402,7 +2406,10 @@ public class OnsExtractPanel {
     // ------------------------------------------------------------------
 
     private void ensureTts() {
-        String desired = multiTtsEnabled ? MULTI_TTS_PACKAGE : null;
+        // MultiTTS 作为系统 TTS 引擎绑定仅在高级引擎=MultiTTS 时生效
+        String desired = multiTtsEnabled
+                && OnsTtsEngines.ENGINE_MULTI.equals(OnsTtsEngines.engine(activity))
+                ? MULTI_TTS_PACKAGE : null;
         if (tts != null && (activeTtsEngine == null
                 ? desired == null : activeTtsEngine.equals(desired))) return;
         if (tts != null) {
@@ -2444,7 +2451,25 @@ public class OnsExtractPanel {
 
     private void speakText(String sentence) {
         if (sentence == null || sentence.isEmpty()) return;
-        if (multiTtsEnabled) {
+        if (multiTtsEnabled && OnsTtsEngines.ENGINE_MULTI.equals(OnsTtsEngines.engine(activity))) {
+            // 高级 TTS 引擎按设置路由：MultiTTS / 自定义 HTTP API（参考 TrackReader
+            // src/domain/tts Provider 方案）；合成字节 → 本地 MediaPlayer 播放，后台线程。
+            // 安卓自带 TTS（系统引擎）走方法末尾的 TextToSpeech 直呼路径。
+            String engine = OnsTtsEngines.engine(activity);
+            if (OnsTtsEngines.ENGINE_HTTP.equals(engine)) {
+                new Thread(() -> {
+                    byte[] wav = OnsTtsEngines.httpSynthesize(activity, sentence);
+                    if (wav == null) {
+                        main.post(() -> toast(R.string.engine_ons_extract_action_failed));
+                        return;
+                    }
+                    main.post(() -> {
+                        stopVoice();
+                        playVoiceBytes(wav, "http_tts");
+                    });
+                }, "ons-http-tts").start();
+                return;
+            }
             // MultiTTS HTTP 合成 + 本地 MediaPlayer 播放（WAV），后台线程；
             // speed 0..100（50=1.0x），按语速档位换算
             int speed = Math.round(50f * ttsRate / 100f);

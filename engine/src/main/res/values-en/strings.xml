@@ -189,6 +189,16 @@
     <string name="engine_ons_anki_slot_screenshot">Screenshot</string>
     <string name="engine_ons_anki_slot_sentence_audio">Sentence audio</string>
     <string name="engine_ons_anki_slot_word_audio">Word audio</string>
+    <string name="engine_ons_tts_title">TTS settings</string>
+    <string name="engine_ons_tts_engine">TTS engine</string>
+    <string name="engine_ons_tts_engine_multi">MultiTTS</string>
+    <string name="engine_ons_tts_engine_http">Custom HTTP API</string>
+    <string name="engine_ons_tts_engine_system">Android system TTS</string>
+    <string name="engine_ons_tts_http_template">HTTP URL template (with {text} placeholder, replaced by URL-encoded text; e.g. TTS Server / LunaTranslator /api/tts?text={text})</string>
+    <string name="engine_ons_tts_http_template_invalid">Invalid template: must start with http(s) and contain {text}</string>
+    <string name="engine_ons_tts_test">Test (speak sample with current engine)</string>
+    <string name="engine_ons_tts_test_done">Test requested</string>
+    <string name="engine_ons_tts_system_hint">Android system TTS: speaks via system TextToSpeech (no audio bytes, not usable for card audio); used when the advanced engine is off</string>
 </resources>
 
 

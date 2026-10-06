@@ -107,10 +107,21 @@ private val tabItems = listOf(
   Tab(R.string.nav_settings, R.drawable.ic_settings),
 )
 
+/** 跨页 Tab 跳转请求（设置页「词典设置」等入口跳到指定主 Tab；消费后复位 -1）。 */
+object MainTabs {
+    var pendingTab by androidx.compose.runtime.mutableIntStateOf(-1)
+    fun requestTab(index: Int) { pendingTab = index }
+}
+
 @Composable
 fun MainScreen(modifier: Modifier = Modifier) {
   val context = LocalContext.current
   var selectedIndex by rememberSaveable { mutableStateOf(0) }
+  // 其他页面（设置页等）请求跳转主 Tab
+  androidx.compose.runtime.LaunchedEffect(MainTabs.pendingTab) {
+    if (MainTabs.pendingTab in 0..2) selectedIndex = MainTabs.pendingTab
+    if (MainTabs.pendingTab >= 0) MainTabs.pendingTab = -1
+  }
   val libraryViewModel: MainLibraryViewModel = viewModel()
   val libraryState by libraryViewModel.uiState.collectAsStateWithLifecycle()
   val interactScope = rememberCoroutineScope()

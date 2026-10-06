@@ -24,6 +24,9 @@
     <string name="dict_manager_content_description">Dictionaries</string>
     <string name="settings_extract_translate">Translation settings</string>
     <string name="settings_anki_card">Card creation</string>
+    <string name="settings_anki">Anki</string>
+    <string name="settings_tts">TTS</string>
+    <string name="settings_dict_page">Dictionaries</string>
     <string name="settings_gamepad">Gamepad settings</string>
     <string name="settings_crash_log">Crash logs</string>
     <string name="settings_crash_log_none">No crash records</string>

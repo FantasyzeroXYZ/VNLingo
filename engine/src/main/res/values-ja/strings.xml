@@ -192,6 +192,16 @@
     <string name="engine_ons_anki_slot_screenshot">スクリーンショット</string>
     <string name="engine_ons_anki_slot_sentence_audio">例文音声</string>
     <string name="engine_ons_anki_slot_word_audio">単語音声</string>
+    <string name="engine_ons_tts_title">TTS 設定</string>
+    <string name="engine_ons_tts_engine">TTS エンジン</string>
+    <string name="engine_ons_tts_engine_multi">MultiTTS</string>
+    <string name="engine_ons_tts_engine_http">カスタム HTTP API</string>
+    <string name="engine_ons_tts_engine_system">Android 標準 TTS</string>
+    <string name="engine_ons_tts_http_template">HTTP URL テンプレート（{text} を URL エンコードしたテキストに置換。TTS Server / LunaTranslator の /api/tts?text={text} など）</string>
+    <string name="engine_ons_tts_http_template_invalid">テンプレートが無効です：http(s) で始まり {text} を含む必要があります</string>
+    <string name="engine_ons_tts_test">テスト（現在のエンジンで読み上げ）</string>
+    <string name="engine_ons_tts_test_done">テストをリクエストしました</string>
+    <string name="engine_ons_tts_system_hint">Android 標準 TTS：システムの TextToSpeech で直接読み上げ（音声データ生成なし、カード音声には使用不可）。上位エンジン OFF 時はこちらを使用</string>
 </resources>
 
 

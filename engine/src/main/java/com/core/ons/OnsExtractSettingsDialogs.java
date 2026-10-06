@@ -13,6 +13,8 @@ import android.widget.TextView;
 import android.widget.Toast;
 
 import com.core.anki.AnkiCardConfig;
+import java.io.File;
+import java.io.FileOutputStream;
 import com.core.anki.AnkiDroidHelper;
 import com.core.engine.R;
 
@@ -600,6 +602,130 @@ public final class OnsExtractSettingsDialogs {
                     AnkiCardConfig.setFieldMap(activity, map);
                     Toast.makeText(activity, R.string.engine_ons_extract_api_saved,
                             Toast.LENGTH_SHORT).show();
+                })
+                .setNegativeButton(android.R.string.cancel, null)
+                .show();
+    }
+    /** TTS 设置：引擎（MultiTTS / 自定义 HTTP API / 安卓自带）+ HTTP 模板 + 试听。
+     *  引擎路由实现在面板 speakText 与 OnsTtsEngines（TrackReader Provider 方案对齐）。 */
+    public static void showTtsSettings(Activity activity) {
+        LinearLayout box = new LinearLayout(activity);
+        box.setOrientation(LinearLayout.VERTICAL);
+        int pad = dp(activity, 16);
+        box.setPadding(pad, dp(activity, 8), pad, 0);
+
+        final String[] engineKeys = {OnsTtsEngines.ENGINE_MULTI, OnsTtsEngines.ENGINE_HTTP,
+                OnsTtsEngines.ENGINE_SYSTEM};
+        final String[] engineLabels = {
+                activity.getString(R.string.engine_ons_tts_engine_multi),
+                activity.getString(R.string.engine_ons_tts_engine_http),
+                activity.getString(R.string.engine_ons_tts_engine_system)};
+
+        // HTTP 模板输入（声明在引擎行之前以便 lambda 引用；addView 顺序决定布局位置）
+        TextView httpHint = new TextView(activity);
+        httpHint.setText(R.string.engine_ons_tts_http_template);
+        httpHint.setTextColor(TEXT_DIM);
+        httpHint.setTextSize(11);
+        final EditText httpField = new EditText(activity);
+        httpField.setText(OnsTtsEngines.httpTemplate(activity));
+        httpField.setTextSize(13);
+        httpField.setSingleLine(true);
+        final String[] engineState = {OnsTtsEngines.engine(activity)};
+        Runnable syncHttpVisibility = () -> {
+            boolean http = OnsTtsEngines.ENGINE_HTTP.equals(engineState[0]);
+            httpHint.setAlpha(http ? 1f : 0.4f);
+            httpField.setAlpha(http ? 1f : 0.4f);
+            httpField.setEnabled(http);
+        };
+
+        // 引擎行（点击循环 MultiTTS → HTTP → 系统）
+        TextView engineValue = new TextView(activity);
+        styleNavValue(activity, engineValue);
+        Runnable syncEngine = () -> {
+            int idx2 = 0;
+            for (int i = 0; i < engineKeys.length; i++) {
+                if (engineKeys[i].equals(engineState[0])) { idx2 = i; break; }
+            }
+            engineValue.setText(engineLabels[idx2]);
+        };
+        syncEngine.run();
+        syncHttpVisibility.run();
+        LinearLayout engineRow = settingNavRow(activity, R.drawable.ic_volume,
+                R.string.engine_ons_tts_engine, engineValue);
+        engineRow.setOnClickListener(v -> {
+            int idx3 = 0;
+            for (int i = 0; i < engineKeys.length; i++) {
+                if (engineKeys[i].equals(engineState[0])) { idx3 = i; break; }
+            }
+            engineState[0] = engineKeys[(idx3 + 1) % engineKeys.length];
+            syncEngine.run();
+            syncHttpVisibility.run();
+        });
+        box.addView(engineRow);
+        box.addView(httpHint, matchWrap());
+        box.addView(httpField, matchWrap());
+
+        TextView systemHint = new TextView(activity);
+        systemHint.setText(R.string.engine_ons_tts_system_hint);
+        systemHint.setTextColor(TEXT_DIM);
+        systemHint.setTextSize(11);
+        box.addView(systemHint, matchWrap());
+
+        // 试听行：MultiTTS/HTTP → 合成字节后 MediaPlayer 播放；系统引擎 → 本地 TextToSpeech 直呼
+        LinearLayout testRow = settingNavRow(activity, R.drawable.ic_volume,
+                R.string.engine_ons_tts_test, null);
+        testRow.setOnClickListener(v -> {
+            final String testText = "音声テスト。语音测试。Voice test.";
+            final String engine = engineState[0];
+            if (OnsTtsEngines.ENGINE_SYSTEM.equals(engine)) {
+                try {
+                    android.speech.tts.TextToSpeech tts = new android.speech.tts.TextToSpeech(
+                            activity, status -> { });
+                    tts.setLanguage(java.util.Locale.CHINA);
+                    tts.speak(testText, android.speech.tts.TextToSpeech.QUEUE_FLUSH, null, "tts_test");
+                } catch (Throwable t) {
+                    Toast.makeText(activity, String.valueOf(t.getMessage()), Toast.LENGTH_SHORT).show();
+                }
+                return;
+            }
+            new Thread(() -> {
+                byte[] audio = OnsTtsEngines.ENGINE_HTTP.equals(engine)
+                        ? OnsTtsEngines.httpSynthesize(activity, testText)
+                        : MultiTtsClient.synthesize(testText, null, 50, 50, 25);
+                if (audio == null || audio.length == 0) return;
+                try {
+                    File out = new File(activity.getCacheDir(), "tts_settings_test.wav");
+                    try (FileOutputStream fos = new FileOutputStream(out)) {
+                        fos.write(audio);
+                    }
+                    android.media.MediaPlayer player = new android.media.MediaPlayer();
+                    player.setDataSource(out.getAbsolutePath());
+                    player.setOnCompletionListener(android.media.MediaPlayer::release);
+                    player.prepare();
+                    player.start();
+                } catch (Throwable t) {
+                    android.util.Log.w("OnsExtractSettingsDialogs", "tts test playback failed", t);
+                }
+            }).start();
+            Toast.makeText(activity, R.string.engine_ons_tts_test_done, Toast.LENGTH_SHORT).show();
+        });
+        box.addView(testRow);
+
+        ScrollView scroller = new ScrollView(activity);
+        scroller.addView(box);
+        new android.app.AlertDialog.Builder(activity)
+                .setTitle(R.string.engine_ons_tts_title)
+                .setView(scroller)
+                .setPositiveButton(android.R.string.ok, (d, w) -> {
+                    OnsTtsEngines.setEngine(activity, engineState[0]);
+                    String tpl = httpField.getText() == null ? "" : httpField.getText().toString().trim();
+                    if (tpl.isEmpty()) tpl = OnsTtsEngines.DEFAULT_HTTP_TEMPLATE;
+                    OnsTtsEngines.setHttpTemplate(activity, tpl);
+                    if (OnsTtsEngines.ENGINE_HTTP.equals(engineState[0])
+                            && !OnsTtsEngines.isHttpTemplateValid(tpl)) {
+                        Toast.makeText(activity, R.string.engine_ons_tts_http_template_invalid,
+                                Toast.LENGTH_LONG).show();
+                    }
                 })
                 .setNegativeButton(android.R.string.cancel, null)
                 .show();

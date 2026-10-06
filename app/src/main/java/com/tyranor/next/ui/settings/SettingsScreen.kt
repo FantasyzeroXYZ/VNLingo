@@ -356,13 +356,32 @@ fun SettingsScreen(modifier: Modifier = Modifier) {
                                 },
                             )
                             ArrowPreference(
-                                title = stringResource(R.string.settings_anki_card),
+                                title = stringResource(R.string.settings_anki),
                                 summary = stringResource(com.core.engine.R.string.engine_ons_anki_card_title),
                                 startAction = { SettingsItemIcon(R.drawable.ic_settings) },
                                 onClick = {
                                     com.core.ons.OnsExtractSettingsDialogs.showAnkiCardSettings(
                                         com.tyranor.next.core.i18n.AppLocaleController.findActivity(ctx) ?: return@ArrowPreference,
                                     )
+                                },
+                            )
+                            ArrowPreference(
+                                title = stringResource(R.string.settings_tts),
+                                summary = stringResource(com.core.engine.R.string.engine_ons_tts_title),
+                                startAction = { SettingsItemIcon(R.drawable.ic_settings) },
+                                onClick = {
+                                    com.core.ons.OnsExtractSettingsDialogs.showTtsSettings(
+                                        com.tyranor.next.core.i18n.AppLocaleController.findActivity(ctx) ?: return@ArrowPreference,
+                                    )
+                                },
+                            )
+                            ArrowPreference(
+                                title = stringResource(R.string.settings_dict_page),
+                                summary = stringResource(com.core.engine.R.string.engine_ons_dict_manager),
+                                startAction = { SettingsItemIcon(R.drawable.ic_settings) },
+                                onClick = {
+                                    // 跳到主界面词典 Tab（词典管理主体在该页）
+                                    com.tyranor.next.ui.main.MainTabs.requestTab(1)
                                 },
                             )
                             ArrowPreference(

@@ -191,6 +191,16 @@
     <string name="engine_ons_anki_slot_screenshot">截图</string>
     <string name="engine_ons_anki_slot_sentence_audio">例句语音</string>
     <string name="engine_ons_anki_slot_word_audio">单词语音</string>
+    <string name="engine_ons_tts_title">TTS 设置</string>
+    <string name="engine_ons_tts_engine">TTS 引擎</string>
+    <string name="engine_ons_tts_engine_multi">MultiTTS</string>
+    <string name="engine_ons_tts_engine_http">自定义 HTTP API</string>
+    <string name="engine_ons_tts_engine_system">安卓自带 TTS</string>
+    <string name="engine_ons_tts_http_template">HTTP URL 模板（含 {text} 占位符，合成时替换为 URL 编码文本；如 TTS Server / LunaTranslator 的 /api/tts?text={text}）</string>
+    <string name="engine_ons_tts_http_template_invalid">模板无效：需以 http(s) 开头且包含 {text}</string>
+    <string name="engine_ons_tts_test">试听（用当前引擎朗读测试句）</string>
+    <string name="engine_ons_tts_test_done">试听已请求</string>
+    <string name="engine_ons_tts_system_hint">安卓自带 TTS：使用系统 TextToSpeech 直呼（无音频产物，不用于制卡音频）；高级引擎关闭时朗读走此路径</string>
 </resources>
 
 

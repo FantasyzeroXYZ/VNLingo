@@ -4,6 +4,25 @@
 > `docs/说明/游戏内提取制卡功能方案.md`（提取功能线方案）阅读。
 > 更新时间：2026-10-06
 
+## 2026-10-06 会话（十九）：TTS 多引擎（系统/MultiTTS/HTTP API）+ 四设置入口
+
+- **OnsTtsEngines**（新）：TTS 引擎路由——安卓自带 TTS（系统 TextToSpeech 直呼，
+  无音频产物）/ MultiTTS / 自定义 HTTP API（GET 模板含 {text} 占位符替换为
+  URL 编码文本，兼容 TTS Server `/api/tts?text=` 与 LunaTranslator 格式；
+  32MB 保险丝 + Content-Length 截断校验）。引擎选择与模板持久化（全局）。
+- **面板朗读路由**：高级 TTS 开关 = 使用配置引擎（multi/http），关 = 系统；
+  MultiTTS 合成路径仅在引擎=multi 时走；ensureTts 的 MultiTTS 系统引擎绑定
+  同步收窄到 multi 档。HTTP 朗读复用 playVoiceBytes。
+- **制卡音频**：ttsSynthesizeQuiet 感知引擎（http → httpSynthesize；multi →
+  MultiTtsClient；system → null 不生成制卡音频）。
+- **TTS 设置弹窗**（showTtsSettings）：引擎循环 + HTTP 模板输入（仅 HTTP 档
+  启用）+ 试听（multi/http 合成播放、system 直呼）。
+- **设置页四入口**：Anki 设置（原制卡设置更名）/ TTS 设置（新）/ 翻译设置 /
+  词典设置（跳主界面词典 Tab——MainTabs.requestTab 跨页跳转机制）。
+- **实测**：设置页四入口呈现 ✓；TTS 弹窗引擎循环 MultiTTS→HTTP→系统 ✓；
+  HTTP 模板随引擎档启用/置灰 ✓；保存持久化（engine=multi + 模板）✓；
+  词典设置跳转词典 Tab ✓（搜索页 22 条状态正常）。
+
 ## 2026-10-06 会话（十八）：制卡自定义字段映射（参考 web game text 扩展方案）
 
 - **AnkiCardConfig**（新，com.core.anki）：全局制卡配置——牌组名/模型名/字段映射
