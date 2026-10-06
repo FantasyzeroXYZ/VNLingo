@@ -42,6 +42,14 @@
     <string name="gamepad_capture_title">Mapping "%1$s"</string>
     <string name="gamepad_capture_hint">Press the target key (gamepad or keyboard); Back cancels</string>
     <string name="gamepad_mapped">Mapped</string>
+    <string name="vm_bindings_title">Virtual mouse keys</string>
+    <string name="vm_bindings_summary">Bind movement and confirm keys for the in-game virtual mouse; both gamepad buttons and keyboard keys work. Bindings apply in game immediately. Hold a direction key to keep moving; default confirm is gamepad A / keyboard Enter.</string>
+    <string name="vm_action_up">Move up</string>
+    <string name="vm_action_down">Move down</string>
+    <string name="vm_action_left">Move left</string>
+    <string name="vm_action_right">Move right</string>
+    <string name="vm_action_confirm">Confirm (click)</string>
+    <string name="vm_reset_default">Reset to default</string>
     <string name="gamepad_cleared">Mapping cleared</string>
 
     <string name="settings_app_title">App settings</string>

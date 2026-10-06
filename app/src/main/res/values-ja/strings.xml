@@ -42,6 +42,14 @@
     <string name="gamepad_capture_title">「%1$s」をマッピング中</string>
     <string name="gamepad_capture_hint">割り当てるキー（ゲームパッドまたはキーボード）を押してください。戻るでキャンセル</string>
     <string name="gamepad_mapped">マッピングしました</string>
+    <string name="vm_bindings_title">仮想マウスのキー</string>
+    <string name="vm_bindings_summary">ゲーム内仮想マウスの移動と決定キーを割り当てます。ゲームパッドとキーボードのどちらのキーも使えます。ゲーム内ですぐに反映されます。方向キーは長押しで連続移動、既定の決定キーはゲームパッド A / キーボードの Enter です。</string>
+    <string name="vm_action_up">上へ</string>
+    <string name="vm_action_down">下へ</string>
+    <string name="vm_action_left">左へ</string>
+    <string name="vm_action_right">右へ</string>
+    <string name="vm_action_confirm">決定（クリック）</string>
+    <string name="vm_reset_default">既定に戻す</string>
     <string name="gamepad_cleared">マッピングを削除しました</string>
 
     <string name="settings_app_title">アプリ設定</string>
