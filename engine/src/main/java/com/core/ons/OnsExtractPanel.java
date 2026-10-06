@@ -70,6 +70,10 @@ public class OnsExtractPanel {
     private static final String KEY_TTS_MULTI = "tts_multi";
     /** TTS 语速（百分比 int，50..150；系统 TTS setSpeechRate 与 MultiTTS speed 共用）。 */
     private static final String KEY_TTS_RATE = "tts_rate";
+    /** 句读模式：按标点分段朗读（段间自然停顿）。 */
+    private static final String KEY_TTS_JUDOU = "tts_judou";
+    /** 循环次数：0 = 不循环，N = 整句重复 N+1 遍。 */
+    private static final String KEY_TTS_LOOP = "tts_loop";
     private static final int[] RATE_STEPS = {50, 75, 100, 125, 150};
     /** MultiTTS HTTP TTS（Forwarding service，127.0.0.1:8774）。 */
     private static final String MULTI_TTS_PACKAGE = "org.nobody.multitts";
@@ -138,6 +142,8 @@ public class OnsExtractPanel {
     private boolean multiTtsEnabled;
     /** TTS 语速百分比（RATE_STEPS 之一，持久化）。 */
     private int ttsRate;
+    private boolean ttsJudou;
+    private int ttsLoop;
     private String lastSpokenSentence;
     private android.widget.ImageView multiTtsToggle;
     private android.widget.ImageView ttsToggle;
@@ -183,6 +189,8 @@ public class OnsExtractPanel {
         ttsAuto = prefs.getBoolean(KEY_TTS_AUTO, false);
         multiTtsEnabled = prefs.getBoolean(KEY_TTS_MULTI, false);
         ttsRate = prefs.getInt(KEY_TTS_RATE, 100);
+        ttsJudou = prefs.getBoolean(KEY_TTS_JUDOU, false);
+        ttsLoop = prefs.getInt(KEY_TTS_LOOP, 0);
         listeningMode = prefs.getBoolean(KEY_LISTENING, false);
         panelOpacity = prefs.getInt(KEY_OPACITY, OPACITY_STEPS[0]);
         // 词典库提前打开（导入/查词共用；后台线程 search 不依赖 context）
@@ -2439,6 +2447,21 @@ public class OnsExtractPanel {
         return java.util.Locale.SIMPLIFIED_CHINESE;
     }
 
+    /** 按句末标点（。！？…；）切分为朗读段；无标点返回原句单元素数组。 */
+    private static java.util.List<String> splitJudou(String text) {
+        java.util.List<String> out = new java.util.ArrayList<>();
+        int start = 0;
+        for (int i = 0; i < text.length(); i++) {
+            char c = text.charAt(i);
+            if (c == '。' || c == '！' || c == '？' || c == '…' || c == '；') {
+                if (i + 1 - start > 0) out.add(text.substring(start, i + 1));
+                start = i + 1;
+            }
+        }
+        if (start < text.length()) out.add(text.substring(start));
+        return out;
+    }
+
     private void speakSentence() {
         ExtractFacade bridge = facade;
         String sentence = bridge.getSentenceText();
@@ -2527,7 +2550,25 @@ public class OnsExtractPanel {
                 }
             }
             tts.stop();
-            tts.speak(sentence, android.speech.tts.TextToSpeech.QUEUE_FLUSH, null, "ons_extract");
+            // 句读模式：按句末标点分段，首段 QUEUE_FLUSH 其余 QUEUE_ADD（段间
+            // 自然停顿）；循环 = 整段序列重复 ttsLoop+1 遍。关闭句读时整句一次。
+            if (ttsJudou) {
+                java.util.List<String> segs = splitJudou(sentence);
+                for (int round = 0; round <= ttsLoop; round++) {
+                    for (int i = 0; i < segs.size(); i++) {
+                        int queue = (round == 0 && i == 0)
+                                ? android.speech.tts.TextToSpeech.QUEUE_FLUSH
+                                : android.speech.tts.TextToSpeech.QUEUE_ADD;
+                        tts.speak(segs.get(i), queue, null, "ons_extract");
+                    }
+                }
+            } else {
+                for (int round = 0; round <= ttsLoop; round++) {
+                    tts.speak(sentence, round == 0
+                            ? android.speech.tts.TextToSpeech.QUEUE_FLUSH
+                            : android.speech.tts.TextToSpeech.QUEUE_ADD, null, "ons_extract");
+                }
+            }
         } catch (Throwable t) {
             Log.w(TAG, "tts speak failed", t);
         }

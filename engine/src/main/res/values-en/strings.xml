@@ -246,6 +246,10 @@
     <string name="engine_ons_tts_voice_lang">Filter by language</string>
     <string name="engine_ons_tts_voice_all">All languages</string>
     <string name="engine_ons_tts_voice_none">No voices for this language</string>
+    <string name="engine_ons_tts_judou">Punctuation pauses (system TTS)</string>
+    <string name="engine_ons_tts_loop">Repeat count</string>
+    <string name="engine_ons_tts_loop_off">No repeat</string>
+    <string name="engine_ons_tts_loop_n">Repeat %1$d times</string>
     <string name="engine_ons_tts_auto_read">Auto-read (no-voice lines, works while panel hidden)</string>
 </resources>
 

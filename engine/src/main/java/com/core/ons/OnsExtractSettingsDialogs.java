@@ -1058,6 +1058,42 @@ public final class OnsExtractSettingsDialogs {
         });
         box.addView(autoRow);
 
+        // 句读模式（系统引擎）：按标点分段朗读，段间自然停顿
+        android.content.SharedPreferences ttsP = activity.getSharedPreferences(
+                "ons_extract_tts", android.content.Context.MODE_PRIVATE);
+        final boolean[] judouState = {ttsP.getBoolean("tts_judou", false)};
+        TextView judouValue = new TextView(activity);
+        styleNavValue(activity, judouValue);
+        Runnable syncJudou = () -> judouValue.setText(judouState[0]
+                ? activity.getString(R.string.engine_ons_anki_on)
+                : activity.getString(R.string.engine_ons_anki_off));
+        syncJudou.run();
+        LinearLayout judouRow = settingNavRow(activity, R.drawable.ic_volume,
+                R.string.engine_ons_tts_judou, judouValue);
+        judouRow.setOnClickListener(v -> {
+            judouState[0] = !judouState[0];
+            ttsP.edit().putBoolean("tts_judou", judouState[0]).apply();
+            syncJudou.run();
+        });
+        box.addView(judouRow);
+
+        // 循环次数（0 = 不循环；点按循环 0→1→2→3→0）
+        final int[] loopState = {ttsP.getInt("tts_loop", 0)};
+        TextView loopValue = new TextView(activity);
+        styleNavValue(activity, loopValue);
+        Runnable syncLoop = () -> loopValue.setText(loopState[0] == 0
+                ? activity.getString(R.string.engine_ons_tts_loop_off)
+                : activity.getString(R.string.engine_ons_tts_loop_n, loopState[0]));
+        syncLoop.run();
+        LinearLayout loopRow = settingNavRow(activity, R.drawable.ic_autorenew,
+                R.string.engine_ons_tts_loop, loopValue);
+        loopRow.setOnClickListener(v -> {
+            loopState[0] = (loopState[0] + 1) % 4;
+            ttsP.edit().putInt("tts_loop", loopState[0]).apply();
+            syncLoop.run();
+        });
+        box.addView(loopRow);
+
         // 试听行：用当前引擎 + 全部参数朗读测试句
         LinearLayout testRow = settingNavRow(activity, R.drawable.ic_volume,
                 R.string.engine_ons_tts_test, null);

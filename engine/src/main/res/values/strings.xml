@@ -248,6 +248,10 @@
     <string name="engine_ons_tts_voice_lang">按语言筛选</string>
     <string name="engine_ons_tts_voice_all">全部语言</string>
     <string name="engine_ons_tts_voice_none">该语言下无发音人</string>
+    <string name="engine_ons_tts_judou">句读模式（按标点分段，系统引擎）</string>
+    <string name="engine_ons_tts_loop">朗读循环次数</string>
+    <string name="engine_ons_tts_loop_off">不循环</string>
+    <string name="engine_ons_tts_loop_n">重复 %1$d 次</string>
     <string name="engine_ons_tts_auto_read">自动朗读（无语音句，面板隐藏也生效）</string>
 </resources>
 

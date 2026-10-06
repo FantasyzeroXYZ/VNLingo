@@ -4,6 +4,18 @@
 > `docs/说明/游戏内提取制卡功能方案.md`（提取功能线方案）阅读。
 > 更新时间：2026-10-06
 
+## 2026-10-06 会话（三十九）：TTS 句读模式 + 朗读循环（TrackReader 对齐）
+
+- **句读模式**（系统引擎）：按句末标点（。！？…；）切分为朗读段，首段
+  QUEUE_FLUSH 其余 QUEUE_ADD——段间自然停顿。仅系统 TTS 路径生效
+  （MultiTTS/HTTP 合成整段音频由服务端处理）。
+- **朗读循环**：整句序列重复 N 遍（0=不循环，设置行循环 0→1→2→3→0）；
+  系统引擎路径同样生效。
+- TTS 设置弹窗新增「句读模式」「朗读循环次数」两行（prefs
+  ons_extract_tts/tts_judou、tts_loop）；模拟器实测两行正确渲染 ✓。
+- TrackReader 对齐备注：TTS Server 引擎/voices 分目录已有（HTTP 引擎 +
+  MultiTtsClient catalog 展平），本轮补齐句读/循环后 TTS 参数面基本对齐。
+
 ## 2026-10-06 会话（三十八）：monque ONS 语音配对复测（受阻）
 
 - monque（もれぶすくえすと！，ONS）模拟器启动正常，但标题菜单对触点
