@@ -194,10 +194,14 @@ class AnkiDroidHelper(private val context: Context) {
         return try {
             val id = api?.addNewCustomModel(
                 modelName,
-                arrayOf("Word", "Reading", "Meaning", "Sentence"),
+                arrayOf("Word", "Reading", "Meaning", "Sentence", "Image", "Audio"),
                 arrayOf("Card 1"),
                 arrayOf("{{Word}}<br>{{Reading}}"),
-                arrayOf("{{FrontSide}}<hr id=answer>{{Meaning}}<br><br>{{Sentence}}"),
+                arrayOf(
+                    "{{FrontSide}}<hr id=answer>{{Meaning}}<br><br>{{Sentence}}" +
+                        "{{#Image}}<br><br>{{Image}}{{/Image}}" +
+                        "{{#Audio}}<br>{{Audio}}{{/Audio}}",
+                ),
                 ".card { font-family: sans-serif; font-size: 20px; text-align: center; }",
                 null,
                 0

@@ -28,8 +28,8 @@
     <string name="settings_tts">TTS</string>
     <string name="settings_dict_page">Dictionaries</string>
     <string name="settings_gamepad">Gamepad settings</string>
-    <string name="settings_crash_log">Crash logs</string>
-    <string name="settings_crash_log_none">No crash records</string>
+    <string name="settings_crash_log">Debug logs</string>
+    <string name="settings_crash_log_none">No records</string>
     <string name="settings_crash_log_hint">%1$d records, tap to view/share</string>
     <string name="engine_settings_krkr_extract_tjs">Story text extraction (experimental)</string>
     <string name="engine_settings_krkr_extract_tjs_summary">Routes dialogue to the console via a TJS emitter for the text panel; only plain KAGParser games are supported and some games may fail to boot</string>

@@ -215,6 +215,7 @@
     <string name="engine_ons_tts_voice_lang">言語で絞り込み</string>
     <string name="engine_ons_tts_voice_all">すべての言語</string>
     <string name="engine_ons_tts_voice_none">この言語の音声がありません</string>
+    <string name="engine_ons_tts_auto_read">自動読み上げ（音声なし行、パネル非表示でも有効）</string>
 </resources>
 
 

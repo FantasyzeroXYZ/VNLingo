@@ -502,14 +502,6 @@ fun SettingsScreen(modifier: Modifier = Modifier) {
                                 startAction = { SettingsItemIcon(R.drawable.ic_settings_update) },
                                 onClick = { checkUpdate() },
                             )
-                            ArrowPreference(
-                                title = stringResource(R.string.settings_join_group),
-                                summary = stringResource(R.string.settings_join_group_summary),
-                                startAction = { SettingsItemIcon(R.drawable.ic_settings_group) },
-                                 onClick = {
-                                     showGroupDialog = true
-                                 },
-                             )
                         }
                     }
                 }

@@ -13,7 +13,7 @@ import java.net.URL
 
 object GitHubUpdateChecker {
     private const val RELEASES_API =
-        "https://api.github.com/repos/Weiss-UltimateSavior/Tyranor-Next/releases"
+        "https://api.github.com/repos/FantasyzeroXYZ/VNLingo/releases"
 
     /** 更新弹窗列表最多展示的版本数。 */
     private const val MAX_CANDIDATES = 3

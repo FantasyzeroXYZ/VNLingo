@@ -214,6 +214,7 @@
     <string name="engine_ons_tts_voice_lang">按语言筛选</string>
     <string name="engine_ons_tts_voice_all">全部语言</string>
     <string name="engine_ons_tts_voice_none">该语言下无发音人</string>
+    <string name="engine_ons_tts_auto_read">自动朗读（无语音句，面板隐藏也生效）</string>
 </resources>
 
 

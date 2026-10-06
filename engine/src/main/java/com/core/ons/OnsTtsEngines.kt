@@ -80,6 +80,17 @@ object OnsTtsEngines {
         prefs(context).edit().putString(KEY_VOICE, value.trim()).apply()
     }
 
+    private const val KEY_AUTO_READ = "auto_read"
+
+    /** 自动朗读（无语音句自动 TTS；全局默认）。 */
+    @JvmStatic
+    fun autoRead(context: Context): Boolean = prefs(context).getBoolean(KEY_AUTO_READ, false)
+
+    @JvmStatic
+    fun setAutoRead(context: Context, value: Boolean) {
+        prefs(context).edit().putBoolean(KEY_AUTO_READ, value).apply()
+    }
+
     /** MultiTTS 服务地址（host:port）；空 = 默认 127.0.0.1:8774。 */
     @JvmStatic
     fun multiHost(context: Context): String =

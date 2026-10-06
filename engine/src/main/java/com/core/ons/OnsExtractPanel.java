@@ -1473,7 +1473,8 @@ public class OnsExtractPanel {
                     modelFields = names;
                 } else if (com.core.anki.AnkiCardConfig.DEFAULT_MODEL.equals(modelName)) {
                     modelId = helper.getOrCreateWordModel(modelName);
-                    modelFields = new String[]{"Word", "Reading", "Meaning", "Sentence"};
+                    modelFields = new String[]{
+                            "Word", "Reading", "Meaning", "Sentence", "Image", "Audio"};
                 } else {
                     final String missing = modelName;
                     main.post(() -> toast(activity.getString(

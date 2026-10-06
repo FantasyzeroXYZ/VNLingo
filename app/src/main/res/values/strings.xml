@@ -28,8 +28,8 @@
     <string name="settings_tts">TTS 设置</string>
     <string name="settings_dict_page">词典设置</string>
     <string name="settings_gamepad">手柄设置</string>
-    <string name="settings_crash_log">崩溃日志</string>
-    <string name="settings_crash_log_none">无崩溃记录</string>
+    <string name="settings_crash_log">调试日志</string>
+    <string name="settings_crash_log_none">无记录</string>
     <string name="settings_crash_log_hint">%1$d 份记录，点击查看/分享</string>
     <string name="engine_settings_krkr_extract_tjs">剧情文本框提取（实验性）</string>
     <string name="engine_settings_krkr_extract_tjs_summary">经 TJS 发射器把对白送往控制台回收；仅支持普通 KAGParser 内核游戏，开启后个别游戏可能引导失败</string>

@@ -784,6 +784,23 @@ public final class OnsExtractSettingsDialogs {
         systemHint.setTextSize(11);
         box.addView(systemHint, matchWrap());
 
+        // 自动朗读开关（无语音句自动 TTS；面板隐藏也生效——autoPlay 不依赖面板可见性）
+        final boolean[] autoState = {com.core.ons.OnsTtsEngines.autoRead(activity)};
+        TextView autoValue = new TextView(activity);
+        styleNavValue(activity, autoValue);
+        Runnable syncAuto = () -> autoValue.setText(autoState[0]
+                ? activity.getString(R.string.engine_ons_anki_on)
+                : activity.getString(R.string.engine_ons_anki_off));
+        syncAuto.run();
+        LinearLayout autoRow = settingNavRow(activity, R.drawable.ic_volume,
+                R.string.engine_ons_tts_auto_read, autoValue);
+        autoRow.setOnClickListener(v -> {
+            autoState[0] = !autoState[0];
+            com.core.ons.OnsTtsEngines.setAutoRead(activity, autoState[0]);
+            syncAuto.run();
+        });
+        box.addView(autoRow);
+
         // 试听行：用当前引擎 + 全部参数朗读测试句
         LinearLayout testRow = settingNavRow(activity, R.drawable.ic_volume,
                 R.string.engine_ons_tts_test, null);

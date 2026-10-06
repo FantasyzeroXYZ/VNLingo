@@ -212,6 +212,7 @@
     <string name="engine_ons_tts_voice_lang">Filter by language</string>
     <string name="engine_ons_tts_voice_all">All languages</string>
     <string name="engine_ons_tts_voice_none">No voices for this language</string>
+    <string name="engine_ons_tts_auto_read">Auto-read (no-voice lines, works while panel hidden)</string>
 </resources>
 
 
