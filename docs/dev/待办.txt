@@ -4,6 +4,10 @@
 - [x] 去掉导航首页，引擎并入设置页；词典页加入底部导航
 - [x] 引擎裁剪：仅保留 krkr / ons / rpgmaker系列 / tyrano / renpy / web / artemis
 - [x] 词典/翻译等设置迁出游戏画面，归入主导航设置页
+- [x] 翻译源扩展（参考 MoeTranslate/overlay-translator 移植）：Google/Bing
+      免费端点、DeepL、百度翻译、Gemini、Claude 六引擎接入（OnsTranslateEngines），
+      设置弹窗八引擎循环与按引擎配置；Bing 受端点反爬影响（见 MEMORY），
+      Google 需代理，其余待用户凭据实测
 - [x] 手柄信号接收 + 按键重映射（捕获式设置页）
 - [x] Artemis 文本/语音提取（带桥内核）+ 左缘按键修复 + 左右按键统一抽象
 - [x] 放大镜功能

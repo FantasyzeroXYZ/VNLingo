@@ -18,7 +18,7 @@ VNLingo 基于 **Tyranor Next**（多引擎 Galgame 聚合启动器）衍生，�
 
 - **提取面板（剧情文本框）**：当前句栏、配对语音 ♪、翻译行、历史回放、听力模式、暗色圆钮风格
 - **查词典**：Yomichan zip / MDX jsonl 导入，多词典管理，最长前缀 + 词形还原
-- **翻译双轨**：OpenAI 兼容 API 与 ML Kit 离线翻译（zh/en/ja/ko，模型按需下载），内置翻译测试
+- **翻译多源**：OpenAI 兼容 API、ML Kit 离线翻译、Google/Bing 免费端点、DeepL、百度翻译、Gemini、Claude（后四者与免费端点参考 MoeTranslate/overlay-translator 移植），内置翻译测试
 - **TTS 朗读**：系统 TextToSpeech 与 MultiTTS HTTP 合成双路径，自动朗读、语速调节
 - **AnkiDroid 制卡**：词卡/句卡一键入库（vendored 官方 API）
 - **截图**：PixelCopy 直取游戏 Surface（纯游戏画面），主页截图管理页

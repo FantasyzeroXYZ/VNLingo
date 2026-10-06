@@ -175,6 +175,21 @@
   `com.core.engine.EngineVirtualMouse`（ONS/KRKR/Artemis 共用；Artemis 点击走
   内核 InjectHostTouch JNI、按键走可聚焦光标窗口，见会话二十五）。
 
+## 实测踩坑（2026-10-06 会话二十八新增：翻译源移植）
+
+1. **翻译测试弹窗回调直触视图 = 翻译线程崩溃杀应用**：translateWithEngine
+   的回调在引擎线程执行，设置弹窗的回调直接 setText → OnlyOriginalThread
+   FATAL 整个应用退出。修复双保险：弹窗回调 runOnUiThread 包裹 + 引擎线程
+   回调调用点 try/catch（引擎线程绝不能因消费方异常死亡）。新增引擎路径时
+   此约束同样适用。
+2. **Bing 非官方端点（ttranslatev3）在本模拟器网络稳定 400**：token 流程
+   （抓页 IG/IID/params_AbusePreventionHelper + Cookie）忠实按 MoeTranslate
+   移植，桌面/移动 UA、三个页面 IID、Origin/Referer、key/token 交换全试过
+   仍 {"statusCode":400}——IP 信誉/反爬策略，非代码问题。错误已带响应体
+   透传到测试弹窗。真机住宅网络可能可用（MoeTranslate 用户实测背景）。
+3. **googleapis 免费翻译端点在国内网络不可达**（curl 直接 000）——免费
+   Google 引擎需设备代理；文档/UI 不承诺可用性。
+
 ## 实测踩坑（2026-10-06 会话二十六新增：虚拟鼠标绑定与长按连移）
 
 1. **旧虚拟鼠标上下步进是左右的两倍**（`UP->-2/DOWN->2` vs `LEFT->-1/RIGHT->1`，

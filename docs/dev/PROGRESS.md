@@ -4,6 +4,36 @@
 > `docs/说明/游戏内提取制卡功能方案.md`（提取功能线方案）阅读。
 > 更新时间：2026-10-06
 
+## 2026-10-06 会话（二十八）：翻译源扩展（参考 MoeTranslate / overlay-translator 移植）
+
+- **需求**（用户）：从 MoeTranslate-5.5.1 与 overlay-translator-0.4.7 搬运
+  免费翻译实现、常用 API 调用（选常用的）、AI 调用实现。
+- **移植清单**（新建 `OnsTranslateEngines.java`，全部 HttpURLConnection +
+  org.json，零新增依赖）：
+  - 免费：**Google**（translate_a/single gtx 非官方端点，overlay 版）；
+    **Bing**（cn.bing.com 网页翻译，抓页提取 IG/IID/token/key + Cookie 再
+    POST ttranslatev3，MoeTranslate 版）
+  - 常用 API：**DeepL**（/v2/translate，DeepL-Auth-Key，host 可配 free/pro）；
+    **百度翻译开放平台**（md5(appid+q+salt+key) 签名，q 原文含换行参与签名）
+  - AI：**Gemini**（generateContent REST + 安全档位全 BLOCK_NONE，MoeTranslate
+    gemini SDK 的等价 REST 实现）；**Anthropic**（/v1/messages，x-api-key +
+    anthropic-version，overlay 版）
+  - Sakura 等 galgame 向 LLM 为 OpenAI 兼容端点，现有 api 引擎填其地址即可
+- **接入**：`OnsTranslateClient` 新增六引擎常量/配置键（deepl_host/key、
+  baidu_appid/key、gemini_key/model、anthropic_base/key/model），路由扩展；
+  isConfigured 按引擎判定（免费源恒可用）。翻译设置弹窗引擎行改八引擎循环，
+  配置行按引擎打开对应弹窗（免费源提示无需配置）；测试行走全引擎路由。
+- **实测自曝自修两处**：①测试弹窗回调直触视图（翻译线程 OnlyOriginalThread
+  崩溃杀应用）——runOnUiThread 包裹 + 引擎线程回调 try/catch 防死亡；
+  ②VirtualMouseBindings 式的空集挡默认问题此轮无，但 Bing 端点反爬在本
+  模拟器网络稳定 400（桌面/移动 UA、IID 全变体、Origin/Referer 均拒）。
+- **模拟器实测**：引擎八档循环与持久化 ✓；Bing 真实调用打通到端点（错误
+  信息带响应体清晰显示在测试弹窗，不再崩溃）✓；Google 端点本网络不可达
+  （000，需代理）；DeepL/百度/Gemini/Claude 需用户凭据，代码路径按参考
+  实现移植待凭据实测。
+- 已知边界：Bing 非官方端点受反爬策略影响（同参考项目已知风险）；免费
+  引擎的可用性高度依赖设备网络环境（google 需代理、bing 看端点策略）。
+
 ## 2026-10-06 会话（二十七）：云同步完整重实现（参考 RinneMobile 架构）
 
 - **需求**（用户）：云同步完全参考 `RinneMobile-main` 重新实现。

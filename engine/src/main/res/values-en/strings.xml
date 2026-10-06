@@ -140,6 +140,26 @@
     <string name="engine_ons_settings_dict_count">%1$d imported</string>
     <string name="engine_ons_translate_engine">Translation engine</string>
     <string name="engine_ons_translate_engine_local">On-device (ML Kit)</string>
+    <string name="engine_ons_translate_engine_google">Google (free)</string>
+    <string name="engine_ons_translate_engine_bing">Bing (free)</string>
+    <string name="engine_ons_translate_engine_deepl">DeepL API</string>
+    <string name="engine_ons_translate_engine_baidu">Baidu Translate</string>
+    <string name="engine_ons_translate_engine_gemini">Google Gemini</string>
+    <string name="engine_ons_translate_engine_anthropic">Claude (Anthropic)</string>
+    <string name="engine_ons_translate_cfg_deepl">DeepL settings</string>
+    <string name="engine_ons_translate_cfg_baidu">Baidu Translate settings</string>
+    <string name="engine_ons_translate_cfg_gemini">Gemini settings</string>
+    <string name="engine_ons_translate_cfg_anthropic">Claude settings</string>
+    <string name="engine_ons_translate_cfg_free">Free engine, no configuration needed</string>
+    <string name="engine_ons_deepl_hint_host">DeepL host (free=api-free.deepl.com / pro=api.deepl.com)</string>
+    <string name="engine_ons_deepl_hint_key">DeepL Auth Key</string>
+    <string name="engine_ons_baidu_hint_appid">Baidu Translate APP ID</string>
+    <string name="engine_ons_baidu_hint_key">Baidu Translate secret</string>
+    <string name="engine_ons_gemini_hint_key">Gemini API Key</string>
+    <string name="engine_ons_gemini_hint_model">Model (default gemini-1.5-flash)</string>
+    <string name="engine_ons_anthropic_hint_base">API base (default https://api.anthropic.com)</string>
+    <string name="engine_ons_anthropic_hint_key">Anthropic API Key</string>
+    <string name="engine_ons_anthropic_hint_model">Model (default claude-3-5-haiku-latest)</string>
     <string name="engine_ons_translate_engine_api">API (OpenAI compatible)</string>
     <string name="engine_ons_translate_cfg">Engine config</string>
     <string name="engine_ons_translate_models">Models</string>

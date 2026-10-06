@@ -146,6 +146,26 @@
     <!-- 翻译（引擎选择/本地模型/测试，对齐 anki 参考设置页） -->
     <string name="engine_ons_translate_engine">翻訳エンジン</string>
     <string name="engine_ons_translate_engine_local">ローカル（ML Kit オフライン）</string>
+    <string name="engine_ons_translate_engine_google">Google 翻訳（無料）</string>
+    <string name="engine_ons_translate_engine_bing">Bing 翻訳（無料）</string>
+    <string name="engine_ons_translate_engine_deepl">DeepL API</string>
+    <string name="engine_ons_translate_engine_baidu">百度翻訳</string>
+    <string name="engine_ons_translate_engine_gemini">Google Gemini</string>
+    <string name="engine_ons_translate_engine_anthropic">Claude (Anthropic)</string>
+    <string name="engine_ons_translate_cfg_deepl">DeepL 設定</string>
+    <string name="engine_ons_translate_cfg_baidu">百度翻訳の設定</string>
+    <string name="engine_ons_translate_cfg_gemini">Gemini 設定</string>
+    <string name="engine_ons_translate_cfg_anthropic">Claude 設定</string>
+    <string name="engine_ons_translate_cfg_free">無料エンジン、設定不要</string>
+    <string name="engine_ons_deepl_hint_host">DeepL ホスト（free=api-free.deepl.com / pro=api.deepl.com）</string>
+    <string name="engine_ons_deepl_hint_key">DeepL Auth Key</string>
+    <string name="engine_ons_baidu_hint_appid">百度翻訳 APP ID</string>
+    <string name="engine_ons_baidu_hint_key">百度翻訳シークレット</string>
+    <string name="engine_ons_gemini_hint_key">Gemini API Key</string>
+    <string name="engine_ons_gemini_hint_model">モデル（既定 gemini-1.5-flash）</string>
+    <string name="engine_ons_anthropic_hint_base">API ベース（既定 https://api.anthropic.com）</string>
+    <string name="engine_ons_anthropic_hint_key">Anthropic API Key</string>
+    <string name="engine_ons_anthropic_hint_model">モデル（既定 claude-3-5-haiku-latest）</string>
     <string name="engine_ons_translate_engine_api">API（OpenAI 互換）</string>
     <string name="engine_ons_translate_cfg">エンジン設定</string>
     <string name="engine_ons_translate_models">モデル管理</string>

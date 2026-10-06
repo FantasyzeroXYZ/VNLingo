@@ -142,6 +142,26 @@
     <!-- 翻译（引擎选择/本地模型/测试，对齐 anki 参考设置页） -->
     <string name="engine_ons_translate_engine">翻译引擎</string>
     <string name="engine_ons_translate_engine_local">本地（ML Kit 离线）</string>
+    <string name="engine_ons_translate_engine_google">Google 翻译（免费）</string>
+    <string name="engine_ons_translate_engine_bing">Bing 翻译（免费）</string>
+    <string name="engine_ons_translate_engine_deepl">DeepL API</string>
+    <string name="engine_ons_translate_engine_baidu">百度翻译</string>
+    <string name="engine_ons_translate_engine_gemini">Google Gemini</string>
+    <string name="engine_ons_translate_engine_anthropic">Claude (Anthropic)</string>
+    <string name="engine_ons_translate_cfg_deepl">DeepL 配置</string>
+    <string name="engine_ons_translate_cfg_baidu">百度翻译配置</string>
+    <string name="engine_ons_translate_cfg_gemini">Gemini 配置</string>
+    <string name="engine_ons_translate_cfg_anthropic">Claude 配置</string>
+    <string name="engine_ons_translate_cfg_free">免费引擎无需配置</string>
+    <string name="engine_ons_deepl_hint_host">DeepL 地址（free=api-free.deepl.com / pro=api.deepl.com）</string>
+    <string name="engine_ons_deepl_hint_key">DeepL Auth Key</string>
+    <string name="engine_ons_baidu_hint_appid">百度翻译 APPID</string>
+    <string name="engine_ons_baidu_hint_key">百度翻译密钥</string>
+    <string name="engine_ons_gemini_hint_key">Gemini API Key</string>
+    <string name="engine_ons_gemini_hint_model">模型（默认 gemini-1.5-flash）</string>
+    <string name="engine_ons_anthropic_hint_base">API 地址（默认 https://api.anthropic.com）</string>
+    <string name="engine_ons_anthropic_hint_key">Anthropic API Key</string>
+    <string name="engine_ons_anthropic_hint_model">模型（默认 claude-3-5-haiku-latest）</string>
     <string name="engine_ons_translate_engine_api">API（OpenAI 兼容）</string>
     <string name="engine_ons_translate_cfg">引擎配置</string>
     <string name="engine_ons_translate_models">模型管理</string>

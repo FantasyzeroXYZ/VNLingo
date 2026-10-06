@@ -46,41 +46,43 @@ public final class OnsExtractSettingsDialogs {
         int pad = dp(activity, 16);
         box.setPadding(pad, dp(activity, 8), pad, 0);
 
-        // 翻译引擎行：API（OpenAI 兼容）/ 本地（ML Kit 离线），点行切换
+        // 引擎配置行：按引擎打开对应配置（免费源无需配置）
+        TextView engineCfgValue = new TextView(activity);
+        Runnable syncEngineCfg = () -> engineCfgValue.setText(engineCfgName(activity,
+                OnsTranslateClient.getEngine(activity)));
+        syncEngineCfg.run();
+        styleNavValue(activity, engineCfgValue);
+
+        // 翻译引擎行：八引擎循环（API / 本地 / Google / Bing / DeepL / 百度 / Gemini / Claude）
         TextView engineValue = new TextView(activity);
-        Runnable syncEngineText = () -> engineValue.setText(
-                OnsTranslateClient.ENGINE_LOCAL.equals(OnsTranslateClient.getEngine(activity))
-                        ? activity.getString(R.string.engine_ons_translate_engine_local)
-                        : activity.getString(R.string.engine_ons_translate_engine_api));
+        Runnable syncEngineText = () -> engineValue.setText(engineDisplayName(activity,
+                OnsTranslateClient.getEngine(activity)));
         syncEngineText.run();
         styleNavValue(activity, engineValue);
         LinearLayout engineRow = settingNavRow(activity, R.drawable.ic_translate,
                 R.string.engine_ons_translate_engine, engineValue);
         engineRow.setOnClickListener(v -> {
-            String next = OnsTranslateClient.ENGINE_LOCAL.equals(OnsTranslateClient.getEngine(activity))
-                    ? OnsTranslateClient.ENGINE_API : OnsTranslateClient.ENGINE_LOCAL;
+            String[] engines = OnsTranslateClient.ENGINES;
+            String current = OnsTranslateClient.getEngine(activity);
+            int idx = 0;
+            for (int i = 0; i < engines.length; i++) {
+                if (engines[i].equals(current)) {
+                    idx = i;
+                    break;
+                }
+            }
+            String next = engines[(idx + 1) % engines.length];
             OnsTranslateClient.prefs(activity).edit()
                     .putString(OnsTranslateClient.KEY_ENGINE, next).apply();
             syncEngineText.run();
+            syncEngineCfg.run();
         });
         box.addView(engineRow);
 
-        // 引擎配置行：API → 连接配置；本地 → 模型管理（下载/删除）
-        TextView engineCfgValue = new TextView(activity);
-        Runnable syncEngineCfg = () -> engineCfgValue.setText(
-                OnsTranslateClient.ENGINE_LOCAL.equals(OnsTranslateClient.getEngine(activity))
-                        ? activity.getString(R.string.engine_ons_translate_models)
-                        : activity.getString(R.string.engine_ons_translate_api_config));
-        syncEngineCfg.run();
-        styleNavValue(activity, engineCfgValue);
         LinearLayout engineCfgRow = settingNavRow(activity, R.drawable.ic_settings,
                 R.string.engine_ons_translate_cfg, engineCfgValue);
         engineCfgRow.setOnClickListener(v -> {
-            if (OnsTranslateClient.ENGINE_LOCAL.equals(OnsTranslateClient.getEngine(activity))) {
-                showLocalModelDialog(activity);
-            } else {
-                showApiSettings(activity);
-            }
+            openEngineConfig(activity, OnsTranslateClient.getEngine(activity));
             syncEngineCfg.run();
         });
         box.addView(engineCfgRow);
@@ -98,6 +100,155 @@ public final class OnsExtractSettingsDialogs {
                 .setView(scroller)
                 .setPositiveButton(android.R.string.ok, null)
                 .show();
+    }
+
+    /** 引擎码 → 显示名。 */
+    private static String engineDisplayName(Activity activity, String engine) {
+        switch (engine) {
+            case OnsTranslateClient.ENGINE_LOCAL:
+                return activity.getString(R.string.engine_ons_translate_engine_local);
+            case OnsTranslateClient.ENGINE_GOOGLE:
+                return activity.getString(R.string.engine_ons_translate_engine_google);
+            case OnsTranslateClient.ENGINE_BING:
+                return activity.getString(R.string.engine_ons_translate_engine_bing);
+            case OnsTranslateClient.ENGINE_DEEPL:
+                return activity.getString(R.string.engine_ons_translate_engine_deepl);
+            case OnsTranslateClient.ENGINE_BAIDU:
+                return activity.getString(R.string.engine_ons_translate_engine_baidu);
+            case OnsTranslateClient.ENGINE_GEMINI:
+                return activity.getString(R.string.engine_ons_translate_engine_gemini);
+            case OnsTranslateClient.ENGINE_ANTHROPIC:
+                return activity.getString(R.string.engine_ons_translate_engine_anthropic);
+            default:
+                return activity.getString(R.string.engine_ons_translate_engine_api);
+        }
+    }
+
+    /** 引擎码 → 配置行显示名。 */
+    private static String engineCfgName(Activity activity, String engine) {
+        switch (engine) {
+            case OnsTranslateClient.ENGINE_LOCAL:
+                return activity.getString(R.string.engine_ons_translate_models);
+            case OnsTranslateClient.ENGINE_GOOGLE:
+            case OnsTranslateClient.ENGINE_BING:
+                return activity.getString(R.string.engine_ons_translate_cfg_free);
+            case OnsTranslateClient.ENGINE_DEEPL:
+                return activity.getString(R.string.engine_ons_translate_cfg_deepl);
+            case OnsTranslateClient.ENGINE_BAIDU:
+                return activity.getString(R.string.engine_ons_translate_cfg_baidu);
+            case OnsTranslateClient.ENGINE_GEMINI:
+                return activity.getString(R.string.engine_ons_translate_cfg_gemini);
+            case OnsTranslateClient.ENGINE_ANTHROPIC:
+                return activity.getString(R.string.engine_ons_translate_cfg_anthropic);
+            default:
+                return activity.getString(R.string.engine_ons_translate_api_config);
+        }
+    }
+
+    /** 按引擎打开对应配置弹窗（免费源提示后返回）。 */
+    private static void openEngineConfig(Activity activity, String engine) {
+        switch (engine) {
+            case OnsTranslateClient.ENGINE_LOCAL:
+                showLocalModelDialog(activity);
+                return;
+            case OnsTranslateClient.ENGINE_GOOGLE:
+            case OnsTranslateClient.ENGINE_BING:
+                Toast.makeText(activity, R.string.engine_ons_translate_cfg_free, Toast.LENGTH_SHORT).show();
+                return;
+            case OnsTranslateClient.ENGINE_DEEPL: {
+                SharedPreferences p = OnsTranslateClient.prefs(activity);
+                LinearLayout box = new LinearLayout(activity);
+                box.setOrientation(LinearLayout.VERTICAL);
+                int pad = dp(activity, 16);
+                box.setPadding(pad, pad, pad, 0);
+                EditText hostField = settingField(activity, box, R.string.engine_ons_deepl_hint_host,
+                        p.getString(OnsTranslateClient.KEY_DEEPL_HOST, "https://api-free.deepl.com"));
+                EditText keyField = settingField(activity, box, R.string.engine_ons_deepl_hint_key,
+                        p.getString(OnsTranslateClient.KEY_DEEPL_KEY, ""));
+                new android.app.AlertDialog.Builder(activity)
+                        .setTitle(R.string.engine_ons_translate_cfg_deepl)
+                        .setView(box)
+                        .setPositiveButton(android.R.string.ok, (d, w) -> p.edit()
+                                .putString(OnsTranslateClient.KEY_DEEPL_HOST, textOr(hostField,
+                                        "https://api-free.deepl.com"))
+                                .putString(OnsTranslateClient.KEY_DEEPL_KEY, textOr(keyField, ""))
+                                .apply())
+                        .setNegativeButton(android.R.string.cancel, null)
+                        .show();
+                return;
+            }
+            case OnsTranslateClient.ENGINE_BAIDU: {
+                SharedPreferences p = OnsTranslateClient.prefs(activity);
+                LinearLayout box = new LinearLayout(activity);
+                box.setOrientation(LinearLayout.VERTICAL);
+                int pad = dp(activity, 16);
+                box.setPadding(pad, pad, pad, 0);
+                EditText appidField = settingField(activity, box, R.string.engine_ons_baidu_hint_appid,
+                        p.getString(OnsTranslateClient.KEY_BAIDU_APPID, ""));
+                EditText keyField = settingField(activity, box, R.string.engine_ons_baidu_hint_key,
+                        p.getString(OnsTranslateClient.KEY_BAIDU_KEY, ""));
+                new android.app.AlertDialog.Builder(activity)
+                        .setTitle(R.string.engine_ons_translate_cfg_baidu)
+                        .setView(box)
+                        .setPositiveButton(android.R.string.ok, (d, w) -> p.edit()
+                                .putString(OnsTranslateClient.KEY_BAIDU_APPID, textOr(appidField, ""))
+                                .putString(OnsTranslateClient.KEY_BAIDU_KEY, textOr(keyField, ""))
+                                .apply())
+                        .setNegativeButton(android.R.string.cancel, null)
+                        .show();
+                return;
+            }
+            case OnsTranslateClient.ENGINE_GEMINI: {
+                SharedPreferences p = OnsTranslateClient.prefs(activity);
+                LinearLayout box = new LinearLayout(activity);
+                box.setOrientation(LinearLayout.VERTICAL);
+                int pad = dp(activity, 16);
+                box.setPadding(pad, pad, pad, 0);
+                EditText keyField = settingField(activity, box, R.string.engine_ons_gemini_hint_key,
+                        p.getString(OnsTranslateClient.KEY_GEMINI_KEY, ""));
+                EditText modelField = settingField(activity, box, R.string.engine_ons_gemini_hint_model,
+                        p.getString(OnsTranslateClient.KEY_GEMINI_MODEL, "gemini-1.5-flash"));
+                new android.app.AlertDialog.Builder(activity)
+                        .setTitle(R.string.engine_ons_translate_cfg_gemini)
+                        .setView(box)
+                        .setPositiveButton(android.R.string.ok, (d, w) -> p.edit()
+                                .putString(OnsTranslateClient.KEY_GEMINI_KEY, textOr(keyField, ""))
+                                .putString(OnsTranslateClient.KEY_GEMINI_MODEL, textOr(modelField,
+                                        "gemini-1.5-flash"))
+                                .apply())
+                        .setNegativeButton(android.R.string.cancel, null)
+                        .show();
+                return;
+            }
+            case OnsTranslateClient.ENGINE_ANTHROPIC: {
+                SharedPreferences p = OnsTranslateClient.prefs(activity);
+                LinearLayout box = new LinearLayout(activity);
+                box.setOrientation(LinearLayout.VERTICAL);
+                int pad = dp(activity, 16);
+                box.setPadding(pad, pad, pad, 0);
+                EditText baseField = settingField(activity, box, R.string.engine_ons_anthropic_hint_base,
+                        p.getString(OnsTranslateClient.KEY_ANTHROPIC_BASE, "https://api.anthropic.com"));
+                EditText keyField = settingField(activity, box, R.string.engine_ons_anthropic_hint_key,
+                        p.getString(OnsTranslateClient.KEY_ANTHROPIC_KEY, ""));
+                EditText modelField = settingField(activity, box, R.string.engine_ons_anthropic_hint_model,
+                        p.getString(OnsTranslateClient.KEY_ANTHROPIC_MODEL, "claude-3-5-haiku-latest"));
+                new android.app.AlertDialog.Builder(activity)
+                        .setTitle(R.string.engine_ons_translate_cfg_anthropic)
+                        .setView(box)
+                        .setPositiveButton(android.R.string.ok, (d, w) -> p.edit()
+                                .putString(OnsTranslateClient.KEY_ANTHROPIC_BASE, textOr(baseField,
+                                        "https://api.anthropic.com"))
+                                .putString(OnsTranslateClient.KEY_ANTHROPIC_KEY, textOr(keyField, ""))
+                                .putString(OnsTranslateClient.KEY_ANTHROPIC_MODEL, textOr(modelField,
+                                        "claude-3-5-haiku-latest"))
+                                .apply())
+                        .setNegativeButton(android.R.string.cancel, null)
+                        .show();
+                return;
+            }
+            default:
+                showApiSettings(activity);
+            }
     }
 
     /** 翻译 API（OpenAI 兼容）连接配置。 */
@@ -211,11 +362,14 @@ public final class OnsExtractSettingsDialogs {
             if (text.isEmpty()) return;
             runBtn.setEnabled(false);
             runBtn.setTextColor(TEXT_DIM);
-            OnsTranslateClient.translateWithEngine(activity, text, (translated, error) -> {
-                if (translated != null) output.setText(translated);
-                else output.setText(activity.getString(
-                        R.string.engine_ons_extract_translate_failed, error));
-            });
+            OnsTranslateClient.translateWithEngine(activity, text, (translated, error) ->
+                activity.runOnUiThread(() -> {
+                    runBtn.setEnabled(true);
+                    runBtn.setTextColor(ACCENT);
+                    if (translated != null) output.setText(translated);
+                    else output.setText(activity.getString(
+                            R.string.engine_ons_extract_translate_failed, error));
+                }));
         });
         box.addView(runBtn);
         box.addView(output);
