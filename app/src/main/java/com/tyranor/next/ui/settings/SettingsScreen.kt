@@ -385,15 +385,10 @@ fun SettingsScreen(modifier: Modifier = Modifier) {
                                 },
                             )
                             ArrowPreference(
-                                title = stringResource(com.core.engine.R.string.engine_ons_extract_cloud),
-                                summary = stringResource(com.core.engine.R.string.engine_ons_settings_section_cloud),
+                                title = stringResource(R.string.sync_title),
+                                summary = stringResource(R.string.sync_summary),
                                 startAction = { SettingsItemIcon(R.drawable.ic_settings) },
-                                onClick = {
-                                    com.core.ons.OnsSaveCloud.showConfigDialog(
-                                        com.tyranor.next.core.i18n.AppLocaleController.findActivity(ctx) ?: return@ArrowPreference,
-                                        null, null, null,
-                                    )
-                                },
+                                onClick = { startActivityWithPageTransition(ctx, com.tyranor.next.ui.sync.SyncCenterActivity.createIntent(ctx)) },
                             )
                             ArrowPreference(
                                 title = stringResource(R.string.archive_title),

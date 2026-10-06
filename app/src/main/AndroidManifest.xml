@@ -65,6 +65,10 @@
             android:name=".ui.screenshots.ScreenshotManagerActivity"
             android:exported="false" />
         <activity
+            android:name=".ui.sync.SyncCenterActivity"
+            android:configChanges="orientation|screenSize|screenLayout|smallestScreenSize|keyboardHidden|uiMode"
+            android:exported="false" />
+        <activity
             android:name=".ui.archive.ArchiveUnpackActivity"
             android:exported="false" />
         <activity
