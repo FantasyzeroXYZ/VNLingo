@@ -4,6 +4,22 @@
 > `docs/说明/游戏内提取制卡功能方案.md`（提取功能线方案）阅读。
 > 更新时间：2026-10-06
 
+## 2026-10-06 会话（三十五）：制卡媒体槽位实测（待办 #媒体槽位）
+
+- 场景：本地 TTS 服务器（tts_server.py:1221 + adb reverse）+ HTTP TTS 引擎
+  prefs 注入 + AnkiCardConfig 注入（field_map 含 screenshot/sentence_audio/
+  word_audio → Image/Audio 槽位，capture_on_card=true）。
+- **实测通过部分**：kazurauta 点词查词命中 → 词卡 → 媒体生成端到端——
+  collection.media 出现 anki_shot_*.png（游戏截图）与 anki_w_*.wav（35324
+  字节 = 本地服务器 0.8s WAV，字节级吻合）各 3 组，时间戳与三次点词卡
+  操作一一对应；HTTP TTS 引擎端到端（app → 127.0.0.1:1221 → WAV → addMedia）。
+- **发现（待办预判命中）**：note 的 Image/Audio 字段为空——设备上有早期
+  版本创建的 4 字段旧模型（无 Image/Audio 字段），makeWordCard 装配按模型
+  真实字段(names)输出，媒体 mark 因字段不在模型内被截断。新装环境六字段
+  模型不受影响；旧设备需删模型重建（AnkiDroid API 无模型加字段能力）。
+- 制卡期间 AnkiDroid collection.anki2 出现 database is locked（写入中），
+  force-stop AnkiDroid 后查询正常——诊断时注意锁。
+
 ## 2026-10-06 会话（三十四）：实机轮次验证（Web 提取 / Artemis SKIP）
 
 - **Web 引擎提取实测 ✓（待办关闭）**：mukbang（RPG Maker MZ，走

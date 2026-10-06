@@ -77,9 +77,12 @@
       新增 diag/）；模拟器实测对话框与空态 ✓
 - [ ] 调试日志功能页扩展：现仅崩溃记录更名；需做成含运行时 debug 消息缓冲
       （CrashLogWriter.debug + 关键路径埋点）的查看/导出页
-- [ ] 制卡媒体槽位实测：截图/例句语音/单词语音槽位（Image/Audio 字段）走
-      同一装配路径但模拟器未单独验证（需 MultiTTS/HTTP 服务在线 + 六字段模型）；
-      本地测试服务器脚本在 .tmp-test/tts_server.py（/api/tts、/forward、/voices）
+- [x] 制卡媒体槽位实测（2026-10-06，模拟器 + 本地 TTS 服务器）：截图 png 与
+      单词 TTS wav 端到端生成并经 addMedia 进入 collection.media（文件大小与
+      服务器返回字节吻合）✓。注：设备上存在早期版本创建的 4 字段旧模型
+      （TyranorNext Word 无 Image/Audio），note 的媒体字段因此为空——新装环境
+      会创建六字段模型正常填充；旧设备需删除该模型重建（AnkiDroid API 无
+      模型改字段能力）。服务器脚本 .tmp-test/tts_server.py 复用
 - [x] 制卡保存提示文案换中性「已保存」（TTS 弹窗本无复用；API 设置弹窗的
       「再次点翻译生效」提示语境相符保留）
 - [x] TTS 引擎缺服务引导：MultiTTS 合成失败按服务探测分类——未运行提示
