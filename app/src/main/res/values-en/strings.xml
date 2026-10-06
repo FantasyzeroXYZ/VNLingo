@@ -99,6 +99,7 @@
     <string name="vm_action_left">Move left</string>
     <string name="vm_action_right">Move right</string>
     <string name="vm_action_confirm">Confirm (click)</string>
+    <string name="vm_default_suffix"> (default)</string>
     <string name="vm_reset_default">Reset to default</string>
     <string name="gamepad_cleared">Mapping cleared</string>
 

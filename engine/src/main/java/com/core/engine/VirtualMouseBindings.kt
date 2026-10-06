@@ -82,17 +82,26 @@ object VirtualMouseBindings {
     /** keyCode 命中动作？ */
     fun matches(action: Int, keyCode: Int): Boolean = codes(action).contains(keyCode)
 
-    /** 动作的完整绑定表（UI 展示）：动作 → keyCode 列表（自定义或默认）。 */
-    fun bindings(context: Context): Map<Int, List<Int>> {
+    /** 该动作是否有用户自定义绑定（无 = 当前生效的是默认绑定）。 */
+    fun isCustomized(action: Int): Boolean =
+        snapshot[action]?.isNotEmpty() == true
+
+    /**
+     * 动作的完整绑定表（UI 展示）：动作 → (keyCode 列表, 是否自定义)。
+     * 自定义时列表 = 用户绑定的键（可删）；未自定义 = 默认绑定（只读展示，
+     * 删除无意义，UI 据此禁用 × 并提示「恢复默认」可还原）。
+     */
+    fun bindings(context: Context): Map<Int, BindingDisplay> {
         refresh(context)
-        return mapOf(
-            ACTION_UP to codes(ACTION_UP).toList(),
-            ACTION_DOWN to codes(ACTION_DOWN).toList(),
-            ACTION_LEFT to codes(ACTION_LEFT).toList(),
-            ACTION_RIGHT to codes(ACTION_RIGHT).toList(),
-            ACTION_CONFIRM to codes(ACTION_CONFIRM).toList(),
-        )
+        val out = LinkedHashMap<Int, BindingDisplay>()
+        for (action in intArrayOf(ACTION_UP, ACTION_DOWN, ACTION_LEFT, ACTION_RIGHT, ACTION_CONFIRM)) {
+            out[action] = BindingDisplay(codes(action).toList(), isCustomized(action))
+        }
+        return out
     }
+
+    /** 绑定展示：键列表 + 是否自定义。 */
+    class BindingDisplay(val codes: List<Int>, val customized: Boolean)
 
     /** 追加绑定（捕获式设置页：按下的键即绑定到该动作）。 */
     fun addBinding(context: Context, action: Int, keyCode: Int) {

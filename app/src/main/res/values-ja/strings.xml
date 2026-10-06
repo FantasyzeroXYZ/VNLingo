@@ -99,6 +99,7 @@
     <string name="vm_action_left">左へ</string>
     <string name="vm_action_right">右へ</string>
     <string name="vm_action_confirm">決定（クリック）</string>
+    <string name="vm_default_suffix">（既定）</string>
     <string name="vm_reset_default">既定に戻す</string>
     <string name="gamepad_cleared">マッピングを削除しました</string>
 

@@ -99,6 +99,7 @@
     <string name="vm_action_left">左移</string>
     <string name="vm_action_right">右移</string>
     <string name="vm_action_confirm">确认（点击）</string>
+    <string name="vm_default_suffix">（默认）</string>
     <string name="vm_reset_default">恢复默认</string>
     <string name="gamepad_cleared">已清除映射</string>
 

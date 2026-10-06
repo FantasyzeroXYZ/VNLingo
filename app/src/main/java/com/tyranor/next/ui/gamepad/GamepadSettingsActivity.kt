@@ -252,7 +252,9 @@ private fun GamepadSettingsScreen(
                     }
                 }
                 items(vmActions, key = { "vm_" + it.first }) { (action, nameRes) ->
-                    val keys = vmBindings[action] ?: emptyList()
+                    val display = vmBindings[action]
+                    val keys = display?.codes ?: emptyList()
+                    val customized = display?.customized == true
                     MiuixCard(
                         modifier = Modifier.fillMaxWidth().glassShadow().glassBorder(),
                         cornerRadius = AppComponentCornerRadius,
@@ -285,27 +287,35 @@ private fun GamepadSettingsScreen(
                                     verticalAlignment = Alignment.CenterVertically,
                                 ) {
                                     keys.forEach { keyCode ->
-                                        TextButton(onClick = { onVmRemoveKey(action, keyCode) }) {
+                                        if (customized) {
+                                            // 自定义绑定：点 × 移除该键（清空后回退默认）
+                                            TextButton(onClick = { onVmRemoveKey(action, keyCode) }) {
+                                                Text(
+                                                    VirtualMouseBindings.keyName(keyCode) + " ×",
+                                                    style = MaterialTheme.typography.bodySmall,
+                                                )
+                                            }
+                                        } else {
+                                            // 默认绑定：只读展示（不可删；恢复默认按钮用于还原）
                                             Text(
-                                                VirtualMouseBindings.keyName(keyCode) + " ×",
+                                                VirtualMouseBindings.keyName(keyCode)
+                                                    + stringResource(R.string.vm_default_suffix),
                                                 style = MaterialTheme.typography.bodySmall,
+                                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                                modifier = Modifier.padding(horizontal = 8.dp),
                                             )
                                         }
                                     }
                                 }
-                                Text(
-                                    stringResource(R.string.gamepad_capture_hint),
-                                    style = MaterialTheme.typography.bodySmall,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                    modifier = Modifier.padding(top = 2.dp),
-                                )
                             }
-                            TextButton(onClick = { onVmReset(action) }) {
-                                Text(
-                                    stringResource(R.string.vm_reset_default),
-                                    style = MaterialTheme.typography.bodySmall,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                )
+                            if (customized) {
+                                TextButton(onClick = { onVmReset(action) }) {
+                                    Text(
+                                        stringResource(R.string.vm_reset_default),
+                                        style = MaterialTheme.typography.bodySmall,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    )
+                                }
                             }
                         }
                     }
