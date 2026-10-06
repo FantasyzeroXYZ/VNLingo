@@ -149,6 +149,24 @@
 - **手柄重映射**：GamepadRemap 快照式（宿主 onResume 刷新），映射在 dispatchKeyEvent
   最前端生效，先于提取面板/虚拟鼠标/游戏链路。
 
+## 实测踩坑（2026-10-06 会话二十三新增：设置页入口与 TTS 链路）
+
+1. **设置页全部弹窗入口的 ctx 都被 AppLocaleController 包装**：
+   `ctx as Activity` 必崩（翻译/制卡/云同步三处先后踩雷）。统一写法
+   `AppLocaleController.findActivity(ctx) ?: return@ArrowPreference`。
+   新增设置入口时禁止再写强转。
+2. **MultiTTS /forward 的 voice 参数吃 id 不吃显示名**：/voices 目录 JSON 里
+   每条有 id（bdetts_xiao-xiao-…）与 name（晓晓 多语言），传 name 报 500
+   「未找到发音人」。VoiceEntry 必须 value=id 优先、display=「目录/name」。
+3. **本地 TTS 测试服务器**：.tmp-test/tts_server.py 单文件模拟三协议
+   （/api/tts、/forward、/voices，WAV 响应并打印收到的文本）+
+   `adb reverse tcp:1221 tcp:1221` 即可让 HTTP 引擎端到端测试不依赖真机
+   TTS 服务；服务器日志会打印收到的自定义文本，是验证「真的收到音频
+   请求」的最直接证据。
+4. **横屏侧栏布局 + 弹窗 ScrollView 的点按坐标极易漂移**：设置列表在
+   侧栏布局下的行位置与竖屏不同，弹窗 ScrollView 滚动后 uiautomator dump
+   的 bounds 才是准的——盲按截图坐标会连续误触（本轮多次踩）。
+
 ## 实测踩坑（2026-10-05 会话十一新增：授权框与窗口 token）
 
 1. **Activity.requestPermissions 必须主线程发起**：后台线程调用时系统授权框

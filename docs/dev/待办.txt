@@ -39,3 +39,15 @@
       句读模式/循环等完整参数面；Anki 多方案创建与切换）
 - [ ] i18n 清理：en-US 系统语言下 engine values-en 部分命中导致界面中英混排
       （如词条数「N entries」），app 默认中文与系统语言回退策略需统一
+- [ ] 调试日志功能页扩展：现仅崩溃记录更名；需做成含运行时 debug 消息缓冲
+      （CrashLogWriter.debug + 关键路径埋点）的查看/导出页
+- [ ] 制卡媒体槽位实测：截图/例句语音/单词语音槽位（Image/Audio 字段）走
+      同一装配路径但模拟器未单独验证（需 MultiTTS/HTTP 服务在线 + 六字段模型）；
+      本地测试服务器脚本在 .tmp-test/tts_server.py（/api/tts、/forward、/voices）
+- [ ] 制卡/TTS 保存提示文案：制卡与 TTS 设置的保存 toast 复用 api_saved
+      （含「再次点翻译生效」字样），与语境不符，需换中性「已保存」
+- [ ] TTS 引擎默认依赖：MultiTTS 档需 MultiTTS app 运行且配置「旁白 speaker」，
+      否则 /forward 500（未选发音人时同样报错）——缺服务时的用户引导
+- [ ] 设置页各弹窗入口（翻译/Anki/TTS/云同步/词典）的 ctx 解包已统一
+      findActivity，但词典设置跳 Tab 用 MainTabs.requestTab(1) 写死索引，
+      tab 顺序变化时需同步
