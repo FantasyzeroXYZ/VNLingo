@@ -17,6 +17,10 @@
     <string name="nav_engine">引擎</string>
     <string name="nav_dict">词典</string>
     <string name="nav_settings">设置</string>
+    <string name="dict_filter_all">全部</string>
+    <string name="dict_filter_ja">日本語</string>
+    <string name="dict_filter_zh">中文</string>
+    <string name="dict_filter_romaji">罗马字</string>
     <string name="dict_import_failed">导入失败</string>
     <string name="dict_delete_title">删除词典</string>
     <string name="dict_search_idle">当前词典：%1$s（%2$d 条），输入单词开始查询</string>

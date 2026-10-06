@@ -71,6 +71,8 @@ fun DictionaryScreen(modifier: Modifier = Modifier) {
     var dictsVersion by remember { mutableIntStateOf(0) }
     var query by remember { mutableStateOf("") }
     var results by remember { mutableStateOf<List<OnsDictStore.Group>>(emptyList()) }
+    // 查询语言模式：按词条文字脚本筛选结果（全部/日本語/中文/罗马字）
+    var langFilter by remember { mutableStateOf(LangFilter.ALL) }
     var searching by remember { mutableStateOf(false) }
     var showManager by remember { mutableStateOf(false) }
     var importing by remember { mutableStateOf(false) }
@@ -134,6 +136,9 @@ fun DictionaryScreen(modifier: Modifier = Modifier) {
         searching = false
     }
 
+    // 语言筛选（客户端过滤；分类启发式见 langOf）
+    val filteredResults = results.filter { langFilter == LangFilter.ALL || langOf(it) == langFilter }
+
     MiuixSettingsTheme {
         MiuixScaffold(
             modifier = modifier.fillMaxSize(),
@@ -158,6 +163,29 @@ fun DictionaryScreen(modifier: Modifier = Modifier) {
                     .padding(top = innerPadding.calculateTopPadding()),
             ) {
                 AppSearchField(query = query, onQueryChange = { query = it })
+                if (!results.isEmpty()) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth().padding(top = 6.dp),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    ) {
+                        langChips.forEach { chip ->
+                            TextButton(
+                                onClick = { langFilter = chip.first },
+                                colors = androidx.compose.material3.ButtonDefaults.textButtonColors(
+                                    contentColor = if (langFilter == chip.first)
+                                        MaterialTheme.colorScheme.primary
+                                    else MaterialTheme.colorScheme.onSurfaceVariant,
+                                ),
+                            ) {
+                                Text(
+                                    stringResource(chip.second) +
+                                        if (langFilter == chip.first) " ●" else "",
+                                    style = MaterialTheme.typography.bodySmall,
+                                )
+                            }
+                        }
+                    }
+                }
                 when {
                     !hasDict -> DictHint(stringResource(R.string.dict_search_no_dict))
                     query.isBlank() -> DictHint(
@@ -186,7 +214,7 @@ fun DictionaryScreen(modifier: Modifier = Modifier) {
                                     )
                                 }
                             }
-                            items(results) { group ->
+                            items(filteredResults) { group ->
                                 DictEntryCard(group)
                             }
                         }
@@ -402,3 +430,36 @@ private fun DictRow(
 /** 词条数摘要（复用 engine 文案：%1$d 条）。 */
 private fun Context.stringWithCount(dict: OnsDictStore.DictInfo): String =
     getString(EngineR.string.engine_ons_dict_entries_fmt, dict.count)
+
+
+/** 查询语言模式（词典页筛选；词条文字脚本启发式分类）。 */
+private enum class LangFilter { ALL, JA, ZH, ROMAJI }
+
+private val langChips = listOf(
+    LangFilter.ALL to R.string.dict_filter_all,
+    LangFilter.JA to R.string.dict_filter_ja,
+    LangFilter.ZH to R.string.dict_filter_zh,
+    LangFilter.ROMAJI to R.string.dict_filter_romaji,
+)
+
+/**
+ * 词条语言启发式分类：
+ * - 含假名（词条或读音）→ 日本語
+ * - 词条纯 ASCII → 罗马字/英文（Yomichan 词典无此类，多为测试别名）
+ * - 其余 CJK 词条 → 中文（中文词典/汉化词条）
+ */
+private fun langOf(group: OnsDictStore.Group): LangFilter {
+    val term = group.term
+    // 词条纯 ASCII：罗马字别名（日语词的 QWERTY 查询入口）——即使读音含假名也归罗马字
+    if (term.none { it.code > 0x7F }) return LangFilter.ROMAJI
+    if (hasKana(term) || hasKana(group.reading)) return LangFilter.JA
+    return LangFilter.ZH
+}
+
+private fun hasKana(s: String): Boolean {
+    for (c in s) {
+        val cp = c.code
+        if (cp in 0x3041..0x309F || cp in 0x30A1..0x30FF || cp in 0x31F0..0x31FF) return true
+    }
+    return false
+}
