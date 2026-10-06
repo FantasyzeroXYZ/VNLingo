@@ -84,6 +84,11 @@ public final class KrGLSurfaceView extends Cocos2dxGLSurfaceView {
     }
 
     @Override public final boolean onTouchEvent(MotionEvent motionEvent) {
+        // 游戏面点击 = 推进尝试：置提取桥的翻页挂起标记（连续页累积的边界信号；
+        // 面板/词典等覆盖层点击不经过本视图，不会误标记）
+        if (motionEvent.getActionMasked() == MotionEvent.ACTION_UP) {
+            com.core.ons.OnsExtractBridge.markPageAdvance();
+        }
         // libgame134's KR2Activity JNI path queues touch callbacks through an
         // internal dispatcher that is not drained by its Cocos lifecycle on
         // current Android.  Its standard Cocos JNI entry points are present and

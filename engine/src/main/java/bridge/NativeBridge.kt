@@ -98,7 +98,9 @@ object NativeBridge {
         try {
             val b64 = android.util.Base64.encodeToString(
                 dialogue.toByteArray(Charsets.UTF_8), android.util.Base64.NO_WRAP)
-            val payload = "{\"type\":\"dialogue\",\"payload\":{\"b64\":\"$b64\"}}"
+            // src=krkr：提取桥的连续页累积据此选缝合语义（KRKR native 页启发翻页
+            // 后按行重发的分段与累积尾部真实重叠，需尾部缝合而非另起一行）
+            val payload = "{\"type\":\"dialogue\",\"src\":\"krkr\",\"payload\":{\"b64\":\"$b64\"}}"
             com.core.ons.OnsExtractBridge.get()
                 .onEvent(payload.toByteArray(Charsets.UTF_8))
         } catch (t: Throwable) {

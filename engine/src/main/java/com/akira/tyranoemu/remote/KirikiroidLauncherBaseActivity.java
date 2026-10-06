@@ -762,7 +762,11 @@ public abstract class KirikiroidLauncherBaseActivity extends KR2Activity {
             buttons.add(new com.core.engine.EngineLeftButtons.ButtonSpec("ESC",
                     () -> krkrKey(android.view.KeyEvent.KEYCODE_BACK, true)));
             buttons.add(new com.core.engine.EngineLeftButtons.ButtonSpec("OK",
-                    () -> krkrKeyHold(android.view.KeyEvent.KEYCODE_ENTER, 80)));
+                    () -> {
+                        // OK=回车决定/推进：连续页累积的边界信号
+                        com.core.ons.OnsExtractBridge.markPageAdvance();
+                        krkrKeyHold(android.view.KeyEvent.KEYCODE_ENTER, 80);
+                    }));
             buttons.add(new com.core.engine.EngineLeftButtons.ButtonSpec("▲",
                     () -> krkrKeyHold(android.view.KeyEvent.KEYCODE_DPAD_UP, 80)));
             buttons.add(new com.core.engine.EngineLeftButtons.ButtonSpec("▼",
@@ -772,7 +776,11 @@ public abstract class KirikiroidLauncherBaseActivity extends KR2Activity {
             buttons.add(new com.core.engine.EngineLeftButtons.ButtonSpec("▶",
                     () -> krkrKeyHold(android.view.KeyEvent.KEYCODE_DPAD_RIGHT, 80)));
             buttons.add(new com.core.engine.EngineLeftButtons.ButtonSpec("SKIP",
-                    () -> krkrKeyHold(android.view.KeyEvent.KEYCODE_CTRL_LEFT, 900)));
+                    () -> {
+                        // 快进会推进整页：置翻页标记（快进中无点击的多页仍靠长间隔兜底）
+                        com.core.ons.OnsExtractBridge.markPageAdvance();
+                        krkrKeyHold(android.view.KeyEvent.KEYCODE_CTRL_LEFT, 900);
+                    }));
             com.core.engine.EngineLeftButtons.install(overlay, "krkr_left", buttons);
             Log.i(TAG, "engine left buttons installed (krkr)");
         } catch (Throwable t) {
@@ -788,6 +796,13 @@ public abstract class KirikiroidLauncherBaseActivity extends KR2Activity {
         KeyEvent mapped = com.core.engine.GamepadRemap.apply(event);
         com.core.ons.OnsExtractPanel panel = extractPanel;
         if (panel != null && panel.handleKey(mapped)) return true;
+        // 决定/回车类按键透传给游戏 = 推进尝试（连续页累积的边界信号）；
+        // 面板消费的按键已在上面的 return 中排除，不会误标记
+        if (mapped != null && mapped.getAction() == KeyEvent.ACTION_UP
+                && (mapped.getKeyCode() == KeyEvent.KEYCODE_ENTER
+                || mapped.getKeyCode() == KeyEvent.KEYCODE_DPAD_CENTER)) {
+            com.core.ons.OnsExtractBridge.markPageAdvance();
+        }
         return super.dispatchKeyEvent(mapped);
     }
 

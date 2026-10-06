@@ -122,6 +122,7 @@ public class ONScripter extends SDLActivity {
         ensureDefaultFont();
         super.onCreate(savedInstanceState);
         fixSurfaceCentering();  // 修复平板设备上画面不居中的问题
+        observeSurfaceAdvanceTap();  // 游戏面点击观测：提取桥连续页累积的翻页边界信号
         try { nativeInitJavaCallbacks(); } catch (Throwable t) { Log.w(TAG, "nativeInitJavaCallbacks failed", t); }
         setupVirtualControls();
         // [ONS-BRIDGE] 提取桥与面板：桥先挂接（可能早于面板收到事件），面板装进覆盖层
@@ -197,6 +198,13 @@ public class ONScripter extends SDLActivity {
                 default:
                     return true;
             }
+        }
+        // 决定/回车类按键透传给游戏 = 推进尝试（连续页累积的翻页边界信号）；
+        // 面板/虚拟鼠标/播片消费的按键已在上面的 return 中排除
+        if (event != null && event.getAction() == KeyEvent.ACTION_UP
+                && (event.getKeyCode() == KeyEvent.KEYCODE_ENTER
+                || event.getKeyCode() == KeyEvent.KEYCODE_DPAD_CENTER)) {
+            com.core.ons.OnsExtractBridge.markPageAdvance();
         }
         return super.dispatchKeyEvent(event);
     }
@@ -334,14 +342,22 @@ public class ONScripter extends SDLActivity {
             leftSpecs.add(com.core.engine.EngineLeftButtons.ButtonSpec.toggled("AUTO",
                     () -> {
                         autoMode = !autoMode;
+                        // AUTO 开关切档伴随推进一页：置翻页边界信号
+                        com.core.ons.OnsExtractBridge.markPageAdvance();
                         com.core.engine.EngineLeftButtons.refreshActive(leftButtons);
                     }, () -> autoMode));
             leftSpecs.add(new com.core.engine.EngineLeftButtons.ButtonSpec("MENU",
                     () -> tapKey(KeyEvent.KEYCODE_MENU)));
             leftSpecs.add(new com.core.engine.EngineLeftButtons.ButtonSpec("OK",
-                    () -> tapKey(KeyEvent.KEYCODE_ENTER)));
+                    () -> {
+                        com.core.ons.OnsExtractBridge.markPageAdvance();  // 回车推进：翻页边界信号
+                        tapKey(KeyEvent.KEYCODE_ENTER);
+                    }));
             leftSpecs.add(new com.core.engine.EngineLeftButtons.ButtonSpec("NEXT",
-                    () -> tapKey(KeyEvent.KEYCODE_SPACE)));
+                    () -> {
+                        com.core.ons.OnsExtractBridge.markPageAdvance();  // 翻页键：边界信号
+                        tapKey(KeyEvent.KEYCODE_SPACE);
+                    }));
             leftButtons = com.core.engine.EngineLeftButtons.install(
                     onsOverlay, "ons_left", leftSpecs);
             if (!controlsVisible) {
@@ -366,6 +382,26 @@ public class ONScripter extends SDLActivity {
     private void tapKey(int keyCode) {
         SDLActivity.onNativeKeyDown(keyCode);
         SDLActivity.onNativeKeyUp(keyCode);
+    }
+
+    /**
+     * 游戏面（SDLSurface）触摸观测：抬起即一次推进尝试，置提取桥翻页挂起标记。
+     * 监听器恒返回 false 不消费事件，SDL 原有 onTouchEvent 链路不受影响；
+     * 虚拟鼠标注入（injectTapAtCursor 走 surface.dispatchTouchEvent）同样经过
+     * 该监听器，天然覆盖。面板/词典等覆盖层点击不经过 surface，不会误标记。
+     */
+    private void observeSurfaceAdvanceTap() {
+        try {
+            if (mSurface == null) return;
+            mSurface.setOnTouchListener((v, ev) -> {
+                if (ev.getActionMasked() == android.view.MotionEvent.ACTION_UP) {
+                    com.core.ons.OnsExtractBridge.markPageAdvance();
+                }
+                return false;
+            });
+        } catch (Throwable t) {
+            Log.w(TAG, "observeSurfaceAdvanceTap failed", t);
+        }
     }
 
     private static final int REQ_EXPORT_SAVES = 42001;

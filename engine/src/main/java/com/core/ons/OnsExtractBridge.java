@@ -61,6 +61,12 @@ public final class OnsExtractBridge {
 
     /** 上一次 dialogue 事件之后到达的语音候选（文件名）。 */
     private final List<String> pendingVoices = new ArrayList<>();
+    /** 游戏推进点击挂起标记：宿主在游戏面点击/推进键时置位（面板点击不经过此路径）。 */
+    private static volatile boolean advancePending = false;
+    /** 上一次 dialogue 事件到达时刻（elapsedRealtime），长间隔兜底翻页用。 */
+    private long lastDialogueAtMs;
+    /** 距上次 dialogue 超过该间隔视为翻页（兜底自动/跳线等无点击推进）。 */
+    private static final long IDLE_BOUNDARY_MS = 10_000;
     /** 当前句配对的语音名。 */
     private volatile String voiceName = "";
     /** FT 钩子候选（KRKR 重绘链派生；空 = 无候选）。 */
@@ -74,6 +80,15 @@ public final class OnsExtractBridge {
     private volatile Bitmap lastScreenshot;
 
     private OnsExtractBridge() {
+    }
+
+    /**
+     * 宿主上报「游戏推进点击」（点游戏画面 / 推进键）。只置挂起标记：
+     * 只有其后到达的新文本（非延伸）才真正翻页——点面板/词典等不经过
+     * 游戏输入路径的操作不会调用这里，因此不会打断当前显示。
+     */
+    public static void markPageAdvance() {
+        advancePending = true;
     }
 
     /** Activity 创建时挂接；onBridgeEvent 需要 host 实例拉取语音字节。 */
@@ -100,7 +115,7 @@ public final class OnsExtractBridge {
             JSONObject data = obj.optJSONObject("payload");
             if (data == null) return;
             if ("dialogue".equals(type)) {
-                handleDialogue(data.optString("b64", ""));
+                handleDialogue(data.optString("b64", ""), obj.optString("src", ""));
             } else if ("sound".equals(type)) {
                 handleSound(data.optString("file", ""));
             } else if ("candidates".equals(type)) {
@@ -144,7 +159,7 @@ public final class OnsExtractBridge {
         return null;
     }
 
-    private void handleDialogue(String b64) {
+    private void handleDialogue(String b64, String src) {
         byte[] raw;
         try {
             raw = Base64.decode(b64, Base64.DEFAULT);
@@ -154,19 +169,43 @@ public final class OnsExtractBridge {
         }
         if (raw.length == 0) return;
 
-        // 前缀差分：字节级最长公共前缀，得到本句增量后缀（对齐多字节边界由
-        // 解码器容错兜底）；显示存完整页，增量喂句面板。
-        // 打字机延伸（新 raw 完整包含旧 raw）例外：KRKR FT 钩子按重绘推进，
-        // 半句→整句是前缀延伸，此时"本句"= 整句而非尾部增量（制卡例句/朗读
-        // 都要完整句；新增行仍走增量语义，保持 ONS 多行页取末行行为）。
-        int common = commonPrefixLength(lastPageBytes, raw);
-        boolean extension = common == lastPageBytes.length && raw.length > lastPageBytes.length;
+        // 连续页累积（用户规则）：「点击推进 + 有新文本」才翻页覆盖；
+        // 打字机延伸、同页换行、引擎重发旧快照都并入当前显示而不是覆盖。
+        // 点面板/词典不经过游戏输入路径，不会置 advancePending，显示不受影响。
+        boolean clicked = advancePending;
+        advancePending = false;
+        long now = android.os.SystemClock.elapsedRealtime();
+        boolean idleBoundary = lastDialogueAtMs > 0 && now - lastDialogueAtMs > IDLE_BOUNDARY_MS;
+        lastDialogueAtMs = now;
+
+        byte[] prev = lastPageBytes;
+        int common = commonPrefixLength(prev, raw);
+        boolean extension = common == prev.length && raw.length > prev.length;
         byte[] suffix = new byte[raw.length - common];
         System.arraycopy(raw, common, suffix, 0, suffix.length);
 
         String page = decode(raw, true);
-        String sentence = (suffix.length == 0 || extension)
-                ? page : decode(suffix, false);
+        String sentence;
+        if (extension) {
+            // 打字机延伸：增量接在累积显示之后（KRKR 缝合过的显示比引擎快照长，
+            // 直接取 page 会丢掉前面的行；增量为空 = 引擎重发同快照，显示不变）。
+            // 点击打字中的画面只加速不翻页，延伸优先于点击判定。
+            sentence = sentenceText.isEmpty() || suffix.length == 0
+                    ? page : sentenceText + decode(suffix, false);
+        } else if (prev.length == 0 || clicked || idleBoundary) {
+            // 翻页：点击（或长间隔兜底）之后到达的新文本 → 整体覆盖
+            sentence = page;
+        } else if (suffix.length == 0) {
+            // 引擎重发更短/相同快照且无点击：不算新内容，不切换显示
+            sentence = sentenceText;
+        } else if ("krkr".equals(src)) {
+            // KRKR：native 页启发翻页后按行重发的打字机分段与累积尾部真实重叠，
+            // 尾部缝合（无重叠 = 同页新行，加分隔符另起一行）
+            sentence = stitchAppend(sentenceText, page);
+        } else {
+            // ONS 等行级快照：同页换行 → 追加为新行
+            sentence = sentenceText.isEmpty() ? page : sentenceText + "\n" + page;
+        }
         lastPageBytes = raw;
         pageText = page;
         sentenceText = sentence;
@@ -258,6 +297,23 @@ public final class OnsExtractBridge {
             if (prev[i] != cur[i]) return i;
         }
         return n;
+    }
+
+    /**
+     * KRKR 行增量缝合：引擎快照与累积显示尾部真实重叠（打字机分段是同一段
+     * 文本的前缀延伸）时，去掉重叠段拼接，避免逐字重复；无重叠视为同页新行，
+     * 加换行分隔。切断点避开代理对（UTF-16 尾随高位代理不作为缝合边界）。
+     */
+    private static String stitchAppend(String acc, String incoming) {
+        if (acc.isEmpty()) return incoming;
+        int max = Math.min(acc.length(), incoming.length());
+        for (int k = max; k >= 1; k--) {
+            if (acc.regionMatches(acc.length() - k, incoming, 0, k)) {
+                if (Character.isLowSurrogate(acc.charAt(acc.length() - k))) continue;
+                return acc.substring(0, acc.length() - k) + incoming;
+            }
+        }
+        return acc + "\n" + incoming;
     }
 
     /** 脚本原始编码字节解码：严格 UTF-8 → SJIS → GBK，成功后锁定编码。 */
