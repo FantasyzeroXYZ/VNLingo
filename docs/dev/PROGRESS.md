@@ -4,6 +4,40 @@
 > `docs/说明/游戏内提取制卡功能方案.md`（提取功能线方案）阅读。
 > 更新时间：2026-10-06
 
+## 2026-10-06 会话（二十七）：云同步完整重实现（参考 RinneMobile 架构）
+
+- **需求**（用户）：云同步完全参考 `RinneMobile-main` 重新实现。
+- **新同步栈**（app 模块 `com.tyranor.next.core.sync`，1543 行）：
+  - `WebDavClient`：参考客户端的 HttpURLConnection 移植（零新增依赖）——
+    坚果云 `/dav/` 自动补全、明文 HTTP 拒绝（回环放行）、PROPFIND/MKCOL/
+    HEAD/GET/PUT/DELETE/listFiles/getLastModified、读取声明长度+流式累计
+    双重上限；路径逐段 URL 编码。
+  - `SyncSnapshotCodec`：快照大小校验（远端 16MB/本地备份 32MB）+ gzip
+    编解码（魔数检测，兼容老纯 JSON）+ 解压放大防护。
+  - `SyncManager`：参考同步流完整移植——本地/云端快照各算 SHA-256 与上次
+    同步哈希比对 → 首次上传 / 新设备首装下载（本地库空+云端有数据）/ 无变化 /
+    单侧上行 / 单侧下行 / 双侧冲突（取消·用本地·用云端·智能合并；合并 =
+    云端键级并入本地后重导出上传）。
+- **快照内容（VNLingo 映射）**：games=游戏库文本元数据（9 游戏实测；不含
+  封面/扫描根，同参考实现约束）、overrides=单游戏引擎覆盖（prefs 镜像导入
+  后由启动同步回灌 DB）、settings=策展配置整文件（ons_extract_tts/anki_
+  card_config/gamepad_remap/virtual_mouse_bindings）、play_time=游玩统计
+  （仅本地为空时采纳）。不含存档 zip、词典库、封面、云凭据。
+- **同步中心 UI**（`SyncCenterActivity`，Compose）：服务器/账号/密码 +
+  自动同步开关 + 保存/测试连接/立即同步 + 状态行（已配置/上次同步时间）+
+  冲突对话框（同步线程经 SynchronousQueue 阻塞等用户选择，2 分钟超时取消）+
+  本地备份 `.vnlbak` 导出/导入（SAF，gzip 快照）。设置页「云同步」入口切换
+  至同步中心；`OnsSaveCloud`（面板存档上传下载，独立数据域）保留。
+- **模拟器端到端实测**（本地最小 WebDAV 服务器 `.tmp-test/webdav_server.py`
+  + adb reverse，回环明文放行）：测试连接（探针写+删）✓ → 首传（gzip 快照
+  1013B：9 游戏+2 覆盖+4 配置+游玩统计）✓ → 立即同步无变化判定 ✓ →
+  云端改动（改 senhana 元数据标题）→ 下载合并 ✓（Room 库确认更新）→
+  `.vnlbak` 备份导出（SAF 落盘，内容校验）✓。
+- 已知边界：冲突对话框与导入备份的实机路径未走全（冲突需双侧同时更改的
+  构造场景；导入与下载共用 importSnapshot 已由下载路径验证）；真实坚果云
+  端到端待用户凭据实测；自动同步目前仅存配置（夜间调度为参考实现的账号
+  体系部分，未引入）。
+
 ## 2026-10-06 会话（二十六）：虚拟鼠标键盘支持 + 可配置按键绑定
 
 - **需求**（用户）：①键盘方向键/回车支持——实测上下左右步进分配不对（疑似

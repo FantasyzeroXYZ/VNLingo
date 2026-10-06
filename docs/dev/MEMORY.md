@@ -134,6 +134,18 @@
 
 ## 关键设计决策
 
+- **云同步（2026-10-06 会话二十七重实现，参考 RinneMobile）**：app 模块
+  `com.tyranor.next.core.sync` 三件套（WebDavClient/SyncSnapshotCodec/
+  SyncManager）+ `ui.sync.SyncCenterActivity`。同步语义 = 快照哈希比对
+  （本地/云端各 SHA-256 vs 上次同步哈希）分流：首传/首装下载/无变化/单侧/
+  冲突（用户选）。快照 = 游戏库文本元数据 + 单游戏覆盖 prefs 镜像 + 策展
+  配置整文件 + 游玩统计；**不含**存档 zip（面板 OnsSaveCloud 独立通道）、
+  词典、封面、扫描根（SAF URI 跨设备无效且防泄露）。导入语义 = 键级合并
+  （本地独有保留、同名以导入方为准、本机封面保留）；overrides 导入走 prefs
+  镜像 + invalidateRowCache（启动同步回灌 DB，仓库设计的导入路径）。远程
+  文件 `VNLingo/VNLingo_sync.json`（gzip）。本地备份 `.vnlbak` = gzip 快照。
+  测试：本地最小 WebDAV 服务器 `.tmp-test/webdav_server.py`（HEAD/GET/PUT/
+  MKCOL/DELETE/PROPFIND）+ `adb reverse tcp:1222`，客户端回环明文放行。
 - 提取语义统一为「完整对话 + 配对语音 + 截图」，各引擎只做事件源
   （`ExtractFacade` 接口），面板/词典/翻译/制卡管线全复用（engine `com.core.ons`）。
 - **连续页累积（2026-10-06 会话二十四，用户规则）**：「点击推进 + 有新文本」
