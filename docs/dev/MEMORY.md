@@ -163,6 +163,22 @@
   `com.core.engine.EngineVirtualMouse`（ONS/KRKR/Artemis 共用；Artemis 点击走
   内核 InjectHostTouch JNI、按键走可聚焦光标窗口，见会话二十五）。
 
+## 实测踩坑（2026-10-06 会话二十六新增：虚拟鼠标绑定与长按连移）
+
+1. **旧虚拟鼠标上下步进是左右的两倍**（`UP->-2/DOWN->2` vs `LEFT->-1/RIGHT->1`，
+   ONS 原始实现遗留）——横屏下上下移距两倍，用户体感「竖屏移动没切成横屏」。
+   已改四向等步进 + 按住时长加速。排查此类「方向分配不对」报告先查步进表
+   再查轴向。
+2. **空 StringSet 会挡住默认回退**：绑定快照 refresh 时 `getStringSet` 缺省
+   emptySet 非空 → 存进快照的空数组使 `codes()` 认为已自定义 → 默认绑定
+   失效且 UI 显示「未映射」。空集不得进快照（`isNotEmpty` 才入）。
+3. **长按连移不依赖系统按键重复**：内部 Handler 重复引擎（350ms 延迟、
+   60ms/步、线性加速），系统 repeat 事件一律吞掉——adb `input keyevent`
+   注入无重复序列，同样可测单步；真机键盘/手柄按住由内部引擎驱动，行为
+   与注入环境无关。
+4. **绑定语义**：动作的自定义键集「整体替换」默认（非合并）——设置页恢复
+   默认 = 删除自定义集。写文档/回复用户时明确此语义。
+
 ## 实测踩坑（2026-10-06 会话二十五新增：虚拟鼠标与 NativeActivity 输入）
 
 1. **NativeActivity 的按键不经 Activity.dispatchKeyEvent（实证，修正旧认知）**：
