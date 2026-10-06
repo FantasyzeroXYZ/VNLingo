@@ -56,6 +56,13 @@ open class ArtemisActivity : NativeActivity() {
 
     external fun EmulateKeyEvent(keyCode: Int, action: Int)
 
+    /**
+     * 宿主触摸注入（clean 内核 >= pluginVersion 32 导出；官方内核无此符号，
+     * UnsatisfiedLinkError 由调用方捕获后降级为无虚拟鼠标点击）。坐标为窗口
+     * 像素，与物理触摸同管线入队（key id 1 = 鼠标左键）。
+     */
+    external fun injectHostTouch(x: Float, y: Float, down: Boolean)
+
     external fun ExecuteTag(tag: String)
 
     fun InAppBilling(a: String, b: String, c: Boolean, d: Boolean) {

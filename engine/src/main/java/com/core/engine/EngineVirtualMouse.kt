@@ -1,4 +1,4 @@
-package com.core.ons
+package com.core.engine
 
 import android.graphics.Canvas
 import android.graphics.Color
@@ -24,18 +24,25 @@ fun interface OverlayClickHandler {
 }
 
 /**
- * 手柄方向键虚拟鼠标（ONS/SDL 系）。
+ * 统一虚拟鼠标抽象（手柄通用鼠标模拟，ONS/KRKR/Artemis 三宿主共用）。
  *
- * - D-pad（BUTTON_DPAD_*，兼容 KEYCODE_DPAD_*）移动光标，长按 repeat 加速
+ * 各宿主只提供三件事，引擎实现零改动：
+ * - surfaceProvider：游戏画面视图（坐标换算基准；NativeActivity 宿主给 decorView）
+ * - clickInjector：在画面视图坐标处合成一次点击——视图系宿主走
+ *   dispatchTouchEvent（ONS=SDL Surface、KRKR=Cocos GLSurfaceView），
+ *   NativeActivity 宿主走内核触摸注入 JNI（Artemis=InjectHostTouch）
+ * - overlayClickHandler：光标悬停在面板控件上时优先点平台控件
+ *
+ * - D-pad（KEYCODE_DPAD_*）移动光标，长按 repeat 加速
  * - 左摇杆（AXIS_X/Y）连续移动光标（面板展开时也可用，与 D-pad 滚动分工）
  * - A 键（BUTTON_A）：先问 overlayClickHandler（命中面板控件即消费），
- *   未命中才在光标处合成触摸点击注入 SDL Surface
+ *   未命中才在光标处合成触摸点击注入游戏画面
  * - 覆盖层纯绘制、不可点击：未按 D-pad/摇杆前零干扰
  *
  * 按键拦截在 Activity.dispatchKeyEvent 最前端（handleKey 返回 true 即消费），
- * 其余按键全部透传给游戏（SDL 原生手柄支持不受影响）。
+ * 其余按键全部透传给游戏（原生手柄支持不受影响）。
  */
-class OnsVirtualMouse(
+class EngineVirtualMouse(
     overlay: ViewGroup,
     private val surfaceProvider: () -> View?,
     private val clickInjector: ClickInjector,

@@ -39,7 +39,7 @@ import com.core.ons.OnsExtractPanel;
 import com.core.ons.OnsLibLoader;
 import com.core.ons.OnsSettings;
 import com.core.ons.OnsVideoOverlay;
-import com.core.ons.OnsVirtualMouse;
+import com.core.engine.EngineVirtualMouse;
 
 import java.io.File;
 import java.io.FileNotFoundException;
@@ -72,7 +72,7 @@ public class ONScripter extends SDLActivity {
     /** [ONS-BRIDGE] 对话/语音提取面板。 */
     private OnsExtractPanel extractPanel;
     /** 手柄方向键虚拟鼠标。 */
-    private OnsVirtualMouse virtualMouse;
+    private EngineVirtualMouse virtualMouse;
     private native int nativeInitJavaCallbacks();
     private native int nativeGetWidth();
     private native int nativeGetHeight();
@@ -371,7 +371,7 @@ public class ONScripter extends SDLActivity {
 
             addContentView(onsOverlay, new WindowManager.LayoutParams(WindowManager.LayoutParams.MATCH_PARENT, WindowManager.LayoutParams.MATCH_PARENT));
             // 手柄方向键/左摇杆虚拟鼠标（覆盖层纯绘制 + 按键前置拦截 + 光标命中面板优先）
-            virtualMouse = new OnsVirtualMouse(onsOverlay, () -> mSurface, this::injectTapAtCursor,
+            virtualMouse = new EngineVirtualMouse(onsOverlay, () -> mSurface, this::injectTapAtCursor,
                     (x, y) -> extractPanel != null && extractPanel.dispatchCursorClick(x, y));
         } catch (Throwable t) {
             Log.w(TAG, "setupVirtualControls failed", t);

@@ -22,6 +22,10 @@ public abstract class ArtemisLauncherBaseActivity extends com.ies_net.artemis.Ar
     private boolean panelsInstalled;
     /** 提取面板窗口内容（面板 GONE 时窗口塌缩，无残留遮挡）。 */
     private android.view.View extractPanelView;
+    /** 统一虚拟鼠标（手柄移动光标 + A 键经内核 InjectHostTouch 合成点击）。 */
+    private com.core.engine.EngineVirtualMouse virtualMouse;
+    private boolean virtualMouseMode;
+    private static final String PREF_ARTEMIS_MOUSE_MODE = "artemis_virtual_mouse";
     /** 加载 revision-specific 的 Artemis native 库（如 libartemis.so），onCreate 一次性调用。 */
     public abstract void loadEngineLibrary();
 
@@ -105,7 +109,9 @@ public abstract class ArtemisLauncherBaseActivity extends com.ies_net.artemis.Ar
             // 游戏触摸——触摸推进失效的根因。面板窗口只占面板自身区域，
             // 其余触摸透传游戏；面板 GONE 时窗口塌缩为 0。
             extractPanel.setSideButtonsWindowMode(true);
-            android.view.View panelView = extractPanel.installDetached(null, null);
+            installVirtualMouseWindow();
+            android.view.View panelView = extractPanel.installDetached(
+                    this::toggleVirtualMouseMode, this::isVirtualMouseMode);
             installEngineLeftButtons();
 
             android.view.WindowManager.LayoutParams plp = new android.view.WindowManager.LayoutParams(
@@ -132,6 +138,161 @@ public abstract class ArtemisLauncherBaseActivity extends com.ies_net.artemis.Ar
         } catch (Throwable ignored) {
         }
         return 0;
+    }
+
+    /**
+     * 统一虚拟鼠标（Artemis）：光标承载为独立纯绘制小窗（NOT_TOUCHABLE，
+     * 触摸全部穿透给游戏窗）；点击经内核 InjectHostTouch JNI（pluginVersion 32
+     * 起导出）与物理触摸同管线入队——NativeActivity 的触摸 InputQueue 为
+     * native 独占，这是应用层唯一有效点击路径（官方内核无该符号，调用处
+     * 捕获 UnsatisfiedLinkError 降级为无点击）。光标悬停面板窗口时点面板控件。
+     *
+     * 按键：NativeActivity 的按键不经 Activity.dispatchKeyEvent（实测 D-pad/A
+     * 到不了 Java），鼠标模式把光标窗口设为可聚焦接管按键焦点——D-pad/A 归
+     * 光标，其余键转发游戏映射链；模式关时窗口 NOT_FOCUSABLE，按键归还游戏。
+     */
+    private void installVirtualMouseWindow() {
+        try {
+            virtualMouseMode = getSharedPreferences(PREF_ARTEMIS_MOUSE_MODE, MODE_PRIVATE)
+                    .getBoolean(PREF_ARTEMIS_MOUSE_MODE, false);
+            mouseKeyCatcher = new android.widget.FrameLayout(this) {
+                @Override
+                public boolean dispatchKeyEvent(android.view.KeyEvent event) {
+                    return routeMouseKey(event);
+                }
+            };
+            android.widget.FrameLayout overlay = mouseKeyCatcher;
+            cursorWindowLp = new android.view.WindowManager.LayoutParams(
+                    android.view.WindowManager.LayoutParams.MATCH_PARENT,
+                    android.view.WindowManager.LayoutParams.MATCH_PARENT,
+                    android.view.WindowManager.LayoutParams.TYPE_APPLICATION,
+                    android.view.WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE
+                            | android.view.WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE,
+                    android.graphics.PixelFormat.TRANSLUCENT);
+            // TYPE_APPLICATION 必须显式 gravity（缺省 x/y 不按左上锚定，见 MEMORY）
+            cursorWindowLp.gravity = android.view.Gravity.TOP | android.view.Gravity.START;
+            getWindowManager().addView(overlay, cursorWindowLp);
+            applyMouseWindowFocusFlags();
+            virtualMouse = new com.core.engine.EngineVirtualMouse(overlay,
+                    this::virtualMouseSurface,
+                    (v, x, y) -> artTouchTap(x, y),
+                    this::virtualMouseOverlayClick);
+            if (!virtualMouseMode) virtualMouse.hideCursor();
+            Log.i("YukiArtemis", "virtual mouse installed (artemis)");
+        } catch (Throwable t) {
+            Log.w("YukiArtemis", "install virtual mouse failed", t);
+        }
+    }
+
+    private android.widget.FrameLayout mouseKeyCatcher;
+    private android.view.WindowManager.LayoutParams cursorWindowLp;
+
+    /**
+     * 光标窗口按键路由（窗口可聚焦时）：重映射 → 虚拟鼠标（D-pad/摇杆/A），
+     * 未消费的键转发游戏映射链（ArtemisActivity.dispatchKeyEvent 的
+     * EmulateKeyEvent 映射），保证鼠标模式下 ENTER/ESC/SKIP 等仍可用。
+     */
+    private boolean routeMouseKey(android.view.KeyEvent event) {
+        KeyEvent mapped = com.core.engine.GamepadRemap.apply(event);
+        if (virtualMouse != null && virtualMouse.handleKey(mapped)) return true;
+        try {
+            super.dispatchKeyEvent(mapped);
+        } catch (Throwable t) {
+            Log.w("YukiArtemis", "mouse key forward failed", t);
+        }
+        return true; // 鼠标模式下按键不外溢
+    }
+
+    /** 鼠标模式 = 光标窗口可聚焦（接管按键）；触摸模式 = NOT_FOCUSABLE 还给游戏。 */
+    private void applyMouseWindowFocusFlags() {
+        if (mouseKeyCatcher == null || cursorWindowLp == null) return;
+        try {
+            if (virtualMouseMode) {
+                cursorWindowLp.flags &= ~android.view.WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE;
+                mouseKeyCatcher.setFocusable(true);
+                mouseKeyCatcher.setFocusableInTouchMode(true);
+                mouseKeyCatcher.requestFocus();
+            } else {
+                cursorWindowLp.flags |= android.view.WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE;
+            }
+            getWindowManager().updateViewLayout(mouseKeyCatcher, cursorWindowLp);
+        } catch (Throwable t) {
+            Log.w("YukiArtemis", "apply mouse focus flags failed", t);
+        }
+    }
+
+    /** 坐标换算基准：游戏窗口 decor（全屏，与内核窗口像素坐标同基准）。 */
+    private android.view.View virtualMouseSurface() {
+        return getWindow().getDecorView();
+    }
+
+    /** 光标处合成一次完整触摸：down 立即、up 延时，均经内核触摸注入。 */
+    private void artTouchTap(float x, float y) {
+        try {
+            injectHostTouch(x, y, true);
+        } catch (Throwable t) {
+            Log.w("YukiArtemis", "injectHostTouch down failed (official kernel?)", t);
+            return;
+        }
+        new android.os.Handler(android.os.Looper.getMainLooper())
+                .postDelayed(() -> {
+                    try {
+                        injectHostTouch(x, y, false);
+                    } catch (Throwable t) {
+                        Log.w("YukiArtemis", "injectHostTouch up failed", t);
+                    }
+                }, 120);
+    }
+
+    /** 光标悬停面板窗口时点面板控件（合成触摸派发给面板根视图），否则注入游戏。 */
+    private boolean virtualMouseOverlayClick(float x, float y) {
+        android.view.View panelView = extractPanelView;
+        if (panelView == null || panelView.getWidth() <= 0) return false;
+        int[] loc = new int[2];
+        panelView.getLocationOnScreen(loc);
+        if (x < loc[0] || x >= loc[0] + panelView.getWidth()
+                || y < loc[1] || y >= loc[1] + panelView.getHeight()) return false;
+        dispatchTapToView(panelView, x - loc[0], y - loc[1]);
+        return true;
+    }
+
+    /** 在视图坐标处合成完整触摸（down 立即、up 延时 60ms）。 */
+    private void dispatchTapToView(android.view.View target, float x, float y) {
+        try {
+            long now = android.os.SystemClock.uptimeMillis();
+            android.view.MotionEvent down = android.view.MotionEvent.obtain(
+                    now, now, android.view.MotionEvent.ACTION_DOWN, x, y, 0);
+            down.setSource(android.view.InputDevice.SOURCE_TOUCHSCREEN);
+            target.dispatchTouchEvent(down);
+            down.recycle();
+            new android.os.Handler(android.os.Looper.getMainLooper())
+                    .postDelayed(() -> {
+                        try {
+                            long t2 = android.os.SystemClock.uptimeMillis();
+                            android.view.MotionEvent up = android.view.MotionEvent.obtain(
+                                    t2, t2, android.view.MotionEvent.ACTION_UP, x, y, 0);
+                            up.setSource(android.view.InputDevice.SOURCE_TOUCHSCREEN);
+                            target.dispatchTouchEvent(up);
+                            up.recycle();
+                        } catch (Throwable t) {
+                            Log.w("YukiArtemis", "panel tap up failed", t);
+                        }
+                    }, 60);
+        } catch (Throwable t) {
+            Log.w("YukiArtemis", "panel tap failed", t);
+        }
+    }
+
+    private boolean isVirtualMouseMode() {
+        return virtualMouseMode;
+    }
+
+    private void toggleVirtualMouseMode() {
+        virtualMouseMode = !virtualMouseMode;
+        getSharedPreferences(PREF_ARTEMIS_MOUSE_MODE, MODE_PRIVATE).edit()
+                .putBoolean(PREF_ARTEMIS_MOUSE_MODE, virtualMouseMode).apply();
+        if (virtualMouse != null && !virtualMouseMode) virtualMouse.hideCursor();
+        applyMouseWindowFocusFlags();
     }
 
     /**
@@ -193,6 +354,27 @@ public abstract class ArtemisLauncherBaseActivity extends com.ies_net.artemis.Ar
         if (facade != null) {
             facade.onActivityResult(requestCode, resultCode, data);
         }
+    }
+
+    @Override
+    public boolean dispatchKeyEvent(KeyEvent event) {
+        // 虚拟鼠标模式：D-pad 移动光标、A 键点击（消费后不再走 EmulateKeyEvent
+        // 游戏键映射）；其余按键交父类既有映射链路（重映射也在其内再做一次）
+        if (virtualMouseMode && virtualMouse != null) {
+            KeyEvent mapped = com.core.engine.GamepadRemap.apply(event);
+            if (mapped != null && virtualMouse.handleKey(mapped)) return true;
+        }
+        return super.dispatchKeyEvent(event);
+    }
+
+    @Override
+    public boolean dispatchGenericMotionEvent(android.view.MotionEvent event) {
+        // 左摇杆移动虚拟光标（若内核/框架把摇杆事件预派发到 Java 侧则生效；
+        // 未预派发时摇杆事件不会到达此处，D-pad 仍可用）
+        if (virtualMouseMode && virtualMouse != null && virtualMouse.handleMotion(event)) {
+            return true;
+        }
+        return super.dispatchGenericMotionEvent(event);
     }
 
     @Override

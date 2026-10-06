@@ -78,6 +78,10 @@ public abstract class KirikiroidLauncherBaseActivity extends KR2Activity {
     private volatile com.core.ons.ExtractFacade krkrFacade;
     /** 剧情文本框面板（KRKR 文本提取：Label::setString 钩子 → onKrkrText → 提取桥）。 */
     private volatile com.core.ons.OnsExtractPanel extractPanel;
+    /** 统一虚拟鼠标（手柄移动光标 + A 键合成触摸点击）；点击模式键开关，默认关。 */
+    private com.core.engine.EngineVirtualMouse virtualMouse;
+    private boolean virtualMouseMode;
+    private static final String PREF_KRKR_MOUSE_MODE = "krkr_virtual_mouse";
     private volatile boolean firstFrameRendered;
     private volatile boolean launchDispatched;
     private volatile boolean launchSucceeded;
@@ -726,14 +730,79 @@ public abstract class KirikiroidLauncherBaseActivity extends KR2Activity {
                     android.view.ViewGroup.LayoutParams.MATCH_PARENT);
             // 最后添加：盖在游戏 GL 视图之上（此时启动遮罩即将隐藏）
             mFrameLayout.addView(overlay, overlayLp);
-            // KRKR 无虚拟鼠标：点击模式键由按键组内部按 null 供应商自动隐藏
-            panel.install(overlay, null, null);
+            installVirtualMouse(overlay);
+            panel.install(overlay, this::toggleVirtualMouseMode, this::isVirtualMouseMode);
             extractPanel = panel;
             installEngineLeftButtons(overlay);
             Log.i(TAG, "extract panel installed (krkr)");
         } catch (Throwable t) {
             Log.w(TAG, "install extract panel failed", t);
         }
+    }
+
+    /**
+     * 统一虚拟鼠标（KRKR）：光标画在覆盖层内；点击经合成 MotionEvent 派发给
+     * 游戏 GLSurfaceView（与手指同链路，1.3.9 走 nativeTouches 管线、
+     * 1.3.4/1.2.6 走 Cocos 管线），不触碰引擎实现。默认关闭，右缘点击模式键开关。
+     */
+    private void installVirtualMouse(ViewGroup overlay) {
+        try {
+            org.cocos2dx.lib.Cocos2dxGLSurfaceView gl = null;
+            for (int i = 0; i < mFrameLayout.getChildCount(); i++) {
+                View c = mFrameLayout.getChildAt(i);
+                if (c instanceof org.cocos2dx.lib.Cocos2dxGLSurfaceView) {
+                    gl = (org.cocos2dx.lib.Cocos2dxGLSurfaceView) c;
+                    break;
+                }
+            }
+            final org.cocos2dx.lib.Cocos2dxGLSurfaceView surface = gl;
+            if (surface == null) {
+                Log.i(TAG, "virtual mouse skipped: GL surface not found");
+                return;
+            }
+            virtualMouseMode = getSharedPreferences(PREF_KRKR_MOUSE_MODE, MODE_PRIVATE)
+                    .getBoolean(PREF_KRKR_MOUSE_MODE, false);
+            virtualMouse = new com.core.engine.EngineVirtualMouse(overlay,
+                    () -> surface,
+                    (v, x, y) -> {
+                        // 合成一次完整触摸：down 立即、up 延时（KAG 点击在 UP 结算）
+                        long now = android.os.SystemClock.uptimeMillis();
+                        android.view.MotionEvent down = android.view.MotionEvent.obtain(
+                                now, now, android.view.MotionEvent.ACTION_DOWN, x, y, 0);
+                        down.setSource(android.view.InputDevice.SOURCE_TOUCHSCREEN);
+                        surface.dispatchTouchEvent(down);
+                        down.recycle();
+                        new android.os.Handler(android.os.Looper.getMainLooper())
+                                .postDelayed(() -> {
+                                    try {
+                                        long t2 = android.os.SystemClock.uptimeMillis();
+                                        android.view.MotionEvent up = android.view.MotionEvent.obtain(
+                                                t2, t2, android.view.MotionEvent.ACTION_UP, x, y, 0);
+                                        up.setSource(android.view.InputDevice.SOURCE_TOUCHSCREEN);
+                                        surface.dispatchTouchEvent(up);
+                                        up.recycle();
+                                    } catch (Throwable t) {
+                                        Log.w(TAG, "virtual mouse up failed", t);
+                                    }
+                                }, 60);
+                    },
+                    (x, y) -> extractPanel != null && extractPanel.dispatchCursorClick(x, y));
+            if (!virtualMouseMode) virtualMouse.hideCursor();
+            Log.i(TAG, "virtual mouse installed (krkr)");
+        } catch (Throwable t) {
+            Log.w(TAG, "install virtual mouse failed", t);
+        }
+    }
+
+    private boolean isVirtualMouseMode() {
+        return virtualMouseMode;
+    }
+
+    private void toggleVirtualMouseMode() {
+        virtualMouseMode = !virtualMouseMode;
+        getSharedPreferences(PREF_KRKR_MOUSE_MODE, MODE_PRIVATE).edit()
+                .putBoolean(PREF_KRKR_MOUSE_MODE, virtualMouseMode).apply();
+        if (virtualMouse != null && !virtualMouseMode) virtualMouse.hideCursor();
     }
 
     /** 引擎键注入：经 KR2 的 nativeKeyAction 直达引擎（BACK 由内核映射为 ESC）。 */
@@ -796,14 +865,27 @@ public abstract class KirikiroidLauncherBaseActivity extends KR2Activity {
         KeyEvent mapped = com.core.engine.GamepadRemap.apply(event);
         com.core.ons.OnsExtractPanel panel = extractPanel;
         if (panel != null && panel.handleKey(mapped)) return true;
+        // 虚拟鼠标模式：D-pad/摇杆移动光标、A 键点击（消费后再不透传游戏键）
+        if (virtualMouseMode && virtualMouse != null && virtualMouse.handleKey(mapped)) {
+            return true;
+        }
         // 决定/回车类按键透传给游戏 = 推进尝试（连续页累积的边界信号）；
-        // 面板消费的按键已在上面的 return 中排除，不会误标记
+        // 面板/鼠标消费的按键已在上面的 return 中排除，不会误标记
         if (mapped != null && mapped.getAction() == KeyEvent.ACTION_UP
                 && (mapped.getKeyCode() == KeyEvent.KEYCODE_ENTER
                 || mapped.getKeyCode() == KeyEvent.KEYCODE_DPAD_CENTER)) {
             com.core.ons.OnsExtractBridge.markPageAdvance();
         }
         return super.dispatchKeyEvent(mapped);
+    }
+
+    @Override
+    public boolean dispatchGenericMotionEvent(android.view.MotionEvent event) {
+        // 左摇杆连续移动虚拟光标（手柄类摇杆事件）
+        if (virtualMouseMode && virtualMouse != null && virtualMouse.handleMotion(event)) {
+            return true;
+        }
+        return super.dispatchGenericMotionEvent(event);
     }
 
     protected final void setResolvedGameLibrary(String library) {
