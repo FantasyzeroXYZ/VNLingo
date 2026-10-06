@@ -58,6 +58,7 @@
     <string name="engine_ons_extract_anki">制卡</string>
     <string name="engine_ons_extract_no_text">（暂无可制卡文本）</string>
     <string name="engine_ons_extract_anki_not_installed">未安装 AnkiDroid</string>
+    <string name="engine_ons_extract_anki_model_missing">模型「%1$s」不存在：请在 AnkiDroid 中先创建，或把制卡模型名改回 TyranorNext Word</string>
     <string name="engine_ons_extract_anki_need_permission">请在弹出的 AnkiDroid 页面授权后重试</string>
     <string name="engine_ons_extract_anki_added">已添加到 Anki</string>
     <string name="engine_ons_extract_anki_failed">制卡失败</string>
@@ -166,6 +167,30 @@
     <string name="engine_ons_side_home_confirm">退出游戏并回到软件主页？</string>
     <string name="engine_ons_side_home_ok">回到主页</string>
     <string name="engine_ons_side_click_mode">切换点击模式（虚拟鼠标/触摸）</string>
+    <string name="engine_ons_anki_card_title">制卡设置（AnkiDroid）</string>
+    <string name="engine_ons_anki_card_deck">牌组名</string>
+    <string name="engine_ons_anki_card_model">模型名</string>
+    <string name="engine_ons_anki_card_voice">例句语音源</string>
+    <string name="engine_ons_anki_card_capture">制卡时自动截图</string>
+    <string name="engine_ons_anki_card_fields">字段映射（点字段行切换内容来源）</string>
+    <string name="engine_ons_anki_card_field_read_failed">字段读取失败</string>
+    <string name="engine_ons_anki_card_default_fields">，显示默认字段</string>
+    <string name="engine_ons_anki_voice_auto">自动（游戏语音优先）</string>
+    <string name="engine_ons_anki_voice_game">仅游戏语音</string>
+    <string name="engine_ons_anki_voice_tts">仅 TTS 生成</string>
+    <string name="engine_ons_anki_voice_off">关闭</string>
+    <string name="engine_ons_anki_on">开</string>
+    <string name="engine_ons_anki_off">关</string>
+    <string name="engine_ons_anki_slot_none">无</string>
+    <string name="engine_ons_anki_slot_word">单词</string>
+    <string name="engine_ons_anki_slot_reading">读音</string>
+    <string name="engine_ons_anki_slot_meaning">释义</string>
+    <string name="engine_ons_anki_slot_sentence">例句</string>
+    <string name="engine_ons_anki_slot_page">整页</string>
+    <string name="engine_ons_anki_slot_translation">译文</string>
+    <string name="engine_ons_anki_slot_screenshot">截图</string>
+    <string name="engine_ons_anki_slot_sentence_audio">例句语音</string>
+    <string name="engine_ons_anki_slot_word_audio">单词语音</string>
 </resources>
 
 

@@ -58,6 +58,7 @@
     <string name="engine_ons_extract_anki">カード</string>
     <string name="engine_ons_extract_no_text">（カード化するテキストなし）</string>
     <string name="engine_ons_extract_anki_not_installed">AnkiDroid が未インストールです</string>
+    <string name="engine_ons_extract_anki_model_missing">モデル「%1$s」が存在しません。AnkiDroid で先に作成するか、モデル名を TyranorNext Word に戻してください</string>
     <string name="engine_ons_extract_anki_need_permission">AnkiDroid の許可画面で権限を付与して再試行してください</string>
     <string name="engine_ons_extract_anki_added">Anki に追加しました</string>
     <string name="engine_ons_extract_anki_failed">カード作成に失敗しました</string>
@@ -167,6 +168,30 @@
     <string name="engine_ons_side_home_confirm">ゲームを終了してアプリのホームに戻りますか？</string>
     <string name="engine_ons_side_home_ok">ホームへ戻る</string>
     <string name="engine_ons_side_click_mode">クリックモード切替（仮想マウス／タッチ）</string>
+    <string name="engine_ons_anki_card_title">カード作成設定（AnkiDroid）</string>
+    <string name="engine_ons_anki_card_deck">デッキ名</string>
+    <string name="engine_ons_anki_card_model">モデル名</string>
+    <string name="engine_ons_anki_card_voice">例文音声ソース</string>
+    <string name="engine_ons_anki_card_capture">カード作成時に自動スクリーンショット</string>
+    <string name="engine_ons_anki_card_fields">フィールドマッピング（行をタップしてソースを切替）</string>
+    <string name="engine_ons_anki_card_field_read_failed">フィールドの読み取りに失敗しました</string>
+    <string name="engine_ons_anki_card_default_fields">。デフォルトフィールドを表示</string>
+    <string name="engine_ons_anki_voice_auto">自動（ゲーム音声優先）</string>
+    <string name="engine_ons_anki_voice_game">ゲーム音声のみ</string>
+    <string name="engine_ons_anki_voice_tts">TTS のみ</string>
+    <string name="engine_ons_anki_voice_off">オフ</string>
+    <string name="engine_ons_anki_on">オン</string>
+    <string name="engine_ons_anki_off">オフ</string>
+    <string name="engine_ons_anki_slot_none">なし</string>
+    <string name="engine_ons_anki_slot_word">単語</string>
+    <string name="engine_ons_anki_slot_reading">読み</string>
+    <string name="engine_ons_anki_slot_meaning">意味</string>
+    <string name="engine_ons_anki_slot_sentence">例文</string>
+    <string name="engine_ons_anki_slot_page">ページ全文</string>
+    <string name="engine_ons_anki_slot_translation">翻訳</string>
+    <string name="engine_ons_anki_slot_screenshot">スクリーンショット</string>
+    <string name="engine_ons_anki_slot_sentence_audio">例文音声</string>
+    <string name="engine_ons_anki_slot_word_audio">単語音声</string>
 </resources>
 
 

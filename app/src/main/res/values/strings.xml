@@ -23,6 +23,7 @@
     <string name="dict_search_no_dict">暂无词典，点右上角「词典管理」导入</string>
     <string name="dict_manager_content_description">词典管理</string>
     <string name="settings_extract_translate">翻译设置</string>
+    <string name="settings_anki_card">制卡设置</string>
     <string name="settings_gamepad">手柄设置</string>
     <string name="settings_crash_log">崩溃日志</string>
     <string name="settings_crash_log_none">无崩溃记录</string>

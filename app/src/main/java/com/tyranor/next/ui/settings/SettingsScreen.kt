@@ -349,7 +349,20 @@ fun SettingsScreen(modifier: Modifier = Modifier) {
                                 summary = stringResource(com.core.engine.R.string.engine_ons_settings_section_translate),
                                 startAction = { SettingsItemIcon(R.drawable.ic_settings) },
                                 onClick = {
-                                    com.core.ons.OnsExtractSettingsDialogs.showTranslateSettings(ctx as android.app.Activity)
+                                    // 设置页 context 被 AppLocaleController 包装过，须经 findActivity 解出 Activity
+                                    com.core.ons.OnsExtractSettingsDialogs.showTranslateSettings(
+                                        com.tyranor.next.core.i18n.AppLocaleController.findActivity(ctx) ?: return@ArrowPreference,
+                                    )
+                                },
+                            )
+                            ArrowPreference(
+                                title = stringResource(R.string.settings_anki_card),
+                                summary = stringResource(com.core.engine.R.string.engine_ons_anki_card_title),
+                                startAction = { SettingsItemIcon(R.drawable.ic_settings) },
+                                onClick = {
+                                    com.core.ons.OnsExtractSettingsDialogs.showAnkiCardSettings(
+                                        com.tyranor.next.core.i18n.AppLocaleController.findActivity(ctx) ?: return@ArrowPreference,
+                                    )
                                 },
                             )
                             ArrowPreference(

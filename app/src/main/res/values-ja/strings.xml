@@ -23,6 +23,7 @@
     <string name="dict_search_no_dict">辞書がありません。右上の「辞書管理」からインポートしてください。</string>
     <string name="dict_manager_content_description">辞書管理</string>
     <string name="settings_extract_translate">翻訳設定</string>
+    <string name="settings_anki_card">カード作成</string>
     <string name="settings_gamepad">コントローラー設定</string>
     <string name="settings_crash_log">クラッシュログ</string>
     <string name="settings_crash_log_none">記録なし</string>

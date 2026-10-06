@@ -58,6 +58,7 @@
     <string name="engine_ons_extract_anki">Card</string>
     <string name="engine_ons_extract_no_text">(no text to export)</string>
     <string name="engine_ons_extract_anki_not_installed">AnkiDroid is not installed</string>
+    <string name="engine_ons_extract_anki_model_missing">Model "%1$s" does not exist: create it in AnkiDroid first, or set the card model back to TyranorNext Word</string>
     <string name="engine_ons_extract_anki_need_permission">Grant access in the AnkiDroid dialog and retry</string>
     <string name="engine_ons_extract_anki_added">Added to Anki</string>
     <string name="engine_ons_extract_anki_failed">Card creation failed</string>
@@ -164,6 +165,30 @@
     <string name="engine_ons_side_home_confirm">Exit the game and return to the app home?</string>
     <string name="engine_ons_side_home_ok">Go home</string>
     <string name="engine_ons_side_click_mode">Switch click mode (virtual mouse / touch)</string>
+    <string name="engine_ons_anki_card_title">Card creation (AnkiDroid)</string>
+    <string name="engine_ons_anki_card_deck">Deck name</string>
+    <string name="engine_ons_anki_card_model">Model name</string>
+    <string name="engine_ons_anki_card_voice">Sentence audio source</string>
+    <string name="engine_ons_anki_card_capture">Auto-capture screenshot on card</string>
+    <string name="engine_ons_anki_card_fields">Field mapping (tap a field to cycle its source)</string>
+    <string name="engine_ons_anki_card_field_read_failed">Failed to read model fields</string>
+    <string name="engine_ons_anki_card_default_fields">, showing default fields</string>
+    <string name="engine_ons_anki_voice_auto">Auto (game voice first)</string>
+    <string name="engine_ons_anki_voice_game">Game voice only</string>
+    <string name="engine_ons_anki_voice_tts">TTS only</string>
+    <string name="engine_ons_anki_voice_off">Off</string>
+    <string name="engine_ons_anki_on">On</string>
+    <string name="engine_ons_anki_off">Off</string>
+    <string name="engine_ons_anki_slot_none">None</string>
+    <string name="engine_ons_anki_slot_word">Word</string>
+    <string name="engine_ons_anki_slot_reading">Reading</string>
+    <string name="engine_ons_anki_slot_meaning">Meaning</string>
+    <string name="engine_ons_anki_slot_sentence">Sentence</string>
+    <string name="engine_ons_anki_slot_page">Page text</string>
+    <string name="engine_ons_anki_slot_translation">Translation</string>
+    <string name="engine_ons_anki_slot_screenshot">Screenshot</string>
+    <string name="engine_ons_anki_slot_sentence_audio">Sentence audio</string>
+    <string name="engine_ons_anki_slot_word_audio">Word audio</string>
 </resources>
 
 

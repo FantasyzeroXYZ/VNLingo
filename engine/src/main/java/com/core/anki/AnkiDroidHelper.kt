@@ -140,6 +140,14 @@ class AnkiDroidHelper(private val context: Context) {
         )
     }
 
+    /** 模型字段名列表（制卡设置 UI 与字段映射装配用）；null = 查询失败。 */
+    fun getModelFieldNames(modelId: Long): Array<String>? = try {
+        api?.getFieldList(modelId)
+    } catch (t: Throwable) {
+        Log.w(TAG, "getModelFieldNames failed: $modelId", t)
+        null
+    }
+
     /** 取或建牌组。API 返回 null（提供方拒绝/集合未就绪）与异常分开记日志，
      *  制卡失败的「静默无果」路径必须可在 logcat 定位。 */
     fun getOrCreateDeck(deckName: String): Long? {

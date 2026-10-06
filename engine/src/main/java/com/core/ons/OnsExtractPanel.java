@@ -1082,6 +1082,9 @@ public class OnsExtractPanel {
     /** 命中跨度（递减扫描结果；非空时高亮它而非选中单元）。 */
     private int[] matchedRange;
 
+    /** 最近一次成功译文（制卡「译文」槽位来源；翻句不清，仅新翻译覆盖/失败清空）。 */
+    private volatile String lastTranslation = "";
+
     private static boolean isCjkChar(char c) {
         return (c >= 0x4E00 && c <= 0x9FFF) || (c >= 0x3400 && c <= 0x4DBF)
                 || (c >= 0xF900 && c <= 0xFAFF) || (c >= 0x3040 && c <= 0x30FF)
@@ -1354,6 +1357,59 @@ public class OnsExtractPanel {
     // 词卡（参考 anki 项目 word scheme：Word/Reading/Meaning/Sentence）
     // ------------------------------------------------------------------
 
+    /** TTS 静默合成（MultiTTS 已启用才有值；失败返回 null）——制卡音频槽位用。 */
+    private byte[] ttsSynthesizeQuiet(String text) {
+        if (!multiTtsEnabled || text == null || text.isEmpty()) return null;
+        try {
+            int speed = Math.round(50f * ttsRate / 100f);
+            return MultiTtsClient.synthesize(text, null, speed, 50, 25);
+        } catch (Throwable t) {
+            Log.w(TAG, "card tts synthesize failed", t);
+            return null;
+        }
+    }
+
+    /**
+     * 主线程同步截帧（PixelCopy：游戏 Surface 优先，回退整窗），制卡配图用。
+     * 后台线程调用：内部发请求到主线程并限时等待；超时/失败返回 null。
+     */
+    private Bitmap captureGameFrame(long timeoutMs) {
+        final java.util.concurrent.CountDownLatch latch = new java.util.concurrent.CountDownLatch(1);
+        final java.util.concurrent.atomic.AtomicReference<Bitmap> out =
+                new java.util.concurrent.atomic.AtomicReference<>();
+        final Runnable request = () -> {
+            try {
+                android.view.SurfaceView surface = findGameSurface();
+                if (surface != null) {
+                    Bitmap bmp = Bitmap.createBitmap(Math.max(1, surface.getWidth()),
+                            Math.max(1, surface.getHeight()), Bitmap.Config.ARGB_8888);
+                    PixelCopy.request(surface, bmp, result -> {
+                        if (result == PixelCopy.SUCCESS) out.set(bmp); else bmp.recycle();
+                        latch.countDown();
+                    }, main);
+                    return;
+                }
+                Bitmap bmp = Bitmap.createBitmap(
+                        activity.getWindow().getDecorView().getWidth(),
+                        activity.getWindow().getDecorView().getHeight(),
+                        Bitmap.Config.ARGB_8888);
+                PixelCopy.request(activity.getWindow(), bmp, result -> {
+                    if (result == PixelCopy.SUCCESS) out.set(bmp); else bmp.recycle();
+                    latch.countDown();
+                }, main);
+            } catch (Throwable t) {
+                Log.w(TAG, "captureGameFrame request failed", t);
+                latch.countDown();
+            }
+        };
+        main.post(request);
+        try {
+            latch.await(timeoutMs, java.util.concurrent.TimeUnit.MILLISECONDS);
+        } catch (InterruptedException ignored) {
+        }
+        return out.get();
+    }
+
     private void makeWordCard() {
         final List<OnsDictStore.Group> groups = defGroups;
         final String term = defSentence;
@@ -1368,13 +1424,21 @@ public class OnsExtractPanel {
         } else {
             sentence = bridge.getSentenceText();
         }
-        final String voiceName = bridge.getVoiceName();
         if (sentence.isEmpty()) {
             android.util.Log.w("OnsExtractPanel", "makeWordCard no text: sentence='"
                     + bridge.getSentenceText() + "' page='" + bridge.getPageText() + "'");
             toast(R.string.engine_ons_extract_no_text);
             return;
         }
+
+        // 字段映射（AnkiCardConfig）：逻辑槽位 → Anki 模型字段名，参考
+        // web game text 扩展 ankiFieldMap 方案；模型不存在时默认模型兜底创建
+        final String deckName = com.core.anki.AnkiCardConfig.deck(activity);
+        final String modelName = com.core.anki.AnkiCardConfig.model(activity);
+        final java.util.Map<String, String> fieldMap = com.core.anki.AnkiCardConfig.fieldMap(activity);
+        final String voiceSource = com.core.anki.AnkiCardConfig.voiceSource(activity);
+        final boolean captureOnCard = com.core.anki.AnkiCardConfig.captureOnCard(activity);
+
         new Thread(() -> {
             com.core.anki.AnkiDroidHelper helper = new com.core.anki.AnkiDroidHelper(activity);
             try {
@@ -1387,12 +1451,38 @@ public class OnsExtractPanel {
                     main.post(() -> toast(R.string.engine_ons_extract_anki_need_permission));
                     return;
                 }
-                Long deckId = helper.getOrCreateDeck(com.core.anki.AnkiDroidHelper.DEFAULT_DECK);
-                Long modelId = helper.getOrCreateWordModel(com.core.anki.AnkiDroidHelper.DEFAULT_WORD_MODEL);
-                if (deckId == null || modelId == null) {
+
+                // 模型解析：已存在 → 读真实字段列表；不存在 → 默认模型四字段兜底创建；
+                // 自定义模型名不存在则报错（不能猜测用户模型的字段组合）
+                Long modelId = helper.findModelId(modelName);
+                String[] modelFields;
+                if (modelId != null) {
+                    String[] names = helper.getModelFieldNames(modelId);
+                    if (names == null || names.length == 0) {
+                        main.post(() -> toast(R.string.engine_ons_extract_anki_failed));
+                        return;
+                    }
+                    modelFields = names;
+                } else if (com.core.anki.AnkiCardConfig.DEFAULT_MODEL.equals(modelName)) {
+                    modelId = helper.getOrCreateWordModel(modelName);
+                    modelFields = new String[]{"Word", "Reading", "Meaning", "Sentence"};
+                } else {
+                    final String missing = modelName;
+                    main.post(() -> toast(activity.getString(
+                            R.string.engine_ons_extract_anki_model_missing, missing)));
+                    return;
+                }
+                if (modelId == null) {
                     main.post(() -> toast(R.string.engine_ons_extract_anki_failed));
                     return;
                 }
+                Long deckId = helper.getOrCreateDeck(deckName);
+                if (deckId == null) {
+                    main.post(() -> toast(R.string.engine_ons_extract_anki_failed));
+                    return;
+                }
+
+                // ---- 逻辑槽位内容装配 ----
                 StringBuilder meaning = new StringBuilder();
                 String reading = "";
                 for (OnsDictStore.Group g : groups) {
@@ -1402,27 +1492,100 @@ public class OnsExtractPanel {
                         meaning.append(android.text.Html.escapeHtml(gloss));
                     }
                 }
-                StringBuilder sentenceField = new StringBuilder(android.text.Html.escapeHtml(sentence));
-                // 语音：当前句有配对语音则导入并附 [sound:]
-                byte[] voice = bridge.ensureVoiceBytes();
-                if (voice != null) {
-                    try {
-                        File dir = new File(activity.getExternalFilesDir(null), "extract");
-                        dir.mkdirs();
-                        String base = sanitize(voiceName);
-                        if (base.isEmpty()) base = "voice_" + timestamp();
-                        File voiceFile = new File(dir, "anki_w_" + base);
-                        try (FileOutputStream fos = new FileOutputStream(voiceFile)) {
-                            fos.write(voice);
+                java.util.Map<String, String> slots = new java.util.LinkedHashMap<>();
+                slots.put(com.core.anki.AnkiCardConfig.SLOT_WORD, term);
+                slots.put(com.core.anki.AnkiCardConfig.SLOT_READING, reading);
+                slots.put(com.core.anki.AnkiCardConfig.SLOT_MEANING, meaning.toString());
+                slots.put(com.core.anki.AnkiCardConfig.SLOT_SENTENCE,
+                        android.text.Html.escapeHtml(sentence));
+                slots.put(com.core.anki.AnkiCardConfig.SLOT_PAGE,
+                        android.text.Html.escapeHtml(bridge.getPageText()));
+                slots.put(com.core.anki.AnkiCardConfig.SLOT_TRANSLATION,
+                        lastTranslation == null ? "" : lastTranslation);
+
+                File dir = new File(activity.getExternalFilesDir(null), "extract");
+                dir.mkdirs();
+
+                // 截图槽位：制卡时现截（主线程同步等待），失败回退最近一张手动截图
+                String shotField = fieldMap.get(com.core.anki.AnkiCardConfig.SLOT_SCREENSHOT);
+                if (shotField != null && !shotField.isEmpty()) {
+                    Bitmap shot = captureOnCard ? captureGameFrame(2500) : null;
+                    if (shot == null) shot = bridge.getScreenshot();
+                    if (shot != null && !shot.isRecycled()) {
+                        try {
+                            File png = new File(dir, "anki_shot_" + timestamp() + ".png");
+                            try (FileOutputStream fos = new FileOutputStream(png)) {
+                                shot.compress(Bitmap.CompressFormat.PNG, 95, fos);
+                            }
+                            String mark = helper.addMedia(png, png.getName(), "image");
+                            if (mark != null) {
+                                slots.put(com.core.anki.AnkiCardConfig.SLOT_SCREENSHOT, mark);
+                            }
+                        } catch (Throwable t) {
+                            Log.w(TAG, "card screenshot import failed", t);
                         }
-                        String mark = helper.addMedia(voiceFile, voiceFile.getName(), "audio");
-                        if (mark != null) sentenceField.append(" ").append(mark);
-                    } catch (Throwable t) {
-                        Log.w(TAG, "word card voice import failed", t);
                     }
                 }
-                Long noteId = helper.addNote(modelId, deckId,
-                        new String[]{term, reading, meaning.toString(), sentenceField.toString()},
+
+                // 例句语音槽位：游戏配对语音优先（auto/game），无则回退 TTS（auto/tts）
+                String sentAudioField = fieldMap.get(com.core.anki.AnkiCardConfig.SLOT_SENTENCE_AUDIO);
+                boolean wantSentenceAudio = sentAudioField != null && !sentAudioField.isEmpty()
+                        && !com.core.anki.AnkiCardConfig.VOICE_OFF.equals(voiceSource);
+                if (wantSentenceAudio) {
+                    byte[] voice = com.core.anki.AnkiCardConfig.VOICE_TTS.equals(voiceSource)
+                            ? null : bridge.ensureVoiceBytes();
+                    if (voice == null && !com.core.anki.AnkiCardConfig.VOICE_GAME.equals(voiceSource)) {
+                        voice = ttsSynthesizeQuiet(sentence);
+                    }
+                    if (voice != null) {
+                        try {
+                            String base = sanitize(bridge.getVoiceName());
+                            if (base.isEmpty()) base = "sentence_" + timestamp();
+                            File vf = new File(dir, "anki_s_" + base);
+                            try (FileOutputStream fos = new FileOutputStream(vf)) {
+                                fos.write(voice);
+                            }
+                            String mark = helper.addMedia(vf, vf.getName(), "audio");
+                            if (mark != null) {
+                                slots.put(com.core.anki.AnkiCardConfig.SLOT_SENTENCE_AUDIO, mark);
+                            }
+                        } catch (Throwable t) {
+                            Log.w(TAG, "card sentence audio import failed", t);
+                        }
+                    }
+                }
+
+                // 单词语音槽位：TTS 生成
+                String wordAudioField = fieldMap.get(com.core.anki.AnkiCardConfig.SLOT_WORD_AUDIO);
+                if (wordAudioField != null && !wordAudioField.isEmpty()) {
+                    byte[] wav = ttsSynthesizeQuiet(term);
+                    if (wav != null) {
+                        try {
+                            File vf = new File(dir, "anki_w_" + timestamp() + ".wav");
+                            try (FileOutputStream fos = new FileOutputStream(vf)) {
+                                fos.write(wav);
+                            }
+                            String mark = helper.addMedia(vf, vf.getName(), "audio");
+                            if (mark != null) {
+                                slots.put(com.core.anki.AnkiCardConfig.SLOT_WORD_AUDIO, mark);
+                            }
+                        } catch (Throwable t) {
+                            Log.w(TAG, "card word audio import failed", t);
+                        }
+                    }
+                }
+
+                // ---- 按模型字段序装配：字段名反查映射槽位 ----
+                java.util.Map<String, String> fieldToSlot = new java.util.LinkedHashMap<>();
+                for (java.util.Map.Entry<String, String> e : fieldMap.entrySet()) {
+                    if (!fieldToSlot.containsKey(e.getValue())) fieldToSlot.put(e.getValue(), e.getKey());
+                }
+                String[] fields = new String[modelFields.length];
+                for (int i = 0; i < modelFields.length; i++) {
+                    String slot = fieldToSlot.get(modelFields[i]);
+                    fields[i] = slot == null ? "" : java.util.Objects.toString(slots.get(slot), "");
+                }
+                Long noteId = helper.addNote(modelId, deckId, fields,
                         new java.util.HashSet<>(java.util.Collections.singletonList("TyranorNext")));
                 main.post(() -> toast(noteId != null
                         ? R.string.engine_ons_extract_word_added
@@ -1477,11 +1640,13 @@ public class OnsExtractPanel {
             main.post(() -> {
                 if (requestId != translateRequestId) return; // 翻句或已有更新请求
                 if (tr != null) {
+                    lastTranslation = tr;
                     transView.setTag(Boolean.TRUE);
                     transView.setText(activity.getString(
                             R.string.engine_ons_extract_translate_line, tr));
                     transView.setVisibility(View.VISIBLE);
                 } else {
+                    lastTranslation = "";
                     transView.setTag(null);
                     transView.setVisibility(View.GONE);
                     toast(activity.getString(

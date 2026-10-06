@@ -2,9 +2,38 @@
 
 > 本文件由 AI 会话维护，记录本仓库功能线的实施进度。配合 `MEMORY.md`（环境/踩坑/决策，同目录）与
 > `docs/说明/游戏内提取制卡功能方案.md`（提取功能线方案）阅读。
-> 更新时间：2026-10-05
+> 更新时间：2026-10-06
 
-## 2026-10-05 会话（十七）：健壮性第九批（存档重定向日志限流）
+## 2026-10-06 会话（十八）：制卡自定义字段映射（参考 web game text 扩展方案）
+
+- **AnkiCardConfig**（新，com.core.anki）：全局制卡配置——牌组名/模型名/字段映射
+  （逻辑槽位→Anki 模型字段名，JSON 存储）/制卡时自动截图开关/例句语音源
+  （自动=游戏配对优先回退 TTS / 仅游戏 / 仅 TTS / 关闭）。槽位九种：单词、读音、
+  释义、例句、整页、译文、截图、例句语音、单词语音。默认映射 = 内置默认模型
+  TyranorNext Word 四字段。
+- **makeWordCard 重写**：按映射装配模型字段——模型已存在则经 getFieldList 读
+  真实字段列表（AddContentApi），不存在且名为默认 → 兜底创建四字段模型，
+  自定义名不存在 → 明确报错；未映射字段留空。新槽位解析：
+  截图 = captureGameFrame（新增，PixelCopy 主线程同步限时等待，Surface 优先
+  回退整窗）→ addMedia → `<img>`；例句语音 = bridge.ensureVoiceBytes()（游戏
+  配对）按语音源策略回退 MultiTtsClient.synthesize → addMedia → `[sound:]`；
+  单词语音 = TTS(term)；译文 = 新增 lastTranslation 字段（翻译成功时记录）。
+- **制卡设置 UI**（OnsExtractSettingsDialogs.showAnkiCardSettings）：牌组/模型
+  输入 + 语音源循环 + 自动截图开关 + 字段映射编辑（模型字段列表自 AnkiDroid
+  读取，点行循环槽位；读取失败提示并退回默认四字段）。入口=设置页「制卡设置」
+  （翻译设置旁）。
+- **实测自曝自修**：设置页 ctx 被 AppLocaleController 包装（非 Activity 实例），
+  既有翻译设置入口 `ctx as Activity` 是潜伏崩溃（本次新入口首次触发，崩溃日志
+  精准定位）——两处都改经 AppLocaleController.findActivity 解包。
+- **端到端实测**：默认映射制卡 ✓；把 Word 字段内容源改为「读音」保存 → 制卡 →
+  AnkiDroid Card Browser 最新卡排序字段 = つづく（读音而非单词）✓；测试映射
+  已清理（重置 anki_card_config.xml 回默认）。截图/语音槽位走同一装配路径，
+  未在本次模拟器环境单独验证（默认模型无对应字段；kazurauta 无语音且未配
+  MultiTTS），待有语音材料时复核。
+- 已知简化：制卡设置保存提示复用 api_saved 文案（含「再次点翻译生效」字样，
+  与制卡语境不符），后续换中性「已保存」。
+
+## 2026-10-05 会话（十七）：健壮性第九批（存档重定向日志限流）：健壮性第九批（存档重定向日志限流）
 
 - **KrPathUtils 重定向日志限流**：游戏高频反复开关同一批存档文件（且 .bak 备份
   名带时间戳，按路径去重无效——首版目标去重实测 265 条），日志以每秒数行的

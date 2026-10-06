@@ -12,6 +12,8 @@ import android.widget.ScrollView;
 import android.widget.TextView;
 import android.widget.Toast;
 
+import com.core.anki.AnkiCardConfig;
+import com.core.anki.AnkiDroidHelper;
 import com.core.engine.R;
 
 
@@ -399,5 +401,207 @@ public final class OnsExtractSettingsDialogs {
 
     private static int dp(Activity activity, int value) {
         return Math.round(value * activity.getResources().getDisplayMetrics().density);
+    }
+
+    /** 字段映射行（标题为模型字段名字符串，非资源 id 的变体）。 */
+    private static LinearLayout settingNavRowText(Activity activity, String title, TextView valueView) {
+        LinearLayout row = new LinearLayout(activity);
+        row.setOrientation(LinearLayout.HORIZONTAL);
+        row.setGravity(Gravity.CENTER_VERTICAL);
+        row.setPadding(0, dp(activity, 10), 0, dp(activity, 10));
+        row.setClickable(true);
+        TextView label = new TextView(activity);
+        label.setText(title);
+        label.setTextColor(TEXT_BODY);
+        label.setTextSize(14);
+        row.addView(label, new LinearLayout.LayoutParams(
+                0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f));
+        if (valueView != null) row.addView(valueView);
+        return row;
+    }
+
+    /** 制卡设置（AnkiDroid）：牌组 / 模型 / 字段映射（内容槽位→字段）+ 截图与语音源。
+     *  参考 web game text 扩展 ankiFieldMap：模型字段列表自 AnkiDroid 读取，
+     *  点字段行循环切换内容槽位（无/单词/读音/释义/例句/整页/译文/截图/例句语音/单词语音）。 */
+    public static void showAnkiCardSettings(Activity activity) {
+        LinearLayout box = new LinearLayout(activity);
+        box.setOrientation(LinearLayout.VERTICAL);
+        int pad = dp(activity, 16);
+        box.setPadding(pad, dp(activity, 8), pad, 0);
+
+        EditText deckField = settingField(activity, box,
+                R.string.engine_ons_anki_card_deck, AnkiCardConfig.deck(activity));
+        EditText modelField = settingField(activity, box,
+                R.string.engine_ons_anki_card_model, AnkiCardConfig.model(activity));
+
+        // 例句语音源行（点击循环：自动→游戏→TTS→关）
+        final String[] voiceKeys = {AnkiCardConfig.VOICE_AUTO, AnkiCardConfig.VOICE_GAME,
+                AnkiCardConfig.VOICE_TTS, AnkiCardConfig.VOICE_OFF};
+        final String[] voiceLabels = {
+                activity.getString(R.string.engine_ons_anki_voice_auto),
+                activity.getString(R.string.engine_ons_anki_voice_game),
+                activity.getString(R.string.engine_ons_anki_voice_tts),
+                activity.getString(R.string.engine_ons_anki_voice_off)};
+        final String[] voiceState = {AnkiCardConfig.voiceSource(activity)};
+        TextView voiceValue = new TextView(activity);
+        styleNavValue(activity, voiceValue);
+        Runnable syncVoice = () -> {
+            int idx = 0;
+            for (int i = 0; i < voiceKeys.length; i++) {
+                if (voiceKeys[i].equals(voiceState[0])) { idx = i; break; }
+            }
+            voiceValue.setText(voiceLabels[idx]);
+        };
+        syncVoice.run();
+        LinearLayout voiceRow = settingNavRow(activity, R.drawable.ic_volume,
+                R.string.engine_ons_anki_card_voice, voiceValue);
+        voiceRow.setOnClickListener(v -> {
+            int idx = 0;
+            for (int i = 0; i < voiceKeys.length; i++) {
+                if (voiceKeys[i].equals(voiceState[0])) { idx = i; break; }
+            }
+            voiceState[0] = voiceKeys[(idx + 1) % voiceKeys.length];
+            syncVoice.run();
+        });
+        box.addView(voiceRow);
+
+        // 自动截图行（点击开关）
+        final boolean[] captureState = {AnkiCardConfig.captureOnCard(activity)};
+        TextView shotValue = new TextView(activity);
+        styleNavValue(activity, shotValue);
+        Runnable syncShot = () -> shotValue.setText(captureState[0]
+                ? activity.getString(R.string.engine_ons_anki_on)
+                : activity.getString(R.string.engine_ons_anki_off));
+        syncShot.run();
+        LinearLayout shotRow = settingNavRow(activity, R.drawable.ic_settings,
+                R.string.engine_ons_anki_card_capture, shotValue);
+        shotRow.setOnClickListener(v -> {
+            captureState[0] = !captureState[0];
+            syncShot.run();
+        });
+        box.addView(shotRow);
+
+        TextView section = new TextView(activity);
+        section.setText(R.string.engine_ons_anki_card_fields);
+        section.setTextColor(TEXT_BUTTON);
+        section.setTextSize(13);
+        section.setPadding(0, dp(activity, 12), 0, 0);
+        box.addView(section, matchWrap());
+
+        // 模型字段读取：未装/未授权/模型不存在 → 提示 + 默认四字段兜底编辑
+        String modelName = AnkiCardConfig.model(activity);
+        java.util.List<String> modelFields = new java.util.ArrayList<>();
+        String readError = null;
+        try {
+            AnkiDroidHelper helper = new AnkiDroidHelper(activity);
+            if (!helper.isAnkiDroidInstalled()) {
+                readError = activity.getString(R.string.engine_ons_extract_anki_not_installed);
+            } else if (!helper.hasPermission()) {
+                readError = activity.getString(R.string.engine_ons_extract_anki_need_permission);
+            } else {
+                Long mid = helper.findModelId(modelName);
+                if (mid == null) {
+                    readError = activity.getString(
+                            R.string.engine_ons_extract_anki_model_missing, modelName);
+                } else {
+                    String[] fl = helper.getModelFieldNames(mid);
+                    if (fl == null || fl.length == 0) {
+                        readError = activity.getString(R.string.engine_ons_anki_card_field_read_failed);
+                    } else {
+                        java.util.Collections.addAll(modelFields, fl);
+                    }
+                }
+            }
+        } catch (Throwable t) {
+            readError = activity.getString(R.string.engine_ons_anki_card_field_read_failed);
+        }
+        if (modelFields.isEmpty()) {
+            java.util.Collections.addAll(modelFields, "Word", "Reading", "Meaning", "Sentence");
+        }
+        if (readError != null) {
+            TextView warn = new TextView(activity);
+            warn.setText(readError + activity.getString(R.string.engine_ons_anki_card_default_fields));
+            warn.setTextColor(TEXT_DIM);
+            warn.setTextSize(11);
+            box.addView(warn, matchWrap());
+        }
+
+        // 字段行：点击循环内容槽位
+        final java.util.Map<String, String> slotByField = new java.util.HashMap<>();
+        for (java.util.Map.Entry<String, String> e
+                : AnkiCardConfig.fieldMap(activity).entrySet()) {
+            if (!slotByField.containsKey(e.getValue())) slotByField.put(e.getValue(), e.getKey());
+        }
+        final String[] slotOrder = {null,
+                AnkiCardConfig.SLOT_WORD, AnkiCardConfig.SLOT_READING,
+                AnkiCardConfig.SLOT_MEANING, AnkiCardConfig.SLOT_SENTENCE,
+                AnkiCardConfig.SLOT_PAGE, AnkiCardConfig.SLOT_TRANSLATION,
+                AnkiCardConfig.SLOT_SCREENSHOT, AnkiCardConfig.SLOT_SENTENCE_AUDIO,
+                AnkiCardConfig.SLOT_WORD_AUDIO};
+        final String[] slotLabels = {
+                activity.getString(R.string.engine_ons_anki_slot_none),
+                activity.getString(R.string.engine_ons_anki_slot_word),
+                activity.getString(R.string.engine_ons_anki_slot_reading),
+                activity.getString(R.string.engine_ons_anki_slot_meaning),
+                activity.getString(R.string.engine_ons_anki_slot_sentence),
+                activity.getString(R.string.engine_ons_anki_slot_page),
+                activity.getString(R.string.engine_ons_anki_slot_translation),
+                activity.getString(R.string.engine_ons_anki_slot_screenshot),
+                activity.getString(R.string.engine_ons_anki_slot_sentence_audio),
+                activity.getString(R.string.engine_ons_anki_slot_word_audio)};
+        for (final String field : modelFields) {
+            TextView value = new TextView(activity);
+            styleNavValue(activity, value);
+            Runnable sync = () -> {
+                String slot = slotByField.get(field);
+                String label = slotLabels[0];
+                if (slot != null) {
+                    for (int i = 1; i < slotOrder.length; i++) {
+                        if (slotOrder[i] != null && slotOrder[i].equals(slot)) {
+                            label = slotLabels[i];
+                            break;
+                        }
+                    }
+                }
+                value.setText(label);
+            };
+            sync.run();
+            LinearLayout row = settingNavRowText(activity, field, value);
+            row.setOnClickListener(v -> {
+                String cur = slotByField.get(field);
+                int idx2 = 0;
+                for (int i = 1; i < slotOrder.length; i++) {
+                    if (slotOrder[i] != null && slotOrder[i].equals(cur)) { idx2 = i; break; }
+                }
+                int next = (idx2 + 1) % slotOrder.length;
+                String nextSlot = slotOrder[next];
+                if (nextSlot == null) slotByField.remove(field); else slotByField.put(field, nextSlot);
+                sync.run();
+            });
+            box.addView(row);
+        }
+
+        ScrollView scroller = new ScrollView(activity);
+        scroller.addView(box);
+        new android.app.AlertDialog.Builder(activity)
+                .setTitle(R.string.engine_ons_anki_card_title)
+                .setView(scroller)
+                .setPositiveButton(android.R.string.ok, (d, w) -> {
+                    AnkiCardConfig.setDeck(activity, textOr(deckField, AnkiCardConfig.DEFAULT_DECK));
+                    AnkiCardConfig.setModel(activity, textOr(modelField, AnkiCardConfig.DEFAULT_MODEL));
+                    AnkiCardConfig.setCaptureOnCard(activity, captureState[0]);
+                    AnkiCardConfig.setVoiceSource(activity, voiceState[0]);
+                    java.util.Map<String, String> map = new java.util.LinkedHashMap<>();
+                    for (java.util.Map.Entry<String, String> e : slotByField.entrySet()) {
+                        if (e.getValue() != null && !e.getValue().isEmpty()) {
+                            map.put(e.getValue(), e.getKey());
+                        }
+                    }
+                    AnkiCardConfig.setFieldMap(activity, map);
+                    Toast.makeText(activity, R.string.engine_ons_extract_api_saved,
+                            Toast.LENGTH_SHORT).show();
+                })
+                .setNegativeButton(android.R.string.cancel, null)
+                .show();
     }
 }
