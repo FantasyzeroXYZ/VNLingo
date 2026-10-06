@@ -1021,8 +1021,9 @@ public class OnsExtractPanel {
                 transView.setText("");
             }
         }
-        // 自动朗读在面板隐藏时也要生效（TTS 直呼线程安全）；配对语音由游戏播放，不重复播
-        if (ttsAuto) autoPlayForNewSentence(sentence);
+        // 自动朗读在面板隐藏时也要生效（TTS 直呼线程安全）；配对语音由游戏播放，不重复播。
+        // 生效判定在 autoPlayForNewSentence 内（面板「自动」快调 OR 设置页「自动朗读」全局开关）
+        autoPlayForNewSentence(sentence);
         if (!expanded || panel == null) return;
         final String sentenceFinal = sentence;
         final String voiceName = bridge.getVoiceName();
@@ -2544,12 +2545,18 @@ public class OnsExtractPanel {
     }
 
     private void autoPlayForNewSentence(String sentence) {
-        if (!ttsAuto || sentence == null || sentence.isEmpty()) return;
+        if (sentence == null || sentence.isEmpty()) return;
         if (sentence.equals(lastSpokenSentence)) return;
+        // 生效条件 = 面板「自动」快调 OR 设置页「自动朗读」全局开关（后者面板隐藏
+        // 也生效——隐藏剧情文本框时更新文本后照常自动朗读）
+        boolean autoOn = ttsAuto || OnsTtsEngines.autoRead(activity);
+        if (!autoOn) return;
         lastSpokenSentence = sentence;
         // 有配对语音时游戏自身已在播放，自动模式不重复播；仅对无语音句子 TTS，
-        // 重播由用户手动点「播放」按钮
-        if (facade.getVoiceName().isEmpty() && ttsEnabled) {
+        // 重播由用户手动点「播放」按钮。
+        // 自动路径不受面板「TTS 朗读」开关牵制（面板隐藏时该开关不可达，会把全局
+        // 自动朗读静音）——ttsEnabled 只管手动「播放」按钮。
+        if (facade.getVoiceName().isEmpty() && (ttsEnabled || OnsTtsEngines.autoRead(activity))) {
             speakSentence();
         }
     }

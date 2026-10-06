@@ -4,6 +4,25 @@
 > `docs/说明/游戏内提取制卡功能方案.md`（提取功能线方案）阅读。
 > 更新时间：2026-10-06
 
+## 2026-10-06 会话（二十九）：自动朗读修复——面板隐藏时全局开关真正生效
+
+- **需求**（用户）：TTS 自动播放开启/关闭；即使隐藏剧情文本框，自动播放开启时
+  更新文本后也要自动朗读。
+- **诊断（三处断点）**：
+  1. 设置页 TTS「自动朗读」开关写 `ons_tts_engine/auto_read`（OnsTtsEngines），
+     而面板自动播放检查的是 `ons_extract_tts/tts_auto`（面板「自动」键）——
+     两个键互不相通，全局开关形同虚设；
+  2. 调用处 `if (ttsAuto) autoPlayForNewSentence(...)` 全局开关根本进不来；
+  3. （深层）自动路径还被面板「TTS 朗读」开关（ttsEnabled，旧测试遗留 false）
+     静默拦下——面板隐藏时该开关不可达，全局自动朗读被永久静音。
+- **修复**：autoPlayForNewSentence 生效条件 = 面板「自动」快调 OR 全局
+  「自动朗读」；调用处无条件进入（判定内收）；自动路径不受 ttsEnabled 牵制
+  （ttsEnabled 只管手动「播放」按钮；自动朗读的关闭 = 关全局开关或面板自动键）。
+  有配对语音的句子仍由游戏自身播放不重复播（设计不变）。
+- **模拟器实测**（kazurauta，面板全程隐藏，注入 auto_read=true）：新句到达 →
+  `tts init ready=true`（系统 TTS 初始化并朗读）→ 点击推进后下一句再次自动
+  触发 ✓；定位过程加入临时门控日志（已移除）。
+
 ## 2026-10-06 会话（二十八）：翻译源扩展（参考 MoeTranslate / overlay-translator 移植）
 
 - **需求**（用户）：从 MoeTranslate-5.5.1 与 overlay-translator-0.4.7 搬运
