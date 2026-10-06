@@ -12,6 +12,11 @@
       AnkiDroid 全链路通过（kazurauta；附带修 renderSentence CJK 死循环 ANR、
       [FTLN] 未接入提取桥、打字机延伸句被截断三个缺陷）
 
+- [x] 统一虚拟鼠标抽象（手柄通用鼠标模拟）：EngineVirtualMouse 三宿主共用
+      （ONS 触摸注入 / KRKR 合成 MotionEvent / Artemis 内核 InjectHostTouch +
+      可聚焦光标窗口按键路由），模拟器实测三引擎定位点击与对话推进全通过；
+      内核 artemis-compat 补 InjectHostTouch JNI + 摇杆过滤（pluginVersion 32）
+
 ## 未完成 / 遗留 
 - [ ] KRKR 对白完整还原（说话人行带重绘链）——多行页「只出末段」已由连续页
       累积显示解决（2026-10-06 会话二十四：点击+新文本才翻页，否则拼接显示，

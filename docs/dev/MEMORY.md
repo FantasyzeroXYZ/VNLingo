@@ -157,7 +157,35 @@
 - **设置归位（用户决定）**：词典管理=底栏词典页；翻译/云同步=应用设置页
   （OnsExtractSettingsDialogs 宿主无关弹窗）；游戏内面板设置只留朗读+显示。
 - **手柄重映射**：GamepadRemap 快照式（宿主 onResume 刷新），映射在 dispatchKeyEvent
-  最前端生效，先于提取面板/虚拟鼠标/游戏链路。
+  最前端生效，先于提取面板/虚拟鼠标/游戏链路。**注意：Artemis（NativeActivity）
+  的按键不经 dispatchKeyEvent（2026-10-06 实测修正）——其重映射仅在虚拟鼠标模式
+  （光标窗口接管按键焦点）时经 routeMouseKey 生效**；统一虚拟鼠标 =
+  `com.core.engine.EngineVirtualMouse`（ONS/KRKR/Artemis 共用；Artemis 点击走
+  内核 InjectHostTouch JNI、按键走可聚焦光标窗口，见会话二十五）。
+
+## 实测踩坑（2026-10-06 会话二十五新增：虚拟鼠标与 NativeActivity 输入）
+
+1. **NativeActivity 的按键不经 Activity.dispatchKeyEvent（实证，修正旧认知）**：
+   Artemis 宿主此前「dispatchKeyEvent 前置手柄重映射」从未真正生效（当时未真机
+   手柄验证）——D-pad/A 根本到不了 Java（键走 InputQueue 到内核）。应用层拿键的
+   可行路径 = 光标窗口设为可聚焦（移除 FLAG_NOT_FOCUSABLE）接管按键焦点，事件
+   经 ViewRootImpl 派发到窗口根视图的 dispatchKeyEvent；模式关时窗口
+   NOT_FOCUSABLE，按键自动归还游戏窗口。内核未注册 focus 回调 → 游戏不因失焦
+   暂停（已核实）。
+2. **NativeActivity 的触摸应用层不可注入**：触摸 InputQueue 为 native 独占，
+   dispatchTouchEvent 无对象可派发（无 SurfaceView/视图树）。唯一路径 = 内核侧
+   注入 JNI（artemis-compat InjectHostTouch，与 InjectHostKey 同构，key id 1=
+   鼠标左键，坐标为窗口像素由引擎换算 stage）。官方 revision 内核无此符号，
+   调用处必须 catch UnsatisfiedLinkError 降级。
+3. **摇杆事件会被内核当触摸**：NativeActivity 窗口的 SOURCE_CLASS_JOYSTICK
+   Motion 事件轴值是 -1..1 归一化，内核 OnInputEvent 不过滤会被误当窗口像素
+   触摸入队（坐标 (0.7,-0.3) 之类）。已在内核过滤该 source 类。
+4. **手柄键注入验证可模拟**：无实体手柄时 `adb shell input keyevent` 直发
+   KEYCODE_DPAD_*/BUTTON_A(96) 即可全链路验证（EngineVirtualMouse 只看 keycode
+   不看 source）；光标位移验证用前后截图 diff（箭头 ~26px 白色带黑描边），
+   白像素匹配会撞上按键组/游戏文字，diff 最可靠。
+5. **游戏菜单点击测试要点**：定位点击的靶点要按游戏菜单文字的实际物理坐标算
+   （截图 2000 宽显示 × 1.2 缩放），空白处点击无反应会被误判成「点击失效」。
 
 ## 实测踩坑（2026-10-06 会话二十三新增：设置页入口与 TTS 链路）
 

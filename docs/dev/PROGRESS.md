@@ -4,6 +4,50 @@
 > `docs/说明/游戏内提取制卡功能方案.md`（提取功能线方案）阅读。
 > 更新时间：2026-10-06
 
+## 2026-10-06 会话（二十五）：统一虚拟鼠标抽象（手柄通用鼠标模拟，ONS/KRKR/Artemis）
+
+- **需求**（用户）：构造统一的虚拟鼠标抽象，手柄控制光标移动 + 确认键实现
+  触摸点击，覆盖 ONS/KRKR/Artemis 三宿主；不修改引擎实现，主要在应用层完成。
+- **统一抽象**：`OnsVirtualMouse` 迁移为 `com.core.engine.EngineVirtualMouse`
+  （与 EngineLeftButtons 同包）。宿主只需提供三件事，引擎实现零改动：
+  surfaceProvider（坐标基准；NativeActivity 宿主给 decorView）、clickInjector
+  （一次完整点击：视图系=合成 MotionEvent dispatchTouchEvent，NativeActivity=
+  内核触摸注入 JNI）、overlayClickHandler（光标悬停面板控件时优先点平台）。
+  D-pad 移动（长按加速）/ 左摇杆连续移动 / A（BUTTON_A）确认。
+- **ONS**：仅改用 EngineVirtualMouse（行为不变，键路由/摇杆/注入全既有）。
+- **KRKR**（KirikiroidLauncherBaseActivity）：光标画在覆盖层；点击=合成
+  MotionEvent 派发 GLSurfaceView（与手指同链路，不触碰引擎）；dispatchKeyEvent
+  前置鼠标路由（面板之后）、新增 dispatchGenericMotionEvent 摇杆路由；右缘
+  点击模式键由 null 供应商改为真实开关（prefs krkr_virtual_mouse，默认关）。
+- **Artemis**（两个关键点，均实测发现）：
+  1. **触摸**：NativeActivity 的触摸 InputQueue 为 native 独占，应用层无法
+     dispatchTouchEvent——内核（artemis-compat，自研带桥构建）按 InjectHostKey
+     先例补对称的 `InjectHostTouch(x,y,down)` JNI（key id 1=鼠标左键，与物理
+     触摸同管线），pluginVersion 31→32 触发自动重装；同时 OnInputEvent 过滤
+     SOURCE_CLASS_JOYSTICK（摇杆归一化轴值此前会被误当窗口像素触摸注入引擎）。
+     官方内核无该符号 → 调用处捕获降级为无点击。
+  2. **按键**：实测 NativeActivity 的按键**不经 Activity.dispatchKeyEvent**
+     （D-pad/A 到不了 Java——此前「接线五处」的 Artemis 手柄重映射实际从未
+     生效过，MEMORY 已修正）。鼠标模式把光标窗口设为可聚焦（FLAG_NOT_FOCUSABLE
+     移除）接管按键焦点：KeyCatcher.dispatchKeyEvent → GamepadRemap → 鼠标
+     handleKey，未消费键转发 ArtemisActivity 的 EmulateKeyEvent 映射链（鼠标
+     模式下 ENTER/ESC/SKIP 仍可用）；模式关时窗口 NOT_FOCUSABLE，按键归还
+     游戏（游戏窗口失焦不暂停引擎——内核未注册 focus 回调，已核实）。
+  3. 光标窗口 TYPE_APPLICATION + NOT_TOUCHABLE（触摸全穿透游戏）；显式
+     gravity=TOP|START（MEMORY 既有坑）。
+- **模拟器端到端实测（三引擎全过）**：
+  - KRKR kazurauta：右缘新点击模式键开关；D-pad 移动光标；A 定位点击
+    Start 菜单项进游戏；A 推进对话 ✓
+  - Artemis blossom（新内核 32 自动重装）：D-pad 移动；A 定位点击 START；
+    A 推进至正式对话（extract 桥文本+语音配对正常）✓
+  - ONS esg（回归）：点击模式键开启后光标出现；A 定位点击 NEW GAME；
+    A 推进对话 ✓（此前模式被关过——ons_overlay virtual_mouse_mode=false，
+    实测点击模式键开关正常）
+- 已知边界：Artemis 鼠标模式下按键被光标窗口接管（未消费键经映射链转发，
+  游戏直收的手柄键在鼠标模式不直达）；官方 revision 内核无 InjectHostTouch
+  （无点击、有光标）；摇杆在 Artemis 上不达 Java（dispatchGenericMotionEvent
+  对 NativeActivity 不触发），移动靠 D-pad。
+
 ## 2026-10-06 会话（二十四）：连续页累积显示（用户规则：点击+新文本才翻页）
 
 - **需求**（用户两次补充）：hook 文本此前「多行页只出末段」；改为「点击推进 +
