@@ -136,6 +136,16 @@
 
 - 提取语义统一为「完整对话 + 配对语音 + 截图」，各引擎只做事件源
   （`ExtractFacade` 接口），面板/词典/翻译/制卡管线全复用（engine `com.core.ons`）。
+- **连续页累积（2026-10-06 会话二十四，用户规则）**：「点击推进 + 有新文本」
+  才翻页覆盖，否则累积拼接显示（同页换行 `\n` 追加 / KRKR 尾部缝合 / 打字机
+  延伸增量）。实现在 `OnsExtractBridge.handleDialogue`（ONS+KRKR 共用），
+  宿主经 `OnsExtractBridge.markPageAdvance()`（静态）上报推进点击——只有游戏
+  输入路径（surface 触摸 UP、ENTER/DPAD_CENTER 透传、左缘 OK/NEXT/SKIP/AUTO）
+  调用；面板/词典点击不经过该路径，不会打断显示。**快照延伸（字节前缀差分）
+  优先于点击标记**：点打字中的画面只加速不翻页。候选切换（cand_idx>0）仍会
+  覆盖句栏显示（既有机制）——排查显示问题先查 `ons_extract_tts.xml` 的
+  `cand_idx_<游戏>`。Artemis（内核消息层累积）与 Web（整框事件）天然满足，
+  未改动。
 - 存档管理：条目管理页（应用层）承担导入导出；游戏内不再放存档 UI；
   facade 的存档数据通道（SaveZipUtil/WebSaveArchive）保留作数据能力。
 - ONS 编码：保持 gbk/sjis/utf8 手选（默认 gbk），不做 auto 探测。
