@@ -25,8 +25,12 @@ object DiagLog {
     private val lock = Any()
     private val mem = ArrayDeque<String>()
 
+    @Volatile
+    private var enabled = true
+
     @JvmStatic
     fun debug(tag: String, message: String) {
+        if (!enabled) return
         try {
             val stamp = SimpleDateFormat("MM-dd HH:mm:ss.SSS", Locale.US).format(Date())
             val line = "[$stamp $tag] $message"
@@ -88,6 +92,18 @@ object DiagLog {
     @JvmStatic
     fun install(context: Context) {
         appContext = context.applicationContext
+        enabled = context.getSharedPreferences("diag_settings", Context.MODE_PRIVATE)
+            .getBoolean("diag_enabled", true)
     }
+
+    @JvmStatic
+    fun setEnabled(context: Context, value: Boolean) {
+        enabled = value
+        context.getSharedPreferences("diag_settings", Context.MODE_PRIVATE)
+            .edit().putBoolean("diag_enabled", value).apply()
+    }
+
+    @JvmStatic
+    fun isEnabled(): Boolean = enabled
 
 }

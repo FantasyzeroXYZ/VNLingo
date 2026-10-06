@@ -32,6 +32,8 @@
     <string name="settings_tts">TTS</string>
     <string name="settings_dict_page">Dictionaries</string>
     <string name="settings_gamepad">Gamepad settings</string>
+    <string name="settings_diag_disable">Disable logging</string>
+    <string name="settings_diag_enable">Enable logging</string>
     <string name="settings_diag_runtime">Runtime log (diag.log, %1$s)</string>
     <string name="settings_diag_view">View runtime log</string>
     <string name="settings_diag_clear">Clear runtime log</string>

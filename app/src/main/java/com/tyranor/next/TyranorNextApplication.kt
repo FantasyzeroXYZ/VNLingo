@@ -24,6 +24,8 @@ class TyranorNextApplication : Application(), DefaultLifecycleObserver, Configur
         CrashLogWriter.install(this)
         // 运行时诊断日志（调试日志页「运行时日志」数据源）；引擎子进程同样安装
         com.core.diag.DiagLog.install(this)
+        // 游玩会话制统计生命周期钩子
+        com.tyranor.next.core.play.PlaySessionLifecycle.install(this)
         // 共享 prefs 文件更名（yukihub_prefs → tyranor_prefs）：所有进程（含引擎子进程）
         // 启动最早时机一次性迁移，必须先于任何 EngineSettingsStore/引擎偏好读取。
         PrefsRenameMigration.migrate(this)

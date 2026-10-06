@@ -32,6 +32,8 @@
     <string name="settings_tts">TTS 設定</string>
     <string name="settings_dict_page">辞書設定</string>
     <string name="settings_gamepad">コントローラー設定</string>
+    <string name="settings_diag_disable">記録を停止</string>
+    <string name="settings_diag_enable">記録を開始</string>
     <string name="settings_diag_runtime">ランタイムログ（diag.log、%1$s）</string>
     <string name="settings_diag_view">ランタイムログを表示</string>
     <string name="settings_diag_clear">ランタイムログを消去</string>

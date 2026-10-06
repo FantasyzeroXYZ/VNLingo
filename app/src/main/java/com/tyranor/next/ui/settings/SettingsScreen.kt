@@ -528,6 +528,16 @@ fun SettingsScreen(modifier: Modifier = Modifier) {
                                                 }) {
                                                     Text(stringResource(R.string.settings_diag_clear))
                                                 }
+                                            TextButton(onClick = {
+                                                com.core.diag.DiagLog.setEnabled(ctx,
+                                                    !com.core.diag.DiagLog.isEnabled())
+                                            }) {
+                                                Text(stringResource(
+                                                    if (com.core.diag.DiagLog.isEnabled())
+                                                        R.string.settings_diag_disable
+                                                    else R.string.settings_diag_enable
+                                                ))
+                                            }
                                                 TextButton(onClick = {
                                                     runCatching {
                                                         val uri = FileProvider.getUriForFile(
