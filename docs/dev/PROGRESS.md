@@ -4,6 +4,25 @@
 > `docs/说明/游戏内提取制卡功能方案.md`（提取功能线方案）阅读。
 > 更新时间：2026-10-06
 
+## 2026-10-06 会话（二十）：TTS 设置全量化（TrackReader 参数面对齐）
+
+- **TTS 设置补全**（用户反馈「全部搬过来」）：弹窗从三行扩展为全参数——
+  语速 / 音高 / 音量（0..100，25 步进档位循环）/ 发音人（按引擎拉取列表：
+  MultiTTS 经 /voices 目录 JSON 展平、系统引擎经 TextToSpeech.getVoices、
+  HTTP 提示在模板中指定）/ MultiTTS 服务器地址（host:port 可配置）/
+  引擎 / HTTP 模板 / 试听（带全部参数）。
+- **MultiTtsClient 扩展**：synthesizeOn/isServiceUpOn/fetchVoiceNamesOn
+  （指定 host:port）；服务器地址可配置（原硬编码 127.0.0.1:8774）；
+  fetchVoiceNames 解析 /voices 目录 JSON（catalog 展平）。
+- **参数持久化**（OnsTtsEngines）：rate/pitch/volume/voice/multi_host 全局
+  存取；面板朗读与制卡合成（ttsSynthesizeQuiet）全部改用配置参数——
+  语速仍受游戏内语速档位（ttsRate）快调覆盖；系统引擎新增音高与发音人
+  （Voice.name 匹配 setVoice）。
+- **实测**：弹窗全参数渲染 ✓；语速 50→75 循环 + 持久化（prefs rate=75）✓；
+  引擎/HTTP 模板联动与持久化（上轮已验）✓。音量默认改 50 与档位网格一致。
+- 已知边界：系统 TTS 音色列表含全部语言（以 #语言 前缀分组便于筛选），
+  未按当前句语言过滤；试听的 HTTP/MultiTTS 合成需对应服务在线。
+
 ## 2026-10-06 会话（十九）：TTS 多引擎（系统/MultiTTS/HTTP API）+ 四设置入口
 
 - **OnsTtsEngines**（新）：TTS 引擎路由——安卓自带 TTS（系统 TextToSpeech 直呼，

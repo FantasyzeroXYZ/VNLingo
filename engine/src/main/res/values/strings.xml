@@ -201,6 +201,14 @@
     <string name="engine_ons_tts_test">试听（用当前引擎朗读测试句）</string>
     <string name="engine_ons_tts_test_done">试听已请求</string>
     <string name="engine_ons_tts_system_hint">安卓自带 TTS：使用系统 TextToSpeech 直呼（无音频产物，不用于制卡音频）；高级引擎关闭时朗读走此路径</string>
+    <string name="engine_ons_tts_rate">语速</string>
+    <string name="engine_ons_tts_pitch">音高</string>
+    <string name="engine_ons_tts_volume">音量</string>
+    <string name="engine_ons_tts_voice">发音人</string>
+    <string name="engine_ons_tts_voice_default">默认发音人</string>
+    <string name="engine_ons_tts_voice_loading">正在获取发音人列表…</string>
+    <string name="engine_ons_tts_voice_pick_http">HTTP 引擎的发音人在 URL 模板中指定</string>
+    <string name="engine_ons_tts_multi_host">MultiTTS 服务器（host:port）</string>
 </resources>
 
 

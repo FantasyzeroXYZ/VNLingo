@@ -1365,8 +1365,12 @@ public class OnsExtractPanel {
             return OnsTtsEngines.httpSynthesize(activity, text);
         }
         try {
-            int speed = Math.round(50f * ttsRate / 100f);
-            return MultiTtsClient.synthesize(text, null, speed, 50, 25);
+            return MultiTtsClient.synthesizeOn(text,
+                    OnsTtsEngines.voice(activity),
+                    OnsTtsEngines.rate(activity),
+                    OnsTtsEngines.volume(activity),
+                    OnsTtsEngines.pitch(activity),
+                    OnsTtsEngines.multiHost(activity));
         } catch (Throwable t) {
             Log.w(TAG, "card tts synthesize failed", t);
             return null;
@@ -2470,11 +2474,14 @@ public class OnsExtractPanel {
                 }, "ons-http-tts").start();
                 return;
             }
-            // MultiTTS HTTP 合成 + 本地 MediaPlayer 播放（WAV），后台线程；
-            // speed 0..100（50=1.0x），按语速档位换算
-            int speed = Math.round(50f * ttsRate / 100f);
+            // MultiTTS HTTP 合成 + 本地 MediaPlayer 播放（WAV），后台线程。
+            // 语速 = 面板语速档位（游戏内快调）；音高/音量/发音人/服务器 = TTS 设置。
+            int speed = Math.round(OnsTtsEngines.rate(activity) * ttsRate / 100f);
             new Thread(() -> {
-                byte[] wav = MultiTtsClient.synthesize(sentence, null, speed, 50, 25);
+                byte[] wav = MultiTtsClient.synthesizeOn(sentence,
+                        OnsTtsEngines.voice(activity), speed,
+                        OnsTtsEngines.volume(activity), OnsTtsEngines.pitch(activity),
+                        OnsTtsEngines.multiHost(activity));
                 if (wav == null) {
                     main.post(() -> toast(R.string.engine_ons_extract_action_failed));
                     return;
@@ -2510,6 +2517,18 @@ public class OnsExtractPanel {
         try {
             tts.setLanguage(ttsLocale(sentence));
             tts.setSpeechRate(ttsRate / 100f);
+            // 音高/发音人来自 TTS 设置（pitch 0..100 → 系统引擎 0.5..2.0，50=1.0x）
+            float pitchFactor = OnsTtsEngines.pitch(activity) / 50f;
+            tts.setPitch(Math.max(0.5f, Math.min(2f, pitchFactor)));
+            String sysVoiceName = OnsTtsEngines.voice(activity);
+            if (!sysVoiceName.isEmpty() && tts.getVoices() != null) {
+                for (android.speech.tts.Voice v : tts.getVoices()) {
+                    if (v != null && sysVoiceName.equals(v.getName())) {
+                        tts.setVoice(v);
+                        break;
+                    }
+                }
+            }
             tts.stop();
             tts.speak(sentence, android.speech.tts.TextToSpeech.QUEUE_FLUSH, null, "ons_extract");
         } catch (Throwable t) {

@@ -606,8 +606,13 @@ public final class OnsExtractSettingsDialogs {
                 .setNegativeButton(android.R.string.cancel, null)
                 .show();
     }
-    /** TTS 设置：引擎（MultiTTS / 自定义 HTTP API / 安卓自带）+ HTTP 模板 + 试听。
-     *  引擎路由实现在面板 speakText 与 OnsTtsEngines（TrackReader Provider 方案对齐）。 */
+    /** 档位循环辅助：取当前值的下一个（循环）。 */
+    private static int cycleIndex(int[] values, int current) {
+        return (current + 1) % values.length;
+    }
+
+    /** TTS 设置全量版（TrackReader TTS 设置对齐）：引擎 / 语速 / 音高 / 音量 /
+     *  发音人 / MultiTTS 服务器 / HTTP 模板 / 试听。 */
     public static void showTtsSettings(Activity activity) {
         LinearLayout box = new LinearLayout(activity);
         box.setOrientation(LinearLayout.VERTICAL);
@@ -621,7 +626,7 @@ public final class OnsExtractSettingsDialogs {
                 activity.getString(R.string.engine_ons_tts_engine_http),
                 activity.getString(R.string.engine_ons_tts_engine_system)};
 
-        // HTTP 模板输入（声明在引擎行之前以便 lambda 引用；addView 顺序决定布局位置）
+        // HTTP 模板输入（声明在前供 lambda 引用；addView 顺序决定布局）
         TextView httpHint = new TextView(activity);
         httpHint.setText(R.string.engine_ons_tts_http_template);
         httpHint.setTextColor(TEXT_DIM);
@@ -638,28 +643,124 @@ public final class OnsExtractSettingsDialogs {
             httpField.setEnabled(http);
         };
 
-        // 引擎行（点击循环 MultiTTS → HTTP → 系统）
+        // 语速 / 音高 / 音量（0..100，步进 25 档位循环）
+        final int[] steps = {0, 25, 50, 75, 100};
+        final String[] stepLabels = {"0", "25", "50", "75", "100"};
+
+        TextView rateValue = new TextView(activity);
+        styleNavValue(activity, rateValue);
+        Runnable syncRate = () -> rateValue.setText(stepLabels[
+                indexOfStep(steps, OnsTtsEngines.rate(activity))]);
+        syncRate.run();
+        LinearLayout rateRow = settingNavRow(activity, R.drawable.ic_volume,
+                R.string.engine_ons_tts_rate, rateValue);
+        rateRow.setOnClickListener(v -> {
+            int i = indexOfStep(steps, OnsTtsEngines.rate(activity));
+            int next = steps[cycleIndex(steps, i)];
+            OnsTtsEngines.setRate(activity, next);
+            syncRate.run();
+        });
+        box.addView(rateRow);
+
+        TextView pitchValue = new TextView(activity);
+        styleNavValue(activity, pitchValue);
+        Runnable syncPitch = () -> pitchValue.setText(stepLabels[
+                indexOfStep(steps, OnsTtsEngines.pitch(activity))]);
+        syncPitch.run();
+        LinearLayout pitchRow = settingNavRow(activity, R.drawable.ic_volume,
+                R.string.engine_ons_tts_pitch, pitchValue);
+        pitchRow.setOnClickListener(v -> {
+            int i = indexOfStep(steps, OnsTtsEngines.pitch(activity));
+            OnsTtsEngines.setPitch(activity, steps[cycleIndex(steps, i)]);
+            syncPitch.run();
+        });
+        box.addView(pitchRow);
+
+        TextView volumeValue = new TextView(activity);
+        styleNavValue(activity, volumeValue);
+        Runnable syncVolume = () -> volumeValue.setText(stepLabels[
+                indexOfStep(steps, OnsTtsEngines.volume(activity))]);
+        syncVolume.run();
+        LinearLayout volumeRow = settingNavRow(activity, R.drawable.ic_volume,
+                R.string.engine_ons_tts_volume, volumeValue);
+        volumeRow.setOnClickListener(v -> {
+            int i = indexOfStep(steps, OnsTtsEngines.volume(activity));
+            OnsTtsEngines.setVolume(activity, steps[cycleIndex(steps, i)]);
+            syncVolume.run();
+        });
+        box.addView(volumeRow);
+
+        // 发音人行：点击按当前引擎拉取发音人列表（后台）弹单选
+        TextView voiceValue = new TextView(activity);
+        styleNavValue(activity, voiceValue);
+        Runnable syncVoice = () -> {
+            String v = OnsTtsEngines.voice(activity);
+            voiceValue.setText(v.isEmpty()
+                    ? activity.getString(R.string.engine_ons_tts_voice_default) : v);
+        };
+        syncVoice.run();
+        LinearLayout voiceRow = settingNavRow(activity, R.drawable.ic_volume,
+                R.string.engine_ons_tts_voice, voiceValue);
+        voiceRow.setOnClickListener(v ->
+                showVoicePicker(activity, engineState[0], syncVoice));
+        box.addView(voiceRow);
+
+        // MultiTTS 服务器行（点击弹输入框）
+        TextView hostValue = new TextView(activity);
+        styleNavValue(activity, hostValue);
+        Runnable syncHost = () -> hostValue.setText(OnsTtsEngines.multiHost(activity).isEmpty()
+                ? MultiTtsClient.HOST_PORT : OnsTtsEngines.multiHost(activity));
+        syncHost.run();
+        LinearLayout hostRow = settingNavRow(activity, R.drawable.ic_settings,
+                R.string.engine_ons_tts_multi_host, hostValue);
+        hostRow.setOnClickListener(v -> {
+            LinearLayout inner = new LinearLayout(activity);
+            inner.setOrientation(LinearLayout.VERTICAL);
+            int pd = dp(activity, 16);
+            inner.setPadding(pd, pd, pd, 0);
+            EditText field = new EditText(activity);
+            field.setText(OnsTtsEngines.multiHost(activity).isEmpty()
+                    ? MultiTtsClient.HOST_PORT : OnsTtsEngines.multiHost(activity));
+            field.setTextSize(13);
+            field.setSingleLine(true);
+            inner.addView(field, matchWrap());
+            new android.app.AlertDialog.Builder(activity)
+                    .setTitle(R.string.engine_ons_tts_multi_host)
+                    .setView(inner)
+                    .setPositiveButton(android.R.string.ok, (d, w) -> {
+                        String hp = textOr(field, MultiTtsClient.HOST_PORT);
+                        OnsTtsEngines.setMultiHost(activity, hp);
+                        MultiTtsClient.setConfiguredHostPort(hp);
+                        syncHost.run();
+                    })
+                    .setNegativeButton(android.R.string.cancel, null)
+                    .show();
+        });
+        box.addView(hostRow);
+
+        // 引擎行 + HTTP 模板
         TextView engineValue = new TextView(activity);
         styleNavValue(activity, engineValue);
         Runnable syncEngine = () -> {
-            int idx2 = 0;
+            int idx = 0;
             for (int i = 0; i < engineKeys.length; i++) {
-                if (engineKeys[i].equals(engineState[0])) { idx2 = i; break; }
+                if (engineKeys[i].equals(engineState[0])) { idx = i; break; }
             }
-            engineValue.setText(engineLabels[idx2]);
+            engineValue.setText(engineLabels[idx]);
         };
         syncEngine.run();
         syncHttpVisibility.run();
         LinearLayout engineRow = settingNavRow(activity, R.drawable.ic_volume,
                 R.string.engine_ons_tts_engine, engineValue);
         engineRow.setOnClickListener(v -> {
-            int idx3 = 0;
+            int idx = 0;
             for (int i = 0; i < engineKeys.length; i++) {
-                if (engineKeys[i].equals(engineState[0])) { idx3 = i; break; }
+                if (engineKeys[i].equals(engineState[0])) { idx = i; break; }
             }
-            engineState[0] = engineKeys[(idx3 + 1) % engineKeys.length];
+            engineState[0] = engineKeys[(idx + 1) % engineKeys.length];
             syncEngine.run();
             syncHttpVisibility.run();
+            syncVoice.run();
         });
         box.addView(engineRow);
         box.addView(httpHint, matchWrap());
@@ -671,7 +772,7 @@ public final class OnsExtractSettingsDialogs {
         systemHint.setTextSize(11);
         box.addView(systemHint, matchWrap());
 
-        // 试听行：MultiTTS/HTTP → 合成字节后 MediaPlayer 播放；系统引擎 → 本地 TextToSpeech 直呼
+        // 试听行：用当前引擎 + 全部参数朗读测试句
         LinearLayout testRow = settingNavRow(activity, R.drawable.ic_volume,
                 R.string.engine_ons_tts_test, null);
         testRow.setOnClickListener(v -> {
@@ -682,6 +783,14 @@ public final class OnsExtractSettingsDialogs {
                     android.speech.tts.TextToSpeech tts = new android.speech.tts.TextToSpeech(
                             activity, status -> { });
                     tts.setLanguage(java.util.Locale.CHINA);
+                    tts.setSpeechRate(OnsTtsEngines.rate(activity) / 50f);
+                    tts.setPitch(Math.max(0.5f, Math.min(2f, OnsTtsEngines.pitch(activity) / 50f)));
+                    String vn = OnsTtsEngines.voice(activity);
+                    if (!vn.isEmpty() && tts.getVoices() != null) {
+                        for (android.speech.tts.Voice vo : tts.getVoices()) {
+                            if (vo != null && vn.equals(vo.getName())) { tts.setVoice(vo); break; }
+                        }
+                    }
                     tts.speak(testText, android.speech.tts.TextToSpeech.QUEUE_FLUSH, null, "tts_test");
                 } catch (Throwable t) {
                     Toast.makeText(activity, String.valueOf(t.getMessage()), Toast.LENGTH_SHORT).show();
@@ -689,9 +798,17 @@ public final class OnsExtractSettingsDialogs {
                 return;
             }
             new Thread(() -> {
-                byte[] audio = OnsTtsEngines.ENGINE_HTTP.equals(engine)
-                        ? OnsTtsEngines.httpSynthesize(activity, testText)
-                        : MultiTtsClient.synthesize(testText, null, 50, 50, 25);
+                byte[] audio;
+                if (OnsTtsEngines.ENGINE_HTTP.equals(engine)) {
+                    audio = OnsTtsEngines.httpSynthesize(activity, testText);
+                } else {
+                    audio = MultiTtsClient.synthesizeOn(testText,
+                            OnsTtsEngines.voice(activity),
+                            OnsTtsEngines.rate(activity),
+                            OnsTtsEngines.volume(activity),
+                            OnsTtsEngines.pitch(activity),
+                            OnsTtsEngines.multiHost(activity));
+                }
                 if (audio == null || audio.length == 0) return;
                 try {
                     File out = new File(activity.getCacheDir(), "tts_settings_test.wav");
@@ -730,4 +847,72 @@ public final class OnsExtractSettingsDialogs {
                 .setNegativeButton(android.R.string.cancel, null)
                 .show();
     }
+
+    private static int indexOfStep(int[] steps, int value) {
+        for (int i = 0; i < steps.length; i++) {
+            if (steps[i] == value) return i;
+        }
+        return 2; // 默认 50
+    }
+
+    /** 发音人选择（按引擎拉取列表，后台线程 + 主线程单选弹窗）。 */
+    private static void showVoicePicker(Activity activity, String engine, Runnable onChanged) {
+        if (OnsTtsEngines.ENGINE_HTTP.equals(engine)) {
+            Toast.makeText(activity, R.string.engine_ons_tts_voice_pick_http, Toast.LENGTH_SHORT).show();
+            return;
+        }
+        Toast.makeText(activity, R.string.engine_ons_tts_voice_loading, Toast.LENGTH_SHORT).show();
+        new Thread(() -> {
+            java.util.List<String> names = new java.util.ArrayList<>();
+            names.add("");
+            if (OnsTtsEngines.ENGINE_MULTI.equals(engine)) {
+                names.addAll(MultiTtsClient.fetchVoiceNamesOn(OnsTtsEngines.multiHost(activity)));
+            } else {
+                try {
+                    java.util.concurrent.CountDownLatch latch =
+                            new java.util.concurrent.CountDownLatch(1);
+                    final java.util.List<android.speech.tts.Voice> voices =
+                            new java.util.ArrayList<>();
+                    android.speech.tts.TextToSpeech tts = new android.speech.tts.TextToSpeech(
+                            activity, status -> latch.countDown());
+                    latch.await(4, java.util.concurrent.TimeUnit.SECONDS);
+                    java.util.Set<android.speech.tts.Voice> set = tts.getVoices();
+                    if (set != null) voices.addAll(set);
+                    tts.shutdown();
+                    java.util.Set<String> locales = new java.util.HashSet<>();
+                    for (android.speech.tts.Voice vo : voices) {
+                        java.util.Locale lc = vo.getLocale();
+                        String tag = lc == null ? "" : lc.getLanguage();
+                        if (!tag.isEmpty() && locales.add(tag)) {
+                            names.add("#" + tag.toUpperCase(java.util.Locale.ROOT));
+                        }
+                    }
+                    for (android.speech.tts.Voice vo : voices) {
+                        names.add(vo.getName());
+                    }
+                } catch (Throwable t) {
+                    android.util.Log.w("OnsExtractSettingsDialogs", "system voices failed", t);
+                }
+            }
+            final java.util.List<String> finalNames = names;
+            activity.runOnUiThread(() -> {
+                String[] items = finalNames.toArray(new String[0]);
+                String current = OnsTtsEngines.voice(activity);
+                int checked = 0;
+                for (int i = 0; i < items.length; i++) {
+                    if (items[i].equals(current)) { checked = i; break; }
+                }
+                new android.app.AlertDialog.Builder(activity)
+                        .setTitle(R.string.engine_ons_tts_voice)
+                        .setSingleChoiceItems(items, checked, (d, which) -> {
+                            OnsTtsEngines.setVoice(activity, items[which]);
+                            onChanged.run();
+                            d.dismiss();
+                        })
+                        .setNegativeButton(android.R.string.cancel, null)
+                        .show();
+            });
+        }, "tts-voice-picker").start();
+    }
+
 }

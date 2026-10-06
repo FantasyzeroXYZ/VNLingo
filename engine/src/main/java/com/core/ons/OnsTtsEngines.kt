@@ -29,12 +29,66 @@ object OnsTtsEngines {
     private const val PREFS = "ons_tts_engine"
     private const val KEY_ENGINE = "engine"
     private const val KEY_HTTP_TEMPLATE = "http_template"
+    private const val KEY_RATE = "rate"          // 0..100（50=1.0x 基准）
+    private const val KEY_PITCH = "pitch"        // 0..100（50=1.0x 基准）
+    private const val KEY_VOLUME = "volume"      // 0..100（合成音量；系统引擎为播放音量映射）
+    private const val KEY_VOICE = "voice"        // 发音人（multi=目录/名字；system=Voice.name）
+    private const val KEY_MULTI_HOST = "multi_host" // MultiTTS 服务地址 host:port
 
     /** 默认 HTTP 模板：TTS Server / LunaTranslator 兼容格式。 */
     const val DEFAULT_HTTP_TEMPLATE = "http://127.0.0.1:1221/api/tts?text={text}"
 
     private fun prefs(context: Context) =
         context.applicationContext.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+
+    // ---- 合成参数（语速/音高/音量/发音人；全部引擎共用存储，按引擎各自解释）----
+
+    /** 语速 0..100（50=1.0x 基准）。 */
+    @JvmStatic
+    fun rate(context: Context): Int = prefs(context).getInt(KEY_RATE, 50)
+
+    @JvmStatic
+    fun setRate(context: Context, value: Int) {
+        prefs(context).edit().putInt(KEY_RATE, value.coerceIn(0, 100)).apply()
+    }
+
+    /** 音高 0..100（50=1.0x 基准）。 */
+    @JvmStatic
+    fun pitch(context: Context): Int = prefs(context).getInt(KEY_PITCH, 50)
+
+    @JvmStatic
+    fun setPitch(context: Context, value: Int) {
+        prefs(context).edit().putInt(KEY_PITCH, value.coerceIn(0, 100)).apply()
+    }
+
+    /** 音量 0..100（MultiTTS=合成音量；HTTP=写进模板由服务端决定；默认 50 与档位网格一致）。 */
+    @JvmStatic
+    fun volume(context: Context): Int = prefs(context).getInt(KEY_VOLUME, 50)
+
+    @JvmStatic
+    fun setVolume(context: Context, value: Int) {
+        prefs(context).edit().putInt(KEY_VOLUME, value.coerceIn(0, 100)).apply()
+    }
+
+    /** 发音人：multi = 「目录/名字」；system = Voice.name；http = 模板内自行指定。 */
+    @JvmStatic
+    fun voice(context: Context): String =
+        prefs(context).getString(KEY_VOICE, "")?.orEmpty() ?: ""
+
+    @JvmStatic
+    fun setVoice(context: Context, value: String) {
+        prefs(context).edit().putString(KEY_VOICE, value.trim()).apply()
+    }
+
+    /** MultiTTS 服务地址（host:port）；空 = 默认 127.0.0.1:8774。 */
+    @JvmStatic
+    fun multiHost(context: Context): String =
+        prefs(context).getString(KEY_MULTI_HOST, "")?.orEmpty() ?: ""
+
+    @JvmStatic
+    fun setMultiHost(context: Context, value: String) {
+        prefs(context).edit().putString(KEY_MULTI_HOST, value.trim()).apply()
+    }
 
     /** 当前引擎（全局）；未配置默认 MultiTTS（与面板历史默认行为一致）。 */
     @JvmStatic

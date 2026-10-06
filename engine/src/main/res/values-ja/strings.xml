@@ -202,6 +202,14 @@
     <string name="engine_ons_tts_test">テスト（現在のエンジンで読み上げ）</string>
     <string name="engine_ons_tts_test_done">テストをリクエストしました</string>
     <string name="engine_ons_tts_system_hint">Android 標準 TTS：システムの TextToSpeech で直接読み上げ（音声データ生成なし、カード音声には使用不可）。上位エンジン OFF 時はこちらを使用</string>
+    <string name="engine_ons_tts_rate">速度</string>
+    <string name="engine_ons_tts_pitch">ピッチ</string>
+    <string name="engine_ons_tts_volume">音量</string>
+    <string name="engine_ons_tts_voice">音声</string>
+    <string name="engine_ons_tts_voice_default">デフォルト音声</string>
+    <string name="engine_ons_tts_voice_loading">音声リストを取得中…</string>
+    <string name="engine_ons_tts_voice_pick_http">HTTP エンジンの音声は URL テンプレートで指定します</string>
+    <string name="engine_ons_tts_multi_host">MultiTTS サーバー（host:port）</string>
 </resources>
 
 
