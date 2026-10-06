@@ -58,7 +58,11 @@
     <string name="engine_ons_extract_anki">Card</string>
     <string name="engine_ons_extract_no_text">(no text to export)</string>
     <string name="engine_ons_extract_anki_not_installed">AnkiDroid is not installed</string>
+    <string name="engine_ons_tts_multi_down">MultiTTS is not running; start the MultiTTS app first</string>
+    <string name="engine_ons_tts_multi_reject">MultiTTS rejected the request; check the voice configuration</string>
+    <string name="engine_ons_tts_http_down">HTTP TTS service unreachable; check the URL and service status</string>
     <string name="engine_ons_extract_anki_model_missing">Model "%1$s" does not exist: create it in AnkiDroid first, or set the card model back to TyranorNext Word</string>
+    <string name="engine_ons_extract_anki_go_grant">Grant</string>
     <string name="engine_ons_extract_anki_need_permission">Grant access in the AnkiDroid dialog and retry</string>
     <string name="engine_ons_extract_anki_added">Added to Anki</string>
     <string name="engine_ons_extract_anki_failed">Card creation failed</string>
@@ -92,6 +96,7 @@
     <string name="engine_ons_extract_translate_failed">Translation failed: %1$s</string>
     <string name="engine_ons_extract_translate_line">🌐 %1$s</string>
     <string name="engine_ons_extract_api_title">Translation API settings (OpenAI-compatible)</string>
+    <string name="engine_ons_settings_saved">Saved</string>
     <string name="engine_ons_extract_api_saved">Saved — tap "🌐 Translate" again to apply</string>
     <string name="engine_ons_extract_api_hint_base">API URL (e.g. https://api.openai.com/v1)</string>
     <string name="engine_ons_extract_api_hint_key">API Key</string>

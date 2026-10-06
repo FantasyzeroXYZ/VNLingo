@@ -1397,6 +1397,37 @@ public class OnsExtractPanel {
             toast(R.string.engine_ons_extract_no_text);
             return;
         }
+        // AnkiDroid 未安装 / 未授权：明确引导而不是通用失败 toast
+        //（未安装跳商店安装页；未授权弹对话框后跳 AnkiDroid 应用信息页授权）
+        com.core.anki.AnkiDroidHelper gateHelper = new com.core.anki.AnkiDroidHelper(activity);
+        if (!gateHelper.isAnkiDroidInstalled()) {
+            toast(R.string.engine_ons_extract_anki_not_installed);
+            try {
+                activity.startActivity(new android.content.Intent(android.content.Intent.ACTION_VIEW,
+                        android.net.Uri.parse("market://details?id=com.ichi2.anki")));
+            } catch (Throwable ignoredMarket) {
+            }
+            return;
+        }
+        if (!gateHelper.hasPermission()) {
+            new android.app.AlertDialog.Builder(activity)
+                    .setTitle(R.string.engine_ons_extract_anki_need_permission)
+                    .setPositiveButton(R.string.engine_ons_extract_anki_go_grant, (d, w) -> {
+                        try {
+                            gateHelper.launchAnkiDroidApp();
+                        } catch (Throwable ignored) {
+                        }
+                        try {
+                            activity.startActivity(new android.content.Intent(
+                                    android.provider.Settings.ACTION_APPLICATION_DETAILS_SETTINGS,
+                                    android.net.Uri.parse("package:com.ichi2.anki")));
+                        } catch (Throwable ignored) {
+                        }
+                    })
+                    .setNegativeButton(android.R.string.cancel, null)
+                    .show();
+            return;
+        }
 
         // 字段映射（AnkiCardConfig）：逻辑槽位 → Anki 模型字段名，参考
         // web game text 扩展 ankiFieldMap 方案；模型不存在时默认模型兜底创建
@@ -2424,7 +2455,7 @@ public class OnsExtractPanel {
                 new Thread(() -> {
                     byte[] wav = OnsTtsEngines.httpSynthesize(activity, sentence);
                     if (wav == null) {
-                        main.post(() -> toast(R.string.engine_ons_extract_action_failed));
+                        main.post(() -> toast(R.string.engine_ons_tts_http_down));
                         return;
                     }
                     main.post(() -> {
@@ -2443,7 +2474,11 @@ public class OnsExtractPanel {
                         OnsTtsEngines.volume(activity), OnsTtsEngines.pitch(activity),
                         OnsTtsEngines.multiHost(activity));
                 if (wav == null) {
-                    main.post(() -> toast(R.string.engine_ons_extract_action_failed));
+                    // 分类引导：服务未启动（连接失败）vs 服务在但拒绝请求（发音人等）
+                    boolean up = MultiTtsClient.isServiceUp();
+                    main.post(() -> toast(up
+                            ? R.string.engine_ons_tts_multi_reject
+                            : R.string.engine_ons_tts_multi_down));
                     return;
                 }
                 try {

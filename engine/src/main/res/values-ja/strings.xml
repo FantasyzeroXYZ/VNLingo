@@ -58,7 +58,11 @@
     <string name="engine_ons_extract_anki">カード</string>
     <string name="engine_ons_extract_no_text">（カード化するテキストなし）</string>
     <string name="engine_ons_extract_anki_not_installed">AnkiDroid が未インストールです</string>
+    <string name="engine_ons_tts_multi_down">MultiTTS が起動していません。先に起動してください</string>
+    <string name="engine_ons_tts_multi_reject">MultiTTS がリクエストを拒否しました。音声設定を確認してください</string>
+    <string name="engine_ons_tts_http_down">HTTP TTS サービスに接続できません。URL と状態を確認してください</string>
     <string name="engine_ons_extract_anki_model_missing">モデル「%1$s」が存在しません。AnkiDroid で先に作成するか、モデル名を TyranorNext Word に戻してください</string>
+    <string name="engine_ons_extract_anki_go_grant">許可する</string>
     <string name="engine_ons_extract_anki_need_permission">AnkiDroid の許可画面で権限を付与して再試行してください</string>
     <string name="engine_ons_extract_anki_added">Anki に追加しました</string>
     <string name="engine_ons_extract_anki_failed">カード作成に失敗しました</string>
@@ -92,6 +96,7 @@
     <string name="engine_ons_extract_translate_failed">翻訳に失敗：%1$s</string>
     <string name="engine_ons_extract_translate_line">🌐 %1$s</string>
     <string name="engine_ons_extract_api_title">翻訳API設定（OpenAI 互換）</string>
+    <string name="engine_ons_settings_saved">保存しました</string>
     <string name="engine_ons_extract_api_saved">保存しました。再度「🌐 翻訳」で有効になります</string>
     <string name="engine_ons_extract_api_hint_base">API URL（例：https://api.openai.com/v1）</string>
     <string name="engine_ons_extract_api_hint_key">API Key</string>

@@ -381,7 +381,7 @@ fun SettingsScreen(modifier: Modifier = Modifier) {
                                 startAction = { SettingsItemIcon(R.drawable.ic_settings) },
                                 onClick = {
                                     // 跳到主界面词典 Tab（词典管理主体在该页）
-                                    com.tyranor.next.ui.main.MainTabs.requestTab(1)
+                                    com.tyranor.next.ui.main.MainTabs.requestTab(com.tyranor.next.ui.main.MainTabs.TAB_DICT)
                                 },
                             )
                             ArrowPreference(

@@ -16,6 +16,7 @@ import java.io.OutputStream;
 import java.net.HttpURLConnection;
 import java.net.URL;
 import java.nio.charset.StandardCharsets;
+import java.util.Locale;
 
 /**
  * ONS 存档云同步：把 {@link ONScripter#zipSavesToCache()} 产出的存档 zip
@@ -34,6 +35,8 @@ public final class OnsSaveCloud {
     public static final String KEY_USER = "user";
     public static final String KEY_TOKEN = "token";
     public static final String KEY_DIR = "dir";
+    /** 每游戏上次成功上传时间（存档管理页状态显示）。 */
+    private static final String KEY_UPLOAD_PREFIX = "ul_";
 
     public static final String MODE_WEBDAV = "webdav";
     public static final String MODE_GITHUB = "github";
@@ -45,11 +48,93 @@ public final class OnsSaveCloud {
         void onResult(boolean ok, String message);
     }
 
+    /** 云端时间查询回调（ms；0 = 未知/不支持）。 */
+    public interface TimeCallback {
+        void onResult(long epochMs);
+    }
+
     private OnsSaveCloud() {
     }
 
     public static SharedPreferences prefs(Context context) {
         return context.getApplicationContext().getSharedPreferences(PREFS, Context.MODE_PRIVATE);
+    }
+
+    // ------------------------------------------------------------------
+    // 状态查询（存档管理页云同步区用）
+    // ------------------------------------------------------------------
+
+    /** 远端路径名与 run() 一致：dir/name.zip。 */
+    private static String remotePath(SharedPreferences p, String gameName) {
+        String dir = p.getString(KEY_DIR, DEFAULT_DIR);
+        return (dir.endsWith("/") ? dir : dir + "/")
+                + (gameName == null || gameName.isEmpty() ? "ons" : gameName) + ".zip";
+    }
+
+    /** 是否已配置到可用程度（WebDAV 要 server；GitHub 要 repo）。 */
+    public static boolean isConfigured(Context context) {
+        SharedPreferences p = prefs(context);
+        if (MODE_GITHUB.equals(p.getString(KEY_MODE, MODE_WEBDAV))) {
+            return !p.getString(KEY_REPO, "").isEmpty();
+        }
+        return !p.getString(KEY_SERVER, "").isEmpty();
+    }
+
+    /** 本机记录的上次成功上传时间（0 = 从未；上传成功后由调用方经 recordUpload 记录）。 */
+    public static long lastUpload(Context context, String gameName) {
+        return prefs(context).getLong(KEY_UPLOAD_PREFIX + gameName, 0);
+    }
+
+    /** 上传成功后记录时间（调用方在上传回调 ok 后调用）。 */
+    public static void recordUpload(Context context, String gameName, long epochMs) {
+        prefs(context).edit().putLong(KEY_UPLOAD_PREFIX + gameName, epochMs).apply();
+    }
+
+    /** 查询云端文件更新时间（WebDAV HEAD Last-Modified；GitHub 不支持返回 0）。后台线程。 */
+    public static void cloudModified(Context context, String gameName, TimeCallback callback) {
+        SharedPreferences p = prefs(context);
+        new Thread(() -> {
+            long result = 0;
+            try {
+                if (!MODE_GITHUB.equals(p.getString(KEY_MODE, MODE_WEBDAV))) {
+                    String base = p.getString(KEY_SERVER, "");
+                    if (!base.isEmpty()) {
+                        HttpURLConnection conn = open((base.endsWith("/") ? base : base + "/")
+                                + remotePath(p, gameName),
+                                p.getString(KEY_USER, ""), p.getString(KEY_TOKEN, ""));
+                        try {
+                            conn.setRequestMethod("HEAD");
+                            if (conn.getResponseCode() < 400) {
+                                String date = conn.getHeaderField("Last-Modified");
+                                if (date != null) {
+                                    result = parseHttpDate(date);
+                                }
+                            }
+                        } finally {
+                            conn.disconnect();
+                        }
+                    }
+                }
+            } catch (Throwable t) {
+                Log.w(TAG, "cloudModified failed", t);
+            }
+            callback.onResult(result);
+        }, "ons-cloud-time").start();
+    }
+
+    /** RFC 1123（ Last-Modified）解析；失败返回 0。 */
+    private static long parseHttpDate(String value) {
+        String[] formats = {"EEE, dd MMM yyyy HH:mm:ss zzz", "EEEE, dd-MMM-yy HH:mm:ss zzz"};
+        for (String format : formats) {
+            try {
+                java.text.SimpleDateFormat parser = new java.text.SimpleDateFormat(format, Locale.US);
+                parser.setTimeZone(java.util.TimeZone.getTimeZone("GMT"));
+                java.util.Date date = parser.parse(value.trim());
+                if (date != null) return date.getTime();
+            } catch (Throwable ignored) {
+            }
+        }
+        return 0;
     }
 
     /** 上传 zip（后台线程执行，回调经调用方自行切主线程）。 */

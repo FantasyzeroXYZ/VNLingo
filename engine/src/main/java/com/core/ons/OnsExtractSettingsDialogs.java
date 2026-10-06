@@ -754,7 +754,7 @@ public final class OnsExtractSettingsDialogs {
                         }
                     }
                     AnkiCardConfig.setFieldMap(activity, map);
-                    Toast.makeText(activity, R.string.engine_ons_extract_api_saved,
+                    Toast.makeText(activity, R.string.engine_ons_settings_saved,
                             Toast.LENGTH_SHORT).show();
                 })
                 .setNegativeButton(android.R.string.cancel, null)

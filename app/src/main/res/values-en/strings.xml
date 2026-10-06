@@ -513,6 +513,16 @@
     <string name="save_operation_failed">Operation failed</string>
     <string name="save_exported_count">Exported %1$d save files</string>
     <string name="save_imported_count">Imported and overwritten %1$d save files</string>
+    <string name="save_cloud_status_title">Cloud save status (tap to refresh)</string>
+    <string name="save_cloud_status_fmt">Local upload: %1$s · Cloud updated: %2$s</string>
+    <string name="save_cloud_none">never</string>
+    <string name="save_cloud_unknown">—</string>
+    <string name="save_cloud_upload">Upload saves to cloud</string>
+    <string name="save_cloud_download">Download saves from cloud</string>
+    <string name="save_cloud_uploaded">Saves uploaded to cloud</string>
+    <string name="save_cloud_downloaded">Downloaded from cloud and imported %1$d files</string>
+    <string name="save_cloud_not_configured">Save cloud sync is not configured (server / account); fill it in first</string>
+    <string name="save_cloud_missing">No cloud save for this game</string>
     <string name="save_management_title">Save management</string>
     <string name="save_file_count">Current save files: %1$d</string>
     <string name="save_unmanageable">Not manageable right now</string>

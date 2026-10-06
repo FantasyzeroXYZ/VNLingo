@@ -109,6 +109,11 @@ private val tabItems = listOf(
 
 /** 跨页 Tab 跳转请求（设置页「词典设置」等入口跳到指定主 Tab；消费后复位 -1）。 */
 object MainTabs {
+    /** tabItems 顺序常量：新增/调整 Tab 时同步（跳转方禁止写死魔法索引）。 */
+    const val TAB_GAMES = 0
+    const val TAB_DICT = 1
+    const val TAB_SETTINGS = 2
+
     var pendingTab by androidx.compose.runtime.mutableIntStateOf(-1)
     fun requestTab(index: Int) { pendingTab = index }
 }

@@ -513,6 +513,16 @@
     <string name="save_operation_failed">操作に失敗しました</string>
     <string name="save_exported_count">%1$d 件のセーブファイルを書き出しました</string>
     <string name="save_imported_count">%1$d 件のセーブファイルを上書きインポートしました</string>
+    <string name="save_cloud_status_title">クラウドセーブ状態（タップで更新）</string>
+    <string name="save_cloud_status_fmt">ローカル更新：%1$s · クラウド更新：%2$s</string>
+    <string name="save_cloud_none">未実施</string>
+    <string name="save_cloud_unknown">—</string>
+    <string name="save_cloud_upload">セーブをクラウドへアップロード</string>
+    <string name="save_cloud_download">クラウドからセーブをダウンロード</string>
+    <string name="save_cloud_uploaded">セーブをクラウドへアップロードしました</string>
+    <string name="save_cloud_downloaded">クラウドからダウンロードして %1$d 件インポートしました</string>
+    <string name="save_cloud_not_configured">セーブのクラウド同期が未設定です（サーバー / アカウント）</string>
+    <string name="save_cloud_missing">このゲームのクラウドセーブがありません</string>
     <string name="save_management_title">セーブ管理</string>
     <string name="save_file_count">現在のセーブファイル：%1$d 件</string>
     <string name="save_unmanageable">現在は管理できません</string>

@@ -4,6 +4,25 @@
 > `docs/说明/游戏内提取制卡功能方案.md`（提取功能线方案）阅读。
 > 更新时间：2026-10-06
 
+## 2026-10-06 会话（三十一）：待办集中清理（5 项落地）
+
+- **存档管理页云同步按键**：云端状态行（本机上传/云端更新时间，点击刷新；
+  WebDAV HEAD 查询，GitHub 模式不支持显示 —）+ 上传/下载两个方向（zip 经
+  cache 中转走 OnsSaveCloud；下载后 importFromZip 直接入库）；未配置先 toast
+  + OnsSaveCloud 配置弹窗（保存后续跑所点方向）。OnsSaveCloud 补状态 API
+  （isConfigured/lastUpload/recordUpload/cloudModified + RFC1123 解析）。
+  模拟器实测：状态行显示与未配置引导 toast ✓（真实传输待用户凭据）。
+- **制卡保存文案中性化**：制卡设置保存 toast 换「已保存」（原复用 API 文案
+  带「再次点翻译生效」）；API 设置弹窗语境相符保留。
+- **MainTabs 跳 Tab 常量**：TAB_GAMES/TAB_DICT/TAB_SETTINGS 替代写死索引
+  （词典设置跳转改 TAB_DICT）。
+- **制卡引导**：makeWordCard 入口拦截——未安装 → toast + 跳商店安装页；
+  未授权 → 对话框「去授权」跳 AnkiDroid 应用信息页（线程内既有基础门控保留）。
+- **TTS 缺服务引导**：MultiTTS 合成失败按 isServiceUp 探测分类 toast（未运行
+  先启动应用 / 在线但拒绝检查发音人）；HTTP TTS 失败提示检查地址与服务。
+- 修补过程两处自伤（入口门控引用线程内 helper、orphan 大括号），编译期拦截
+  修复；装机 sanity 通过。
+
 ## 2026-10-06 会话（三十）：查词释义迁移顶部独立悬浮窗（参考 jidoujisho 交互）
 
 - **需求**（用户）：查词释义不要挤在剧情文本框里——参考 jidoujisho-2.9.1：

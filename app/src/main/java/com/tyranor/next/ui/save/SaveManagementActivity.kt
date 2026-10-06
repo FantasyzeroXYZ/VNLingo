@@ -54,7 +54,12 @@ import com.tyranor.next.ui.common.BottomInsetSpacer
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.suspendCancellableCoroutine
 import kotlinx.coroutines.withContext
+import com.core.ons.OnsSaveCloud
+import java.io.File
+import java.text.DateFormat
+import java.util.Date
 
 class SaveManagementActivity : AppScreenActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -110,6 +115,15 @@ private fun SaveManagementScreen(game: ScanGame) {
     // 导入/导出/删除互斥：并发任务会互相清掉对方的暂存目录，破坏导入的原子性
     var taskRunning by remember { mutableStateOf(false) }
 
+    // 云同步（OnsSaveCloud 独立存档通道）：远端 = <dir>/<title>.zip，与面板/导出命名一致
+    val cloudGameName = remember(game.title) {
+        game.title.replace(Regex("[\\/:*?\"<>|]"), "_").ifBlank { "game" }
+    }
+    var cloudStatus by remember { mutableStateOf("") }
+    val cloudStatusFormat = stringResource(R.string.save_cloud_status_fmt)
+    val cloudNoneText = stringResource(R.string.save_cloud_none)
+    val cloudUnknownText = stringResource(R.string.save_cloud_unknown)
+
     // 目录解析与文件递归遍历均为磁盘 IO：统一切到 IO 线程，避免组合期/主线程卡顿
     suspend fun refresh() {
         val snapshot = withContext(Dispatchers.IO) {
@@ -119,10 +133,25 @@ private fun SaveManagementScreen(game: ScanGame) {
         fileCount = snapshot.second
     }
 
+    fun refreshCloudStatus() {
+        val appContext = context.applicationContext
+        OnsSaveCloud.cloudModified(appContext, cloudGameName) { modified ->
+            val last = OnsSaveCloud.lastUpload(appContext, cloudGameName)
+            val fmt = DateFormat.getDateTimeInstance(DateFormat.SHORT, DateFormat.SHORT)
+            scope.launch {
+                cloudStatus = cloudStatusFormat.format(
+                    if (last > 0) fmt.format(Date(last)) else cloudNoneText,
+                    if (modified > 0) fmt.format(Date(modified)) else cloudUnknownText,
+                )
+            }
+        }
+    }
+
     LaunchedEffect(game) {
         refresh()
         // 互通开关读取命中 DB：挂起在 IO 线程取生效值
         saveInteropEnabled = EngineLauncher.isRpgSaveInteropEnabled(context, game)
+        refreshCloudStatus()
     }
 
     /** 把同步结果格式化成用户可读文案：无变化提示、有变化给明细、失败与无法识别的追加说明。 */
@@ -158,6 +187,67 @@ private fun SaveManagementScreen(game: ScanGame) {
             } finally {
                 taskRunning = false
             }
+        }
+    }
+
+    /** 云上传/下载（挂起包装 OnsSaveCloud 回调）；返回用户可读结果文案。 */
+    suspend fun runCloudTask(upload: Boolean): String {
+        val appContext = context.applicationContext
+        if (!OnsSaveCloud.isConfigured(appContext)) {
+            return "" // 空串 = 需要配置（调用方弹配置对话框）
+        }
+        val zip = withContext(Dispatchers.IO) {
+            File(appContext.cacheDir, "cloud_$cloudGameName.zip")
+        }
+        if (upload) {
+            withContext(Dispatchers.IO) {
+                manager.exportToZip(game, Uri.fromFile(zip), GameSaveManager.ExportFormat.TYRANOR)
+            }
+        } else {
+            zip.delete()
+        }
+        val ok = suspendCancellableCoroutine { cont ->
+            if (upload) {
+                OnsSaveCloud.upload(appContext, cloudGameName, zip) { success, _ ->
+                    cont.resume(success) {}
+                }
+            } else {
+                OnsSaveCloud.download(appContext, cloudGameName, zip) { success, _ ->
+                    cont.resume(success) {}
+                }
+            }
+        }
+        if (upload) {
+            zip.delete()
+            if (!ok) throw IllegalStateException("upload failed")
+            OnsSaveCloud.recordUpload(appContext, cloudGameName, System.currentTimeMillis())
+            return context.getString(R.string.save_cloud_uploaded)
+        }
+        if (!ok) return context.getString(R.string.save_cloud_missing)
+        val count = withContext(Dispatchers.IO) {
+            manager.importFromZip(game, Uri.fromFile(zip))
+        }
+        zip.delete()
+        return context.getString(R.string.save_cloud_downloaded, count)
+    }
+
+    fun startCloudTask(upload: Boolean) {
+        val appContext = context.applicationContext
+        if (!OnsSaveCloud.isConfigured(appContext)) {
+            Toast.makeText(appContext, R.string.save_cloud_not_configured, Toast.LENGTH_LONG).show()
+            // 复用引擎侧配置弹窗（模式/服务器/账号）；保存后直接续跑用户点的那个方向
+            OnsSaveCloud.showConfigDialog(
+                context as android.app.Activity,
+                { startCloudTask(true) },
+                { startCloudTask(false) },
+                { refreshCloudStatus() },
+            )
+            return
+        }
+        runSaveTask {
+            val message = runCloudTask(upload)
+            refreshCloudStatus()
+            message
         }
     }
 
@@ -256,6 +346,31 @@ private fun SaveManagementScreen(game: ScanGame) {
                     showLeadingIcon = false,
                     showArrow = false,
                     onClick = { importLauncher.launch("application/zip") },
+                )
+            }
+            item {
+                AppNavItem(
+                    title = stringResource(R.string.save_cloud_status_title),
+                    summary = cloudStatus.ifEmpty { stringResource(R.string.save_cloud_unknown) },
+                    showLeadingIcon = false,
+                    showArrow = false,
+                    onClick = { refreshCloudStatus() },
+                )
+            }
+            item {
+                AppNavItem(
+                    title = stringResource(R.string.save_cloud_upload),
+                    showLeadingIcon = false,
+                    showArrow = false,
+                    onClick = { startCloudTask(upload = true) },
+                )
+            }
+            item {
+                AppNavItem(
+                    title = stringResource(R.string.save_cloud_download),
+                    showLeadingIcon = false,
+                    showArrow = false,
+                    onClick = { startCloudTask(upload = false) },
                 )
             }
             item {
