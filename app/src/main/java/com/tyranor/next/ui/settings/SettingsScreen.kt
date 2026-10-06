@@ -389,7 +389,10 @@ fun SettingsScreen(modifier: Modifier = Modifier) {
                                 summary = stringResource(com.core.engine.R.string.engine_ons_settings_section_cloud),
                                 startAction = { SettingsItemIcon(R.drawable.ic_settings) },
                                 onClick = {
-                                    com.core.ons.OnsSaveCloud.showConfigDialog(ctx as android.app.Activity, null, null, null)
+                                    com.core.ons.OnsSaveCloud.showConfigDialog(
+                                        com.tyranor.next.core.i18n.AppLocaleController.findActivity(ctx) ?: return@ArrowPreference,
+                                        null, null, null,
+                                    )
                                 },
                             )
                             ArrowPreference(
