@@ -4,6 +4,25 @@
 > `docs/说明/游戏内提取制卡功能方案.md`（提取功能线方案）阅读。
 > 更新时间：2026-10-06
 
+## 2026-10-06 会话（二十一）：TTS 端到端实测 + 三处修复（用户反馈驱动）
+
+- **自定义试听文本输入栏**：TTS 设置弹窗顶部新增输入框（默认测试句），
+  试听行朗读输入框内容——用户反馈「没有自定义文本输入栏」已修。
+- **发音人列表带语言代码 + 语言筛选**（用户反馈「没有显示语言代码也没有
+  按引擎筛选」）：MultiTtsClient 新增 fetchVoicePairsOn（条目含 locale），
+  发音人选择改两级——先按语言筛选（从 locale 归并：全部/ZH/EN/…），
+  再从筛选后的列表单选；显示名带 [zh-CN] 语言代码。
+- **试听无音频根因修复**：MultiTTS /forward 的 voice 参数吃 id
+  （bdetts_xiao-xiao-duo-yu-yan），此前存了 name（bdetts/晓晓 多语言）→
+  服务端 500「未找到发音人」。VoiceEntry 改为 value 取 id 优先、display
+  取「目录/name」供 UI 显示。实测直连：正确 id 的 /forward 返回 200 + 30KB WAV。
+- **端到端实测**（本地测试服务器 :1221 模拟 /api/tts + adb reverse）：
+  HTTP 引擎试听 → 服务器日志收到 `TTS request text='音声テスト。语音测试。Voice test.'`
+  （输入框自定义文本）→ 回传 93KB WAV → 落盘 cache/tts_settings_test.wav
+  → MediaPlayer 播放。链路闭环。
+- 测试脚本 .tmp-test/tts_server.py（1221 端口模拟 /api/tts、/forward、/voices
+  三协议）可复用于后续 TTS 回归。
+
 ## 2026-10-06 会话（二十）：TTS 设置全量化（TrackReader 参数面对齐）
 
 - **TTS 设置补全**（用户反馈「全部搬过来」）：弹窗从三行扩展为全参数——

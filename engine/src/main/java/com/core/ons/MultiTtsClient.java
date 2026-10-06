@@ -172,4 +172,82 @@ public final class MultiTtsClient {
         }
         return out;
     }
+    /** 发音人条目：value=/forward 合成用名字（id 优先），display=UI 显示名，locale=语言标签。 */
+    public static class VoiceEntry {
+        public final String value;
+        public final String display;
+        public final String locale;
+
+        VoiceEntry(String value, String display, String locale) {
+            this.value = value;
+            this.display = display;
+            this.locale = locale == null ? "" : locale;
+        }
+    }
+
+    /**
+     * 抓取发音人（含 locale，供语言筛选与显示）；失败返回空列表。
+     */
+    public static java.util.List<VoiceEntry> fetchVoicePairsOn(String hostPort) {
+        java.util.List<VoiceEntry> out = new java.util.ArrayList<>();
+        String hp = hostPort == null || hostPort.isEmpty() ? HOST_PORT : hostPort;
+        try {
+            HttpURLConnection conn = (HttpURLConnection) new URL(
+                    "http://" + hp + "/voices").openConnection();
+            try {
+                conn.setConnectTimeout(4000);
+                conn.setReadTimeout(10_000);
+                if (conn.getResponseCode() != 200) return out;
+                java.io.InputStream in = conn.getInputStream();
+                ByteArrayOutputStream bos = new ByteArrayOutputStream();
+                byte[] buf = new byte[8192];
+                int n;
+                while ((n = in.read(buf)) > 0) bos.write(buf, 0, n);
+                in.close();
+                org.json.JSONObject root = new org.json.JSONObject(bos.toString("UTF-8"));
+                if (!root.optBoolean("success", false)) return out;
+                org.json.JSONObject data = root.optJSONObject("data");
+                org.json.JSONObject catalog = data == null ? null : data.optJSONObject("catalog");
+                if (catalog != null) {
+                    java.util.Iterator<String> keys = catalog.keys();
+                    while (keys.hasNext()) {
+                        String catalogName = keys.next();
+                        org.json.JSONArray voices = catalog.optJSONArray(catalogName);
+                        if (voices == null) continue;
+                        for (int i = 0; i < voices.length(); i++) {
+                            org.json.JSONObject v = voices.optJSONObject(i);
+                            // /forward 的 voice 参数吃 id（如 bdetts_xiao-xiao-…），
+                            // 不吃 name（「晓晓 多语言」）——id 缺失才退回 name
+                            String id = v == null ? "" : v.optString("id", "");
+                            String name = v == null ? "" : v.optString("name", "");
+                            String value = !id.isEmpty() ? id
+                                    : (!name.isEmpty() ? catalogName + "/" + name : "");
+                            if (!value.isEmpty()) {
+                                String display = catalogName + "/"
+                                        + (name.isEmpty() ? value : name);
+                                out.add(new VoiceEntry(value, display,
+                                        v == null ? "" : v.optString("locale", "")));
+                            }
+                        }
+                    }
+                } else if (data != null) {
+                    org.json.JSONArray arr = data.optJSONArray("voices");
+                    if (arr != null) {
+                        for (int i = 0; i < arr.length(); i++) {
+                            org.json.JSONObject v = arr.optJSONObject(i);
+                            String name = v == null ? "" : v.optString("name", "");
+                            if (!name.isEmpty()) {
+                                out.add(new VoiceEntry(name, name, v.optString("locale", "")));
+                            }
+                        }
+                    }
+                }
+            } finally {
+                conn.disconnect();
+            }
+        } catch (Throwable t) {
+            Log.w(TAG, "fetchVoicePairs failed", t);
+        }
+        return out;
+    }
 }

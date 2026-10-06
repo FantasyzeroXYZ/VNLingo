@@ -626,6 +626,16 @@ public final class OnsExtractSettingsDialogs {
                 activity.getString(R.string.engine_ons_tts_engine_http),
                 activity.getString(R.string.engine_ons_tts_engine_system)};
 
+        // 自定义试听文本（用户可直接输入任意文本测试当前引擎与参数）
+        TextView testHint = new TextView(activity);
+        testHint.setText(R.string.engine_ons_tts_test_text);
+        testHint.setTextColor(TEXT_DIM);
+        testHint.setTextSize(11);
+        final EditText testField = new EditText(activity);
+        testField.setText(activity.getString(R.string.engine_ons_tts_test_default));
+        testField.setTextSize(13);
+        testField.setSingleLine(true);
+
         // HTTP 模板输入（声明在前供 lambda 引用；addView 顺序决定布局）
         TextView httpHint = new TextView(activity);
         httpHint.setText(R.string.engine_ons_tts_http_template);
@@ -763,6 +773,8 @@ public final class OnsExtractSettingsDialogs {
             syncVoice.run();
         });
         box.addView(engineRow);
+        box.addView(testHint, matchWrap());
+        box.addView(testField, matchWrap());
         box.addView(httpHint, matchWrap());
         box.addView(httpField, matchWrap());
 
@@ -776,7 +788,8 @@ public final class OnsExtractSettingsDialogs {
         LinearLayout testRow = settingNavRow(activity, R.drawable.ic_volume,
                 R.string.engine_ons_tts_test, null);
         testRow.setOnClickListener(v -> {
-            final String testText = "音声テスト。语音测试。Voice test.";
+            final String testText = textOr(testField,
+                    activity.getString(R.string.engine_ons_tts_test_default));
             final String engine = engineState[0];
             if (OnsTtsEngines.ENGINE_SYSTEM.equals(engine)) {
                 try {
@@ -855,7 +868,27 @@ public final class OnsExtractSettingsDialogs {
         return 2; // 默认 50
     }
 
-    /** 发音人选择（按引擎拉取列表，后台线程 + 主线程单选弹窗）。 */
+    /** 发音人条目（UI 层）：value=存储值，display=显示文本（含语言代码）。 */
+    private static class VoiceUiEntry {
+        final String value;
+        final String display;
+        final String langTag;
+
+        VoiceUiEntry(String value, String display, String langTag) {
+            this.value = value;
+            this.display = display;
+            this.langTag = langTag == null ? "" : langTag;
+        }
+    }
+
+    /** 从显示文本提取语言标签后缀（"xxx [zh-CN]" → "zh-CN"）。 */
+    private static String langOfDisplay(String display) {
+        int i = display.lastIndexOf('[');
+        int j = display.lastIndexOf(']');
+        return (i >= 0 && j > i) ? display.substring(i + 1, j) : "";
+    }
+
+    /** 发音人选择：按引擎拉取（含 locale）→ 先选语言（筛选）→ 再选发音人。 */
     private static void showVoicePicker(Activity activity, String engine, Runnable onChanged) {
         if (OnsTtsEngines.ENGINE_HTTP.equals(engine)) {
             Toast.makeText(activity, R.string.engine_ons_tts_voice_pick_http, Toast.LENGTH_SHORT).show();
@@ -863,10 +896,14 @@ public final class OnsExtractSettingsDialogs {
         }
         Toast.makeText(activity, R.string.engine_ons_tts_voice_loading, Toast.LENGTH_SHORT).show();
         new Thread(() -> {
-            java.util.List<String> names = new java.util.ArrayList<>();
-            names.add("");
+            java.util.List<VoiceUiEntry> entries = new java.util.ArrayList<>();
             if (OnsTtsEngines.ENGINE_MULTI.equals(engine)) {
-                names.addAll(MultiTtsClient.fetchVoiceNamesOn(OnsTtsEngines.multiHost(activity)));
+                for (MultiTtsClient.VoiceEntry e
+                        : MultiTtsClient.fetchVoicePairsOn(OnsTtsEngines.multiHost(activity))) {
+                    String locale = e.locale;
+                    entries.add(new VoiceUiEntry(e.value,
+                            e.display + (locale.isEmpty() ? "" : "  [" + locale + "]"), locale));
+                }
             } else {
                 try {
                     java.util.concurrent.CountDownLatch latch =
@@ -879,40 +916,95 @@ public final class OnsExtractSettingsDialogs {
                     java.util.Set<android.speech.tts.Voice> set = tts.getVoices();
                     if (set != null) voices.addAll(set);
                     tts.shutdown();
-                    java.util.Set<String> locales = new java.util.HashSet<>();
                     for (android.speech.tts.Voice vo : voices) {
                         java.util.Locale lc = vo.getLocale();
-                        String tag = lc == null ? "" : lc.getLanguage();
-                        if (!tag.isEmpty() && locales.add(tag)) {
-                            names.add("#" + tag.toUpperCase(java.util.Locale.ROOT));
-                        }
-                    }
-                    for (android.speech.tts.Voice vo : voices) {
-                        names.add(vo.getName());
+                        String tag = lc == null ? "" : lc.toLanguageTag();
+                        entries.add(new VoiceUiEntry(vo.getName(),
+                                vo.getName() + "  [" + tag + "]", tag));
                     }
                 } catch (Throwable t) {
                     android.util.Log.w("OnsExtractSettingsDialogs", "system voices failed", t);
                 }
             }
-            final java.util.List<String> finalNames = names;
-            activity.runOnUiThread(() -> {
-                String[] items = finalNames.toArray(new String[0]);
-                String current = OnsTtsEngines.voice(activity);
-                int checked = 0;
-                for (int i = 0; i < items.length; i++) {
-                    if (items[i].equals(current)) { checked = i; break; }
-                }
-                new android.app.AlertDialog.Builder(activity)
-                        .setTitle(R.string.engine_ons_tts_voice)
-                        .setSingleChoiceItems(items, checked, (d, which) -> {
-                            OnsTtsEngines.setVoice(activity, items[which]);
-                            onChanged.run();
-                            d.dismiss();
-                        })
-                        .setNegativeButton(android.R.string.cancel, null)
-                        .show();
-            });
+            activity.runOnUiThread(() -> showLanguageFilter(activity, entries, onChanged));
         }, "tts-voice-picker").start();
     }
+
+    /** 第一级：语言筛选（从条目 locale 归并出语言代码列表 + 全部）。 */
+    private static void showLanguageFilter(Activity activity,
+            java.util.List<VoiceUiEntry> entries, Runnable onChanged) {
+        java.util.Set<String> langs = new java.util.LinkedHashSet<>();
+        for (VoiceUiEntry e : entries) {
+            String tag = e.langTag;
+            if (!tag.isEmpty()) {
+                String lang = tag.contains("-") ? tag.substring(0, tag.indexOf('-')) : tag;
+                langs.add(lang.toUpperCase(java.util.Locale.ROOT));
+            }
+        }
+        java.util.List<String> options = new java.util.ArrayList<>();
+        options.add(activity.getString(R.string.engine_ons_tts_voice_all));
+        options.addAll(langs);
+        String current = OnsTtsEngines.voice(activity);
+        VoiceUiEntry currentEntry = null;
+        for (VoiceUiEntry e : entries) {
+            if (e.value.equals(current)) { currentEntry = e; break; }
+        }
+        int checked = 0;
+        if (currentEntry != null) {
+            String cur = langOfDisplay(currentEntry.display);
+            if (!cur.isEmpty()) {
+                String cl = cur.contains("-") ? cur.substring(0, cur.indexOf('-'))
+                        .toUpperCase(java.util.Locale.ROOT) : cur.toUpperCase(java.util.Locale.ROOT);
+                int idx = options.indexOf(cl);
+                if (idx > 0) checked = idx;
+            }
+        }
+        final int checkedFinal = checked;
+        new android.app.AlertDialog.Builder(activity)
+                .setTitle(R.string.engine_ons_tts_voice_lang)
+                .setSingleChoiceItems(options.toArray(new String[0]), checkedFinal, (d, which) -> {
+                    String lang = which == 0 ? "" : options.get(which);
+                    d.dismiss();
+                    showVoiceList(activity, entries, lang, onChanged);
+                })
+                .setNegativeButton(android.R.string.cancel, null)
+                .show();
+    }
+
+    /** 第二级：语言筛选后的发音人单选（显示名带语言代码）。 */
+    private static void showVoiceList(Activity activity, java.util.List<VoiceUiEntry> entries,
+            String langFilter, Runnable onChanged) {
+        java.util.List<VoiceUiEntry> filtered = new java.util.ArrayList<>();
+        for (VoiceUiEntry e : entries) {
+            if (langFilter.isEmpty()) {
+                filtered.add(e);
+            } else {
+                String tag = e.langTag.toUpperCase(java.util.Locale.ROOT);
+                if (tag.startsWith(langFilter + "-") || tag.equals(langFilter)) filtered.add(e);
+            }
+        }
+        if (filtered.isEmpty()) {
+            Toast.makeText(activity, R.string.engine_ons_tts_voice_none, Toast.LENGTH_SHORT).show();
+            return;
+        }
+        String[] items = new String[filtered.size()];
+        String current = OnsTtsEngines.voice(activity);
+        int checked = 0;
+        for (int i = 0; i < filtered.size(); i++) {
+            items[i] = filtered.get(i).display;
+            if (filtered.get(i).value.equals(current)) checked = i;
+        }
+        final int checkedFinal = checked;
+        new android.app.AlertDialog.Builder(activity)
+                .setTitle(R.string.engine_ons_tts_voice)
+                .setSingleChoiceItems(items, checkedFinal, (d, which) -> {
+                    OnsTtsEngines.setVoice(activity, filtered.get(which).value);
+                    onChanged.run();
+                    d.dismiss();
+                })
+                .setNegativeButton(android.R.string.cancel, null)
+                .show();
+    }
+
 
 }

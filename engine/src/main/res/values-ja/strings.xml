@@ -210,6 +210,11 @@
     <string name="engine_ons_tts_voice_loading">音声リストを取得中…</string>
     <string name="engine_ons_tts_voice_pick_http">HTTP エンジンの音声は URL テンプレートで指定します</string>
     <string name="engine_ons_tts_multi_host">MultiTTS サーバー（host:port）</string>
+    <string name="engine_ons_tts_test_text">テスト音声テキスト（自由入力）</string>
+    <string name="engine_ons_tts_test_default">音声テスト。1234。</string>
+    <string name="engine_ons_tts_voice_lang">言語で絞り込み</string>
+    <string name="engine_ons_tts_voice_all">すべての言語</string>
+    <string name="engine_ons_tts_voice_none">この言語の音声がありません</string>
 </resources>
 
 

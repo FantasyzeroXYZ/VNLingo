@@ -209,6 +209,11 @@
     <string name="engine_ons_tts_voice_loading">正在获取发音人列表…</string>
     <string name="engine_ons_tts_voice_pick_http">HTTP 引擎的发音人在 URL 模板中指定</string>
     <string name="engine_ons_tts_multi_host">MultiTTS 服务器（host:port）</string>
+    <string name="engine_ons_tts_test_text">试听文本（可自定义）</string>
+    <string name="engine_ons_tts_test_default">音声テスト。语音测试。Voice test.</string>
+    <string name="engine_ons_tts_voice_lang">按语言筛选</string>
+    <string name="engine_ons_tts_voice_all">全部语言</string>
+    <string name="engine_ons_tts_voice_none">该语言下无发音人</string>
 </resources>
 
 

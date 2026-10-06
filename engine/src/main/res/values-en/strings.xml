@@ -207,6 +207,11 @@
     <string name="engine_ons_tts_voice_loading">Loading voice list…</string>
     <string name="engine_ons_tts_voice_pick_http">HTTP engine voice is set in the URL template</string>
     <string name="engine_ons_tts_multi_host">MultiTTS server (host:port)</string>
+    <string name="engine_ons_tts_test_text">Test text (customizable)</string>
+    <string name="engine_ons_tts_test_default">Voice test. 1234.</string>
+    <string name="engine_ons_tts_voice_lang">Filter by language</string>
+    <string name="engine_ons_tts_voice_all">All languages</string>
+    <string name="engine_ons_tts_voice_none">No voices for this language</string>
 </resources>
 
 
