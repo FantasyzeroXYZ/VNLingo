@@ -18,4 +18,8 @@
     <root-path
         name="root_roms"
         path="/" />
+    <!-- 运行时诊断日志（filesDir/diag）经 FileProvider 分享 -->
+    <files-path
+        name="diag_log"
+        path="diag/" />
 </paths>

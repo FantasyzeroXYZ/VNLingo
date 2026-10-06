@@ -17,6 +17,8 @@ import androidx.compose.foundation.interaction.InteractionSource
 import androidx.compose.foundation.LocalIndication
 import androidx.compose.foundation.IndicationNodeFactory
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -36,6 +38,7 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
 import androidx.compose.material.icons.filled.Folder
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -421,6 +424,10 @@ fun SettingsScreen(modifier: Modifier = Modifier) {
                             // 崩溃日志：CrashLogWriter 落盘的未捕获异常堆栈（含引擎子进程），
                             // 现场设备上凭此定位问题；点击条目用系统分享面板发出
                             var showCrashDialog by remember { mutableStateOf(false) }
+                            var showRuntimeView by remember { mutableStateOf(false) }
+                            val runtimeLines = remember(showRuntimeView) {
+                                com.core.diag.DiagLog.readTail(ctx, 200)
+                            }
                             val crashFiles = remember(showCrashDialog) {
                                 File(ctx.filesDir, "crash").listFiles()
                                     ?.sortedByDescending { it.name } ?: emptyList<File>()
@@ -435,7 +442,51 @@ fun SettingsScreen(modifier: Modifier = Modifier) {
                                 startAction = { SettingsItemIcon(R.drawable.ic_settings) },
                                 onClick = { showCrashDialog = true },
                             )
-                            if (showCrashDialog) {
+                            if (showRuntimeView) {
+        AppAlertDialog(
+            onDismissRequest = { showRuntimeView = false },
+            title = {
+                Text(
+                    stringResource(R.string.settings_diag_runtime, formatUpdateBytes(
+                        com.core.diag.DiagLog.file(ctx).length(),
+                    )),
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.Bold,
+                    color = MaterialTheme.colorScheme.onSurface,
+                )
+            },
+            text = {
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .verticalScroll(rememberScrollState()),
+                ) {
+                    if (runtimeLines.isEmpty()) {
+                        Text(
+                            stringResource(R.string.settings_diag_empty),
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    } else {
+                        for (line in runtimeLines) {
+                            Text(
+                                line,
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurface,
+                            )
+                        }
+                    }
+                }
+            },
+            confirmButton = {
+                TextButton(onClick = { showRuntimeView = false }) {
+                    Text(stringResource(R.string.common_cancel))
+                }
+            },
+        )
+    }
+
+    if (showCrashDialog) {
                                 AppAlertDialog(
                                     onDismissRequest = { showCrashDialog = false },
                                     title = {
@@ -448,6 +499,61 @@ fun SettingsScreen(modifier: Modifier = Modifier) {
                                     },
                                     text = {
                                         Column {
+                                            // 运行时日志（DiagLog 关键路径埋点缓冲）：查看/清空/导出
+                                            val diagFile = remember {
+                                                com.core.diag.DiagLog.file(ctx)
+                                            }
+                                            Text(
+                                                stringResource(
+                                                    R.string.settings_diag_runtime,
+                                                    formatUpdateBytes(diagFile.length()),
+                                                ),
+                                                style = MaterialTheme.typography.bodyMedium,
+                                                color = MaterialTheme.colorScheme.onSurface,
+                                            )
+                                            Row(
+                                                modifier = Modifier.fillMaxWidth().padding(top = 4.dp),
+                                                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                                            ) {
+                                                TextButton(onClick = { showRuntimeView = true }) {
+                                                    Text(stringResource(R.string.settings_diag_view))
+                                                }
+                                                TextButton(onClick = {
+                                                    com.core.diag.DiagLog.clear(ctx)
+                                                    Toast.makeText(
+                                                        ctx,
+                                                        R.string.settings_diag_cleared,
+                                                        Toast.LENGTH_SHORT,
+                                                    ).show()
+                                                }) {
+                                                    Text(stringResource(R.string.settings_diag_clear))
+                                                }
+                                                TextButton(onClick = {
+                                                    runCatching {
+                                                        val uri = FileProvider.getUriForFile(
+                                                            ctx,
+                                                            ctx.packageName + ".fileprovider",
+                                                            diagFile,
+                                                        )
+                                                        ctx.startActivity(
+                                                            Intent.createChooser(
+                                                                Intent(Intent.ACTION_SEND).apply {
+                                                                    type = "text/plain"
+                                                                    putExtra(Intent.EXTRA_STREAM, uri)
+                                                                    putExtra(
+                                                                        Intent.EXTRA_SUBJECT,
+                                                                        "vnlingo_diag.log",
+                                                                    )
+                                                                },
+                                                                "vnlingo_diag.log",
+                                                            ),
+                                                        )
+                                                    }
+                                                }) {
+                                                    Text(stringResource(R.string.settings_diag_export))
+                                                }
+                                            }
+                                            HorizontalDivider()
                                             if (crashFiles.isEmpty()) {
                                                 Text(
                                                     stringResource(R.string.settings_crash_log_none),

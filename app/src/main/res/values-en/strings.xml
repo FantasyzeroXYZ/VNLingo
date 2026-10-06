@@ -28,6 +28,12 @@
     <string name="settings_tts">TTS</string>
     <string name="settings_dict_page">Dictionaries</string>
     <string name="settings_gamepad">Gamepad settings</string>
+    <string name="settings_diag_runtime">Runtime log (diag.log, %1$s)</string>
+    <string name="settings_diag_view">View runtime log</string>
+    <string name="settings_diag_clear">Clear runtime log</string>
+    <string name="settings_diag_export">Export runtime log</string>
+    <string name="settings_diag_empty">No runtime log yet</string>
+    <string name="settings_diag_cleared">Runtime log cleared</string>
     <string name="settings_crash_log">Debug logs</string>
     <string name="settings_crash_log_none">No records</string>
     <string name="settings_crash_log_hint">%1$d records, tap to view/share</string>

@@ -22,6 +22,8 @@ class TyranorNextApplication : Application(), DefaultLifecycleObserver, Configur
         // 崩溃日志落盘（主进程与引擎子进程都经此处安装）：现场设备崩溃可凭
         // filesDir/crash/ 下的堆栈定位；必须最早安装，覆盖后续一切初始化崩溃。
         CrashLogWriter.install(this)
+        // 运行时诊断日志（调试日志页「运行时日志」数据源）；引擎子进程同样安装
+        com.core.diag.DiagLog.install(this)
         // 共享 prefs 文件更名（yukihub_prefs → tyranor_prefs）：所有进程（含引擎子进程）
         // 启动最早时机一次性迁移，必须先于任何 EngineSettingsStore/引擎偏好读取。
         PrefsRenameMigration.migrate(this)

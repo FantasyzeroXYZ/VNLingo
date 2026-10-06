@@ -131,8 +131,10 @@ public final class OnsTranslateClient {
                 String error = null;
                 try {
                     translated = translateViaExtension(context, engine, text);
+                    com.core.diag.DiagLog.debug("translate", engine + " ok: " + translated);
                 } catch (Throwable t) {
                     Log.w(TAG, engine + " translate failed", t);
+                    com.core.diag.DiagLog.debug("translate", engine + " failed: " + t.getMessage());
                     error = t.getMessage() == null ? t.toString() : t.getMessage();
                 }
                 // 引擎线程不得因消费方回调异常而死亡（回调方负责自行切主线程）
@@ -232,9 +234,11 @@ public final class OnsTranslateClient {
                 String translated = chatCompletion(baseUrl, apiKey, model,
                         "你是专业翻译。将用户输入翻译为「" + target + "」，只输出译文，"
                                 + "不要解释、不要引号、不要保留原文。", text);
+                com.core.diag.DiagLog.debug("translate", "api ok: " + truncate(translated));
                 callback.onResult(translated, null);
             } catch (Throwable t) {
                 Log.w(TAG, "translate failed", t);
+                com.core.diag.DiagLog.debug("translate", "api failed: " + t.getMessage());
                 callback.onResult(null, t.getMessage() == null ? t.toString() : t.getMessage());
             }
         }, "ons-translate").start();

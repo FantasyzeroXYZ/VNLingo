@@ -28,6 +28,12 @@
     <string name="settings_tts">TTS 设置</string>
     <string name="settings_dict_page">词典设置</string>
     <string name="settings_gamepad">手柄设置</string>
+    <string name="settings_diag_runtime">运行时日志（diag.log，%1$s）</string>
+    <string name="settings_diag_view">查看运行时日志</string>
+    <string name="settings_diag_clear">清空运行时日志</string>
+    <string name="settings_diag_export">导出运行时日志</string>
+    <string name="settings_diag_empty">暂无运行时日志</string>
+    <string name="settings_diag_cleared">运行时日志已清空</string>
     <string name="settings_crash_log">调试日志</string>
     <string name="settings_crash_log_none">无记录</string>
     <string name="settings_crash_log_hint">%1$d 份记录，点击查看/分享</string>

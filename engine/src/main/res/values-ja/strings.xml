@@ -114,7 +114,7 @@
     <string name="engine_ons_extract_cloud_hint_dir">リモート DIR（既定 TyranorNext/saves）</string>
     <string name="engine_ons_extract_cloud_upload">アップロード</string>
     <string name="engine_ons_extract_cloud_download">ダウンロード</string>
-    <string name="engine_ons_extract_chip">文</string>
+    <string name="engine_ons_extract_chip">テキスト</string>
     <string name="engine_ons_side_text_frame">テキストパネル</string>
     <string name="engine_ons_side_screenshot">スクリーンショット</string>
     <string name="engine_ons_side_magnifier">拡大鏡</string>

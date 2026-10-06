@@ -28,6 +28,12 @@
     <string name="settings_tts">TTS 設定</string>
     <string name="settings_dict_page">辞書設定</string>
     <string name="settings_gamepad">コントローラー設定</string>
+    <string name="settings_diag_runtime">ランタイムログ（diag.log、%1$s）</string>
+    <string name="settings_diag_view">ランタイムログを表示</string>
+    <string name="settings_diag_clear">ランタイムログを消去</string>
+    <string name="settings_diag_export">ランタイムログを書き出す</string>
+    <string name="settings_diag_empty">ランタイムログはまだありません</string>
+    <string name="settings_diag_cleared">ランタイムログを消去しました</string>
     <string name="settings_crash_log">デバッグログ</string>
     <string name="settings_crash_log_none">記録なし</string>
     <string name="settings_crash_log_hint">%1$d 件。タップで表示/共有</string>

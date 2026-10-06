@@ -178,6 +178,8 @@ class SyncManager(private val context: Context) {
                     return@execute
                 }
 
+                com.core.diag.DiagLog.debug("sync", "conflict local=" + result.localBytes
+                        + " remote=" + result.remoteBytes)
                 val conflict = Conflict(local, remote!!, result.localBytes, result.remoteBytes)
                 val decision = listener?.onConflict(conflict) ?: RESOLVE_MERGE
                 if (decision == RESOLVE_CANCEL) {
@@ -205,6 +207,7 @@ class SyncManager(private val context: Context) {
                 listener?.onSyncComplete(result)
             } catch (t: Exception) {
                 Log.e(TAG, "sync failed", t)
+                com.core.diag.DiagLog.debug("sync", "failed: " + t.message)
                 listener?.onError(t.message ?: "sync failed")
             }
         }

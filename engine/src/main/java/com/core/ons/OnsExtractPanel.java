@@ -1215,6 +1215,8 @@ public class OnsExtractPanel {
                 defGroups = hit.groups;
                 defSentence = hit.matched;
                 matchedRange = hit.range;
+                com.core.diag.DiagLog.debug("dict", "hit: " + hit.matched
+                        + " groups=" + hit.groups.size());
                 main.post(this::refresh);
             } catch (Throwable t) {
                 Log.w(TAG, "dict scan failed", t);
