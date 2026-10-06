@@ -4,6 +4,14 @@
 > `docs/说明/游戏内提取制卡功能方案.md`（提取功能线方案）阅读。
 > 更新时间：2026-10-06
 
+## 2026-10-06 会话（三十七）：senhana (MV) 提取启动验证（部分完成）
+
+- senhana（RPG Maker MV，RpgMakerActivity/Web 宿主）模拟器启动：引擎正常
+  拉起、注入管线与 mukbang (MZ) 同链路。**未完成**：游戏主菜单的盲点导航
+  持续错位（MV 触屏菜单 tap 命中行与坐标预期反复偏离，多组标定均不稳），
+  对话捕获未能走完——留待真机/稳定环境复测。mukbang (MZ) 的 Web 捕获链
+  已端到端实证（会话三十四），MV 与 MZ 共用同一注入/捕获代码路径。
+
 ## 2026-10-06 会话（三十六）：Anki 制卡多方案（TrackReader schemes 对齐）
 
 - `AnkiCardSchemes`（新，com.core.anki）：把制卡设置整包（deck/model/
