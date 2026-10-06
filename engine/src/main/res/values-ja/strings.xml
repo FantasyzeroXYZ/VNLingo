@@ -62,6 +62,15 @@
     <string name="engine_ons_tts_multi_reject">MultiTTS がリクエストを拒否しました。音声設定を確認してください</string>
     <string name="engine_ons_tts_http_down">HTTP TTS サービスに接続できません。URL と状態を確認してください</string>
     <string name="engine_ons_extract_anki_model_missing">モデル「%1$s」が存在しません。AnkiDroid で先に作成するか、モデル名を TyranorNext Word に戻してください</string>
+    <string name="engine_ons_anki_scheme">スキーム</string>
+    <string name="engine_ons_anki_scheme_none">デフォルト（保存スキームなし）</string>
+    <string name="engine_ons_anki_scheme_name_hint">スキーム名</string>
+    <string name="engine_ons_anki_scheme_save">スキームに保存</string>
+    <string name="engine_ons_anki_scheme_saved">スキームを保存しました</string>
+    <string name="engine_ons_anki_scheme_load">読み込む</string>
+    <string name="engine_ons_anki_scheme_loaded">スキームを読み込みました</string>
+    <string name="common_delete">削除</string>
+    <string name="common_cancel">キャンセル</string>
     <string name="engine_ons_extract_anki_go_grant">許可する</string>
     <string name="engine_ons_extract_anki_need_permission">AnkiDroid の許可画面で権限を付与して再試行してください</string>
     <string name="engine_ons_extract_anki_added">Anki に追加しました</string>

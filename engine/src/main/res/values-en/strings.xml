@@ -62,6 +62,15 @@
     <string name="engine_ons_tts_multi_reject">MultiTTS rejected the request; check the voice configuration</string>
     <string name="engine_ons_tts_http_down">HTTP TTS service unreachable; check the URL and service status</string>
     <string name="engine_ons_extract_anki_model_missing">Model "%1$s" does not exist: create it in AnkiDroid first, or set the card model back to TyranorNext Word</string>
+    <string name="engine_ons_anki_scheme">Scheme</string>
+    <string name="engine_ons_anki_scheme_none">Default (no saved scheme)</string>
+    <string name="engine_ons_anki_scheme_name_hint">Scheme name</string>
+    <string name="engine_ons_anki_scheme_save">Save as scheme</string>
+    <string name="engine_ons_anki_scheme_saved">Scheme saved</string>
+    <string name="engine_ons_anki_scheme_load">Load</string>
+    <string name="engine_ons_anki_scheme_loaded">Scheme loaded</string>
+    <string name="common_delete">Delete</string>
+    <string name="common_cancel">Cancel</string>
     <string name="engine_ons_extract_anki_go_grant">Grant</string>
     <string name="engine_ons_extract_anki_need_permission">Grant access in the AnkiDroid dialog and retry</string>
     <string name="engine_ons_extract_anki_added">Added to Anki</string>

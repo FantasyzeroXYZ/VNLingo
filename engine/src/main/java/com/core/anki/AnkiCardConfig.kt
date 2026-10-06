@@ -29,7 +29,7 @@ object AnkiCardConfig {
     const val VOICE_TTS = "tts"     // 仅 TTS 生成
     const val VOICE_OFF = "off"     // 不要语音
 
-    private const val PREFS = "anki_card_config"
+    internal const val PREFS = "anki_card_config"
     private const val KEY_DECK = "deck"
     private const val KEY_MODEL = "model"
     private const val KEY_FIELD_MAP = "field_map"

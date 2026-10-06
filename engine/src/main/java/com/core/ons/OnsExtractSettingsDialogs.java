@@ -305,6 +305,89 @@ public final class OnsExtractSettingsDialogs {
                 .show();
     }
 
+
+    /**
+     * 方案管理子对话框：存为方案 / 方案列表（点击加载，✕ 删除）。
+     * 加载 = 整包覆盖活动配置；覆盖后 deck/model 输入框经 syncScheme 之外的
+     * 路径不刷新（对话框尚开着），故加载后同步重开一次设置弹窗保证字段一致。
+     */
+    private static void showSchemeManager(Activity activity,
+                                          java.util.concurrent.atomic.AtomicReference<String> activeScheme,
+                                          Runnable onSchemeChanged,
+                                          EditText deckField, EditText modelField) {
+        LinearLayout box = new LinearLayout(activity);
+        box.setOrientation(LinearLayout.VERTICAL);
+        int pad = dp(activity, 16);
+        box.setPadding(pad, dp(activity, 8), pad, 0);
+
+        // 存为方案行：输入名 + 保存
+        LinearLayout saveRow = new LinearLayout(activity);
+        saveRow.setOrientation(LinearLayout.HORIZONTAL);
+        saveRow.setGravity(android.view.Gravity.CENTER_VERTICAL);
+        final EditText nameField = new EditText(activity);
+        nameField.setHint(R.string.engine_ons_anki_scheme_name_hint);
+        nameField.setTextSize(13);
+        nameField.setSingleLine(true);
+        saveRow.addView(nameField, new LinearLayout.LayoutParams(
+                0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f));
+        TextView saveBtn = new TextView(activity);
+        saveBtn.setText(R.string.engine_ons_anki_scheme_save);
+        saveBtn.setTextColor(ACCENT);
+        saveBtn.setPadding(dp(activity, 10), 0, 0, 0);
+        saveBtn.setOnClickListener(v -> {
+            String name = nameField.getText() == null ? "" : nameField.getText().toString().trim();
+            if (name.isEmpty()) return;
+            // 先落盘当前输入的 deck/model 再拍快照（与主弹窗保存语义一致）
+            com.core.anki.AnkiCardSchemes.saveCurrent(activity, name);
+            Toast.makeText(activity, R.string.engine_ons_anki_scheme_saved, Toast.LENGTH_SHORT).show();
+            onSchemeChanged.run();
+        });
+        saveRow.addView(saveBtn);
+        box.addView(saveRow);
+
+        // 方案列表：点击加载，行内 ✕ 删除
+        for (String name : com.core.anki.AnkiCardSchemes.list(activity)) {
+            LinearLayout row = new LinearLayout(activity);
+            row.setOrientation(LinearLayout.HORIZONTAL);
+            row.setGravity(android.view.Gravity.CENTER_VERTICAL);
+            row.setPadding(0, dp(activity, 8), 0, dp(activity, 8));
+            TextView nameView = new TextView(activity);
+            nameView.setText(name);
+            nameView.setTextColor(TEXT_BODY);
+            nameView.setTextSize(14);
+            row.addView(nameView, new LinearLayout.LayoutParams(
+                    0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f));
+            TextView load = new TextView(activity);
+            load.setText(R.string.engine_ons_anki_scheme_load);
+            load.setTextColor(ACCENT);
+            load.setPadding(0, 0, dp(activity, 12), 0);
+            load.setOnClickListener(v -> {
+                com.core.anki.AnkiCardSchemes.apply(activity, name);
+                deckField.setText(AnkiCardConfig.deck(activity));
+                modelField.setText(AnkiCardConfig.model(activity));
+                activeScheme.set(name);
+                Toast.makeText(activity, R.string.engine_ons_anki_scheme_loaded, Toast.LENGTH_SHORT).show();
+                onSchemeChanged.run();
+            });
+            row.addView(load);
+            TextView del = new TextView(activity);
+            del.setText(R.string.common_delete);
+            del.setTextColor(TEXT_DIM);
+            del.setOnClickListener(v -> {
+                com.core.anki.AnkiCardSchemes.delete(activity, name);
+                onSchemeChanged.run();
+            });
+            row.addView(del);
+            box.addView(row);
+        }
+
+        new android.app.AlertDialog.Builder(activity)
+                .setTitle(R.string.engine_ons_anki_scheme)
+                .setView(box)
+                .setNegativeButton(android.R.string.cancel, null)
+                .show();
+    }
+
     /** 翻译测试：源/目标循环切换 + 输入 + 运行 + 结果。 */
     public static void showTranslateTestDialog(Activity activity) {
         SharedPreferences p = OnsTranslateClient.prefs(activity);
@@ -585,10 +668,27 @@ public final class OnsExtractSettingsDialogs {
         int pad = dp(activity, 16);
         box.setPadding(pad, dp(activity, 8), pad, 0);
 
+        // 方案区（TrackReader schemes 对齐）：当前方案名 + 存为方案 + 方案列表
+        //（点击加载切换，长按删除；保存按钮只写活动配置，方案快照独立存储）
+        final java.util.concurrent.atomic.AtomicReference<String> activeScheme =
+                new java.util.concurrent.atomic.AtomicReference<>(com.core.anki.AnkiCardSchemes.activeName(activity));
+        TextView schemeValue = new TextView(activity);
+        styleNavValue(activity, schemeValue);
+        Runnable syncScheme = () -> schemeValue.setText(
+                activeScheme.get().isEmpty()
+                        ? activity.getString(R.string.engine_ons_anki_scheme_none)
+                        : activeScheme.get());
+        syncScheme.run();
         EditText deckField = settingField(activity, box,
                 R.string.engine_ons_anki_card_deck, AnkiCardConfig.deck(activity));
         EditText modelField = settingField(activity, box,
                 R.string.engine_ons_anki_card_model, AnkiCardConfig.model(activity));
+
+        LinearLayout schemeRow = settingNavRow(activity, R.drawable.ic_card,
+                R.string.engine_ons_anki_scheme, schemeValue);
+        schemeRow.setOnClickListener(v -> showSchemeManager(activity, activeScheme, syncScheme,
+                deckField, modelField));
+        box.addView(schemeRow);
 
         // 例句语音源行（点击循环：自动→游戏→TTS→关）
         final String[] voiceKeys = {AnkiCardConfig.VOICE_AUTO, AnkiCardConfig.VOICE_GAME,
@@ -754,6 +854,9 @@ public final class OnsExtractSettingsDialogs {
                         }
                     }
                     AnkiCardConfig.setFieldMap(activity, map);
+                    com.core.anki.AnkiCardSchemes.setActiveName(activity, "");
+                    activeScheme.set("");
+                    syncScheme.run();
                     Toast.makeText(activity, R.string.engine_ons_settings_saved,
                             Toast.LENGTH_SHORT).show();
                 })
