@@ -47,8 +47,12 @@
 - [x] KRKR 对白还原精化：部分完成——FT 字符流/整页推导/候选选择已上线，
       旁白行干净，说话人行/多行页走候选或历史悬浮窗查看
 - [x] KRKR 纯运行时 hook：FT_Get_Char_Index 字符流已打通（fc94f92，不改内核）
-- [ ] Web 引擎（mukbang=MV / senhana=MZ）提取实测
-- [ ] Artemis SKIP 键（ctrl id 140）在 blossom 未观察到快进，待验证脚本消费
+- [x] Web 引擎提取实测（mukbang，MZ 引擎走 TyranoActivity/Web 宿主）：
+      __tn_extract.js 注入捕获正常——开场英文句与后续选项句连续更新到面板
+      句栏（2026-10-06 模拟器实测）；senhana（MV）同链路未单独复测
+- [x] Artemis SKIP 键行为已验证（2026-10-06）：ctrl(140) 注入到达内核，
+      blossom 的实际响应是打开日志面板（非快进）——脚本层不消费 ctrl-skip；
+      按键链路本身正常，行为差异属游戏脚本绑定（非缺陷）
 - [ ] ONS 语音配对：esg 卡在姓名输入，待用 ym/monque 复测
 - [ ] 官方 revision Artemis 内核不挂钩、无提取（按需再评估）
 - [ ] 正式词典导入：模拟器现为种子词典（17 词条 + 5 条 romaji 测试别名），正式
