@@ -120,9 +120,6 @@ public class OnsExtractPanel {
     private TextView statusView;
     private TextView sentenceView;
     private TextView listeningView;
-    private LinearLayout defArea;
-    private TextView defHeader;
-    private TextView defBody;
     private TextView transView;
     private ScrollView mainScroller;
     private ScrollView historyScroller;
@@ -310,42 +307,14 @@ public class OnsExtractPanel {
             refresh();
         });
 
-        // 释义区（查词结果）：词条头 + 释义 + 词卡/收起
-        defArea = new LinearLayout(activity);
-        defArea.setOrientation(LinearLayout.VERTICAL);
-        defArea.setPadding(dp(8), dp(6), dp(8), dp(6));
-        defArea.setBackground(rounded(BG_DEF, dp(8), DIVIDER_DARK, dp(1)));
-        defArea.setVisibility(View.GONE);
-
-        defHeader = new TextView(activity);
-        defHeader.setTextColor(DEF_ACCENT);
-        defHeader.setTextSize(15);
-        defHeader.setTypeface(Typeface.DEFAULT_BOLD);
-
-        defBody = new TextView(activity);
-        defBody.setTextColor(TEXT_ON_DARK);
-        defBody.setTextSize(13);
-        defBody.setLineSpacing(0f, 1.6f);
-
-        LinearLayout defActions = new LinearLayout(activity);
-        defActions.setOrientation(LinearLayout.HORIZONTAL);
-        defActions.setGravity(Gravity.CENTER_VERTICAL);
-        defActions.addView(makeAction(R.drawable.ic_book, R.string.engine_ons_extract_word_card, this::makeWordCard));
-        defActions.addView(makeAction(R.drawable.ic_close, R.string.engine_ons_extract_def_dismiss, this::dismissDef));
-
-        defArea.addView(defHeader);
-        defArea.addView(defBody, matchWrap());
-        LinearLayout.LayoutParams defActionsLp = matchWrap();
-        defActionsLp.topMargin = dp(4);
-        defArea.addView(defActions, defActionsLp);
-
+        // 释义不再入面板：查词结果路由到顶部独立悬浮窗 OnsDictOverlay（jidoujisho 式）
         transView = new TextView(activity);
         transView.setTextColor(TEXT_ON_DARK_DIM);
         transView.setTextSize(13);
         transView.setLineSpacing(0f, 1.5f);
         transView.setVisibility(View.GONE);
 
-        LinearLayout mainColumn = wrapColumn(sentenceView, listeningView, defArea, transView);
+        LinearLayout mainColumn = wrapColumn(sentenceView, listeningView, transView);
         mainScroller = new ScrollView(activity);
         mainScroller.addView(mainColumn);
         LinearLayout.LayoutParams mainLp = new LinearLayout.LayoutParams(
@@ -601,9 +570,6 @@ public class OnsExtractPanel {
                 android.graphics.drawable.Drawable bg = actionsRow.getChildAt(i).getBackground();
                 if (bg != null) bg.setAlpha(alpha);
             }
-        }
-        if (defArea != null && defArea.getBackground() != null) {
-            defArea.getBackground().setAlpha(alpha);
         }
     }
 
@@ -1015,6 +981,7 @@ public class OnsExtractPanel {
             dictRequestId++; // 翻句使在途查词失效
             translateRequestId++; // 翻句使在途翻译失效
             defGroups = null;
+            matchedRange = null; // 旧句高亮区间不跨句
             defSentence = null;
             if (transView != null) {
                 transView.setTag(null); // 翻句清掉旧译文
@@ -1031,6 +998,13 @@ public class OnsExtractPanel {
         final List<OnsDictStore.Group> groups = defGroups;
         final String lookupTerm = defSentence;
         final boolean hasTrans = transView.getTag() != null;
+        // 释义路由到顶部独立悬浮窗（查词命中即显示；翻句 defGroups=null 时收起）。
+        // 不受面板展开状态影响：悬浮窗独立于剧情文本框（jidoujisho 式顶部释义卡）
+        if (groups != null && !groups.isEmpty()) {
+            OnsDictOverlay.show(activity, lookupTerm, groups, this::makeWordCard);
+        } else {
+            OnsDictOverlay.hide();
+        }
         main.post(() -> {
             if (!expanded) return;
             java.util.List<String> candsNow = facade != null
@@ -1045,26 +1019,6 @@ public class OnsExtractPanel {
                 listeningView.setText(R.string.engine_ons_extract_listening_hidden);
             } else if (!historyMode) {
                 renderSentence(sentenceFinal);
-            }
-            defArea.setVisibility(!hideForListening && groups != null ? View.VISIBLE : View.GONE);
-            if (groups != null) {
-                defHeader.setText(lookupTerm == null ? "" : lookupTerm);
-                if (groups.isEmpty()) {
-                    defBody.setText(R.string.engine_ons_extract_def_none);
-                } else {
-                    StringBuilder sb = new StringBuilder();
-                    for (OnsDictStore.Group g : groups) {
-                        if (sb.length() > 0) sb.append("\n");
-                        sb.append(g.term);
-                        if (!g.reading.isEmpty() && !g.reading.equals(g.term)) {
-                            sb.append("【").append(g.reading).append("】");
-                        }
-                        for (String gloss : g.glosses) {
-                            sb.append("\n").append(gloss);
-                        }
-                    }
-                    defBody.setText(sb.toString());
-                }
             }
             transView.setVisibility(hasTrans ? View.VISIBLE : View.GONE);
             if (historyMode) rebuildHistory();
@@ -1161,9 +1115,12 @@ public class OnsExtractPanel {
         // 懒渲染：超长页只保留尾部 240 字符参与选词（完整内容走历史悬浮窗），
         // 防止巨型页每字符建 ClickableSpan 拖垮主线程（此前 ANR 根因）
         if (text.length() > 240) text = text.substring(text.length() - 240);
+        // 同句重渲染（打字机 flush）保留扫描高亮与点选状态；翻句由调用方显式清位
+        if (!text.equals(currentSentence)) {
+            matchedRange = null;
+            selectedToken = -1;
+        }
         currentSentence = text;
-        matchedRange = null;
-        selectedToken = -1;
         SpannableString ss = new SpannableString(text);
         boolean cjk = isCjkText(text);
         int n = text.length();
@@ -1351,6 +1308,7 @@ public class OnsExtractPanel {
     private void dismissDef() {
         defGroups = null;
         defSentence = null;
+        OnsDictOverlay.hide();
         refresh();
     }
 
