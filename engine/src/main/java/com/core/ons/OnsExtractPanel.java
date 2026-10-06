@@ -37,6 +37,7 @@ import java.io.File;
 import java.io.FileOutputStream;
 import java.text.SimpleDateFormat;
 import java.util.ArrayList;
+import java.util.concurrent.CountDownLatch;
 import java.util.Date;
 import java.util.List;
 import java.util.Locale;
@@ -350,6 +351,10 @@ public class OnsExtractPanel {
         actions.addView(makeAction(R.drawable.ic_copy, R.string.engine_ons_extract_copy_text, this::copyText));
         actions.addView(makeAction(R.drawable.ic_translate, R.string.engine_ons_extract_translate, this::translateCurrent));
         actions.addView(makeAction(R.drawable.ic_card, R.string.engine_ons_extract_anki, this::sendToAnki));
+        // AI 游戏助手（Agent/Chat LLM + 工具调用）
+        actions.addView(makeAction(R.drawable.ic_autorenew, R.string.engine_ons_agent_title, () -> {
+            OnsAgentDialog.show(activity, this);
+        }));
         // 开关型：历史视图 / 听力模式 / TTS / 自动朗读（状态持久化）
         historyToggle = makeToggle(R.drawable.ic_history, R.string.engine_ons_extract_history, false, () -> {
             toggleHistoryOverlay();  // 历史独立悬浮窗（用户要求与文本框分离）
@@ -1320,6 +1325,47 @@ public class OnsExtractPanel {
         defSentence = null;
         OnsDictOverlay.hide();
         refresh();
+    }
+
+    // ---- AI Agent 桥接（OnsAgentDialog ToolHost 回调）----
+
+    String getCurrentSentenceForAgent() {
+        String s = facade.getSentenceText();
+        return s.isEmpty() ? facade.getPageText() : s;
+    }
+
+    String getGameDisplayName() {
+        return facade.gameDisplayName();
+    }
+
+    String agentLookupWord(String word) {
+        List<OnsDictStore.Group> groups = OnsDictStore.get().search(word, 3);
+        if (groups.isEmpty()) return "未查到「" + word + "」";
+        StringBuilder sb = new StringBuilder();
+        for (OnsDictStore.Group g : groups) {
+            if (sb.length() > 0) sb.append('\n');
+            sb.append(g.term);
+            if (!g.reading.isEmpty() && !g.reading.equals(g.term))
+                sb.append("【").append(g.reading).append("】");
+            for (String gloss : g.glosses) sb.append('\n').append(gloss);
+        }
+        return sb.toString();
+    }
+
+    String agentTranslate(String text, String targetLang) {
+        // 同步调用翻译引擎（agent 线程安全）
+        final String[] result = {null};
+        final CountDownLatch latch = new CountDownLatch(1);
+        OnsTranslateClient.translateWithEngine(activity, text, (translated, error) -> {
+            result[0] = translated != null ? translated : "翻译失败: " + error;
+            latch.countDown();
+        });
+        try { latch.await(30, java.util.concurrent.TimeUnit.SECONDS); } catch (InterruptedException ignored) {}
+        return result[0] != null ? result[0] : "翻译超时";
+    }
+
+    void agentSpeak(String text) {
+        speakText(text);
     }
 
     // ------------------------------------------------------------------
