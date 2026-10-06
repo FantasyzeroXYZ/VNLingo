@@ -54,7 +54,9 @@
 - [x] Artemis SKIP 键行为已验证（2026-10-06）：ctrl(140) 注入到达内核，
       blossom 的实际响应是打开日志面板（非快进）——脚本层不消费 ctrl-skip；
       按键链路本身正常，行为差异属游戏脚本绑定（非缺陷）
-- [ ] ONS 语音配对：esg 卡在姓名输入，待用 ym/monque 复测
+- [ ] ONS 语音配对复测（ym/monque）：monque 标题菜单对触点/OK 注入均无
+      响应（2026-10-06 实测，与 senhana 同类导航障碍）——需真机或改用
+      uiautomator 之外的手段（如 monkey/无障碍服务）再试
 - [ ] 官方 revision Artemis 内核不挂钩、无提取（按需再评估）
 - [ ] 正式词典导入：模拟器现为种子词典（17 词条 + 5 条 romaji 测试别名），正式
       使用需用户经词典页「词典管理」导入 Yomichan zip / jsonl 全量词典
