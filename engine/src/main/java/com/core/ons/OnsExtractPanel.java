@@ -555,21 +555,26 @@ public class OnsExtractPanel {
      */
     private void applyAdaptiveHeight() {
         if (panel == null) return;
-        panel.getLayoutParams().height = android.view.ViewGroup.LayoutParams.WRAP_CONTENT;
-        mainScroller.getLayoutParams().height = android.view.ViewGroup.LayoutParams.WRAP_CONTENT;
-        historyScroller.getLayoutParams().height = android.view.ViewGroup.LayoutParams.WRAP_CONTENT;
-        panel.requestLayout();
+        // 不再「重置 WRAP_CONTENT → 塌缩 → 再撑开」（每次文本更新都闪现一下）。
+        // 改为离线量测内容自然高度：需要的高度与当前不一致时一次性调整，
+        // 同高更新零重布局，文本就地替换不闪。
         panel.post(() -> {
             if (panel == null || !expanded) return;
             ScrollView visible = historyMode ? historyScroller : mainScroller;
             if (visible.getVisibility() != View.VISIBLE) return;
             int max = Math.round(activity.getResources().getDisplayMetrics().heightPixels * 0.6f);
-            int content = panel.getHeight();
-            if (content <= max) return;
-            int others = content - visible.getHeight();
-            visible.getLayoutParams().height = Math.max(dp(60), max - others);
-            panel.getLayoutParams().height = max;
-            panel.requestLayout();
+            int width = panel.getWidth() > 0
+                    ? panel.getWidth()
+                    : activity.getResources().getDisplayMetrics().widthPixels;
+            int wSpec = View.MeasureSpec.makeMeasureSpec(width, View.MeasureSpec.AT_MOST);
+            int hSpec = View.MeasureSpec.makeMeasureSpec(max, View.MeasureSpec.AT_MOST);
+            visible.measure(wSpec, hSpec);
+            int need = Math.max(dp(60), Math.min(visible.getMeasuredHeight(), max));
+            if (visible.getLayoutParams().height != need) {
+                visible.getLayoutParams().height = need;
+                panel.getLayoutParams().height = android.view.ViewGroup.LayoutParams.WRAP_CONTENT;
+                panel.requestLayout();
+            }
         });
     }
 
@@ -1049,6 +1054,8 @@ public class OnsExtractPanel {
     private String currentSentence = "";
     /** 命中跨度（递减扫描结果；非空时高亮它而非选中单元）。 */
     private int[] matchedRange;
+    /** 命中词原文：打字机流走（文本变化）时按内容在新文本中重定位高亮。 */
+    private String matchedText = "";
 
     /** 最近一次成功译文（制卡「译文」槽位来源；翻句不清，仅新翻译覆盖/失败清空）。 */
     private volatile String lastTranslation = "";
@@ -1128,10 +1135,23 @@ public class OnsExtractPanel {
         // 懒渲染：超长页只保留尾部 240 字符参与选词（完整内容走历史悬浮窗），
         // 防止巨型页每字符建 ClickableSpan 拖垮主线程（此前 ANR 根因）
         if (text.length() > 240) text = text.substring(text.length() - 240);
-        // 同句重渲染（打字机 flush）保留扫描高亮与点选状态；翻句由调用方显式清位
+        // 同句重渲染（打字机 flush）保留扫描高亮与点选状态；翻句由调用方显式清位。
+        // 文本流走时按匹配词原文重定位高亮（旧跨度失位不再显示一串错误内容）：
+        // 从旧起点附近找匹配词在新文本中的位置，找不到才清空
         if (!text.equals(currentSentence)) {
-            matchedRange = null;
-            selectedToken = -1;
+            if (matchedRange != null && !matchedText.isEmpty()) {
+                int from = Math.max(0, Math.min(matchedRange[0] - 8, text.length() - 1));
+                int at = text.indexOf(matchedText, Math.max(0, from));
+                if (at >= 0) {
+                    matchedRange = new int[]{at, at + matchedText.length()};
+                } else {
+                    matchedRange = null;
+                    selectedToken = -1;
+                }
+            } else {
+                matchedRange = null;
+                selectedToken = -1;
+            }
         }
         currentSentence = text;
         SpannableString ss = new SpannableString(text);
@@ -1197,6 +1217,7 @@ public class OnsExtractPanel {
         if (idx < 0 || idx >= unitRanges.size() || sentenceSpan == null) return;
         selectedToken = idx;
         matchedRange = null;
+        matchedText = "";
         applyTokenSelection();
         scanFrom(start);
     }
@@ -1228,6 +1249,7 @@ public class OnsExtractPanel {
                 defGroups = hit.groups;
                 defSentence = hit.matched;
                 matchedRange = hit.range;
+                matchedText = hit.matched;
                 com.core.diag.DiagLog.debug("dict", "hit: " + hit.matched
                         + " groups=" + hit.groups.size());
                 main.post(this::refresh);

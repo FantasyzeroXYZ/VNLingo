@@ -23,6 +23,8 @@
 #include <jni.h>
 #include <sys/mman.h>
 #include <unistd.h>
+#include <cerrno>
+#include <fcntl.h>
 #include <cstdint>
 #include <cstring>
 #include <string>
@@ -160,41 +162,72 @@ bool makeTrampoline(void* target, void** trampolineOut, void** originalOut) {
                             reinterpret_cast<char*>(mem) + 64);
     *trampolineOut = mem;
     if (originalOut != nullptr) *originalOut = mem;
+    LOGI("official hook: trampoline %p back=%p (target %p)",
+         mem, (void*)(reinterpret_cast<uintptr_t>(target) + INSN_COUNT * 4), target);
+    return true;
+}
+
+// W^X 加固内核（实测 alioth/MIUI12.5 Android 11）：文本页 mprotect 加 W 成功、
+// 恢复 RX 被 EACCES 拒绝（exec-after-write 硬化）→ 条目页停在不可执行态，
+// 游戏首次调用被钩函数即 SEGV_ACCERR。改走 /proc/self/mem 内核直写：
+// 不动页保护（页保持 R+X），内核写路径不受 mprotect W^X 策略约束。
+static int gProcMemFd = -1;
+
+bool writeProcMem(void* addr, const void* data, size_t len) {
+    if (gProcMemFd < 0) {
+        gProcMemFd = open("/proc/self/mem", O_RDWR);
+        if (gProcMemFd < 0) {
+            LOGW("official hook: /proc/self/mem open failed errno=%d", errno);
+            return false;
+        }
+    }
+    ssize_t n = pwrite(gProcMemFd, data, len, static_cast<off_t>(
+            reinterpret_cast<uintptr_t>(addr)));
+    if (n != static_cast<ssize_t>(len)) {
+        LOGW("official hook: proc-mem pwrite short %zd/%zu errno=%d addr=%p",
+             n, len, errno, addr);
+        return false;
+    }
     return true;
 }
 
 bool patchEntry(void* target, void* hookFn) {
-    const long page = sysconf(_SC_PAGESIZE);
-    const uintptr_t start = reinterpret_cast<uintptr_t>(target)
-            & ~(static_cast<uintptr_t>(page) - 1);
-    if (mprotect(reinterpret_cast<void*>(start), static_cast<size_t>(page),
-                 PROT_READ | PROT_WRITE) != 0) return false;
     uint32_t patch[4] = {0x58000050u,   // ldr x16, [pc, #8]（字面量在 +8）
                          0xD61F0200u,   // br x16
                          0, 0};
     const uint64_t hook = reinterpret_cast<uint64_t>(hookFn);
     memcpy(patch + 2, &hook, 8);
-    memcpy(target, patch, 16);
-    mprotect(reinterpret_cast<void*>(start), static_cast<size_t>(page),
-             PROT_READ | PROT_EXEC);
+    if (!writeProcMem(target, patch, 16)) return false;
+    // 回读校验（直写被内核策略拦截时立即暴露，不留「装好但页不可执行」暗雷）
+    uint32_t verify[4] = {};
+    if (pread(gProcMemFd, verify, 16, static_cast<off_t>(
+            reinterpret_cast<uintptr_t>(target))) != 16 ||
+        memcmp(verify, patch, 16) != 0) {
+        LOGW("official hook: patch verify failed; target=%p", target);
+        return false;
+    }
+    LOGI("official hook: patched entry %p via /proc/self/mem", target);
     __builtin___clear_cache(reinterpret_cast<char*>(target),
                             reinterpret_cast<char*>(target) + 16);
     return true;
 }
 
 // ---- 钩子体 ----
-using BackLogAddFn = void (*)(void*, void*, void*, void*, void*, int, const void*);
+// CBackLog::Add 真实 ABI（Itanium；shared_ptr 非平凡类型按不可见引用占 1 寄存器）：
+//   Add(this=x0, shared_ptr&=x1, deque&=x2, vector&=x3, bool=w4, string const&=x5)
+// —— 6 槽位。此前声明成 7 参（shared_ptr 拆双槽）会错读 x6 垃圾指针为字符串
+// 引用 → 引擎线程 SEGV_ACCERR 崩溃（真机 alioth 实测）。
+using BackLogAddFn = void (*)(void*, void*, void*, void*, int, const void*);
 using ParserTextFn = void (*)(void*, const void*);
 
 BackLogAddFn gOrigBackLogAdd = nullptr;
 ParserTextFn gOrigParserText = nullptr;
 ParserTextFn gOrigParserTextTail = nullptr;
 
-// CBackLog::Add(this, sp, sp.ctrl, deque&, vector&, bool w5, string const& x6)
-void hookedBackLogAdd(void* self, void* spPtr, void* spCtrl, void* deque,
+void hookedBackLogAdd(void* self, void* sharedPtr, void* deque,
                       void* vec, int flag, const void* strRef) {
     const BackLogAddFn orig = gOrigBackLogAdd;
-    if (orig != nullptr) orig(self, spPtr, spCtrl, deque, vec, flag, strRef);
+    if (orig != nullptr) orig(self, sharedPtr, deque, vec, flag, strRef);
     if (strRef != nullptr) {
         std::string text = readStdString(strRef);
         if (!text.empty()) {
@@ -228,25 +261,39 @@ void hookedParserTextTail(void* self, const void* strRef) {
  * dlsym 探测 CBackLog::Add —— 官方内核命中并装内联钩子；clean 内核无此符号
  * 自动跳过（其提取走内置 extract_bridge）。jvm 用于上行 JNI 绑定。
  */
-extern "C" bool artemis_official_install(void* kernelHandle, JavaVM* jvm) {
-    if (kernelHandle == nullptr || jvm == nullptr) return false;
+extern "C" bool artemis_official_install(void* kernelHandle, JavaVM* jvm, jobject activityObj) {
+    if (kernelHandle == nullptr || jvm == nullptr || activityObj == nullptr) {
+        LOGW("official hook: skip (handle=%p jvm=%p activity=%p)",
+             kernelHandle, (void*) jvm, (void*) activityObj);
+        return false;
+    }
     std::lock_guard<std::mutex> lock(gInstallMutex);
     if (gInstalled.load(std::memory_order_relaxed)) return true;
 
     void* backlogAdd = dlsym(kernelHandle, kBackLogAdd);
-    if (backlogAdd == nullptr) return false;  // clean 内核：静默跳过
+    if (backlogAdd == nullptr) {
+        LOGW("official hook: CBackLog::Add not exported (clean kernel?); skip");
+        return false;  // clean 内核：静默跳过
+    }
 
     if (gJvm == nullptr) gJvm = jvm;
     JNIEnv* env = nullptr;
     bool attached = false;
     if (gJvm->GetEnv(reinterpret_cast<void**>(&env), JNI_VERSION_1_6) != JNI_OK || env == nullptr) {
-        if (gJvm->AttachCurrentThread(&env, nullptr) != JNI_OK || env == nullptr) return false;
+        if (gJvm->AttachCurrentThread(&env, nullptr) != JNI_OK || env == nullptr) {
+            LOGW("official hook: JNIEnv unavailable");
+            return false;
+        }
         attached = true;
     }
-    jclass bridge = env->FindClass("com/ies_net/artemis/ArtemisActivity");
+    // 类必须经 activity 对象取（GetObjectClass → 应用类加载器）。直接 FindClass
+    // 会落在 NativeActivity 的引导类加载器上——应用类（com.ies_net.**）全部找不到
+    //（真机 alioth/MIUI12.5 实测 "ArtemisActivity class not found" 根因）。
+    jclass bridge = env->GetObjectClass(activityObj);
     if (bridge == nullptr) {
         if (env->ExceptionCheck()) env->ExceptionClear();
         if (attached) gJvm->DetachCurrentThread();
+        LOGW("official hook: ArtemisActivity class not found via activity object");
         return false;
     }
     gBridgeClass = static_cast<jclass>(env->NewGlobalRef(bridge));
@@ -254,7 +301,10 @@ extern "C" bool artemis_official_install(void* kernelHandle, JavaVM* jvm) {
     gOnTextMethod = env->GetStaticMethodID(gBridgeClass, "onArtemisExtract",
             "(Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;)V");
     if (attached) gJvm->DetachCurrentThread();
-    if (gOnTextMethod == nullptr) return false;
+    if (gOnTextMethod == nullptr) {
+        LOGW("official hook: onArtemisExtract method unresolved");
+        return false;
+    }
 
     InlineHook hooks[3];
     int count = 0;

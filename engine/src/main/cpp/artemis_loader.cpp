@@ -217,7 +217,7 @@ void installCsReadStackGuard(void* handle) {
 
 }  // namespace
 
-extern "C" bool artemis_official_install(void* kernelHandle, JavaVM* jvm);
+extern "C" bool artemis_official_install(void* kernelHandle, JavaVM* jvm, jobject activityObj);
 
 extern "C" JNIEXPORT void JNICALL
 ANativeActivity_onCreate(ANativeActivity* activity, void* savedState, size_t savedStateSize) {
@@ -262,7 +262,7 @@ ANativeActivity_onCreate(ANativeActivity* activity, void* savedState, size_t sav
     {
         JavaVM* jvm = nullptr;
         if (activity->env != nullptr && activity->env->GetJavaVM(&jvm) == JNI_OK) {
-            artemis_official_install(handle, jvm);
+            artemis_official_install(handle, jvm, activity->clazz);
         }
     }
     // 提取钩子（剧情文本框数据源）由 Java 侧经 nativeInstallExtractHook 安装

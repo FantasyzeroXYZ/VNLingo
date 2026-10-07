@@ -203,8 +203,12 @@ public final class OnsExtractBridge {
             // 尾部缝合（无重叠 = 同页新行，加分隔符另起一行）
             sentence = stitchAppend(sentenceText, page);
         } else {
-            // ONS 等行级快照：同页换行 → 追加为新行
-            sentence = sentenceText.isEmpty() ? page : sentenceText + "\n" + page;
+            // ONS 等整页快照：能走到这里 = 页首已变化（翻了页）而点击标记缺失
+            //（侧键 OK/NEXT、SKIP、AUTO 等推进路径不经过游戏面触摸）。
+            // 整页替换而非追加——追加会让新页像历史一样无限堆积；
+            // 引擎重发的同页内容按包含去重（显示保持不变）。
+            sentence = sentenceText.isEmpty() || !sentenceText.contains(page)
+                    ? page : sentenceText;
         }
         lastPageBytes = raw;
         pageText = page;
