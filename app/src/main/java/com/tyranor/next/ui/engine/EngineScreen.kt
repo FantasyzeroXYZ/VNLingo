@@ -81,15 +81,17 @@ import com.tyranor.next.ui.common.AppAlertDialog
 import com.tyranor.next.ui.common.AppNavItem
 import com.tyranor.next.ui.common.AppTopBar
 import com.tyranor.next.ui.common.glassNavBottomInset
+import com.tyranor.next.ui.game.startActivityWithPageTransition
+import com.tyranor.next.ui.settings.EngineSettingsActivity
 import com.tyranor.next.ui.settings.artVersionOptions
 import top.yukonga.miuix.kmp.basic.TabRow
 import top.yukonga.miuix.kmp.basic.TabRowDefaults
 import androidx.compose.ui.graphics.Color
 import android.widget.Toast
 
-/** 引擎页：列表行展示已集成的游戏引擎；[headerItem] 作为列表首项（引擎管理页合并引擎设置入口用）。 */
+/** 引擎页：列表行展示已集成的游戏引擎；行点击直达该引擎设置（合并原引擎设置入口列表）。 */
 @Composable
-fun EngineScreen(modifier: Modifier = Modifier, headerItem: (@Composable () -> Unit)? = null) {
+fun EngineScreen(modifier: Modifier = Modifier) {
     val context = LocalContext.current
     val engineOpenDownloadFailedMessage = stringResource(R.string.engine_open_download_failed)
     val engines = EngineLauncher.supportedEngines
@@ -161,12 +163,6 @@ fun EngineScreen(modifier: Modifier = Modifier, headerItem: (@Composable () -> U
             contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 12.dp, bottom = 16.dp + glassNavBottomInset()),
             verticalArrangement = Arrangement.spacedBy(12.dp),
         ) {
-            // 头部插槽（引擎管理页：各引擎细分设置入口）
-            if (headerItem != null) {
-                item(key = "engine-settings-header", contentType = "header") {
-                    headerItem()
-                }
-            }
             items(
                 items = tabEngines,
                 key = { it.name },
@@ -188,14 +184,29 @@ fun EngineScreen(modifier: Modifier = Modifier, headerItem: (@Composable () -> U
                     runtimeState != null -> R.string.engine_runtime_not_installed
                     else -> R.string.engine_integrated
                 }
+                // 行点击直达引擎设置；无独立设置页的引擎（WebOther/VN 等）与
+                // 状态图标点击沿用「版本条目/安装管理」弹窗
+                val settingsKind = engineSettingsKindOf(engine)
+                val canOpenDialog = module != null || engine in dialogOnlyEngines
                 EngineRow(
                     engine = engine,
                     statusTextRes = statusRes,
                     installed = installed,
-                    // 外置模块 / Tyrano/WebOther/VN/Artemis（内置版本条目）：点击弹窗
-                    enabled = module != null || engine in dialogOnlyEngines,
-                    onClick = {
-                        moduleDialogEngine = engine
+                    onClickEnabled = settingsKind != null || canOpenDialog,
+                    onRowClick = {
+                        if (settingsKind != null) {
+                            startActivityWithPageTransition(
+                                context,
+                                EngineSettingsActivity.createIntent(context, settingsKind),
+                            )
+                        } else if (canOpenDialog) {
+                            moduleDialogEngine = engine
+                        }
+                    },
+                    onStatusClick = if (canOpenDialog) {
+                        { moduleDialogEngine = engine }
+                    } else {
+                        null
                     },
                 )
             }
@@ -324,13 +335,14 @@ private fun EngineRow(
     engine: EngineType,
     @StringRes statusTextRes: Int,
     installed: Boolean,
-    enabled: Boolean,
-    onClick: () -> Unit,
+    onClickEnabled: Boolean,
+    onRowClick: () -> Unit,
+    onStatusClick: (() -> Unit)?,
 ) {
     Card(
         modifier = Modifier
             .fillMaxWidth()
-            .clickable(enabled = enabled, onClick = onClick)
+            .clickable(enabled = onClickEnabled, onClick = onRowClick)
             .glassShadow()
             .glassBorder(),
         elevation = CardDefaults.cardElevation(defaultElevation = 0.dp),
@@ -364,15 +376,21 @@ private fun EngineRow(
                     modifier = Modifier.padding(top = 2.dp),
                 )
             }
+            val statusDescription = stringResource(statusTextRes)
             Icon(
                 if (installed) Icons.Filled.CheckCircle else Icons.Filled.Cancel,
-                contentDescription = stringResource(statusTextRes),
+                contentDescription = statusDescription,
                 tint = if (installed) {
                     MaterialTheme.colorScheme.primary
                 } else {
                     MaterialTheme.colorScheme.error
                 },
-                modifier = Modifier.size(20.dp),
+                // 状态图标 = 版本条目/安装管理弹窗入口（扩大触区到 ~40dp）
+                modifier = Modifier
+                    .clip(AppComponentShape)
+                    .clickable(enabled = onStatusClick != null) { onStatusClick?.invoke() }
+                    .padding(6.dp)
+                    .size(20.dp),
             )
         }
     }
@@ -492,6 +510,17 @@ private val nativeRuntimeByEngine: Map<EngineType, GameRuntime> = mapOf(
     EngineType.ONS to GameRuntime.ONS,
     EngineType.ARTEMIS to GameRuntime.ARTEMIS,
 )
+
+/** 引擎行 → 细分设置页；无独立设置页的引擎返回 null（行点击走版本弹窗）。 */
+private fun engineSettingsKindOf(engine: EngineType): EngineSettingsKind? = when (engine) {
+    EngineType.KIRIKIRI -> EngineSettingsKind.KRKR
+    EngineType.ONS -> EngineSettingsKind.ONS
+    EngineType.ARTEMIS -> EngineSettingsKind.ARTEMIS
+    EngineType.RPGMAKER, EngineType.RPG_MV, EngineType.RPG_MZ -> EngineSettingsKind.RPG_MAKER
+    EngineType.TYRANO -> EngineSettingsKind.TYRANO
+    EngineType.RENPY -> EngineSettingsKind.RENPY
+    else -> null
+}
 
 /** 各 Native 运行时的实时安装状态（行状态与弹窗管理操作共用）。 */
 private fun refreshRuntimeStates(context: android.content.Context): Map<EngineType, NativePluginInstallState> =

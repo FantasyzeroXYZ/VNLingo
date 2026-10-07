@@ -28,6 +28,8 @@ object EnginePluginBootstrap {
 
     private const val TAG = "EnginePluginBootstrap"
     private const val ASSET_PLUGIN_DIR = "nativeplugins"
+    /** 一次性迁移标记：旧版本引导安装默认写「已停用」，升级后纠正为默认开启。 */
+    private const val MIGRATION_DEFAULT_ENABLED = "migration.default_enabled_v2"
 
     private class EngineSpec(
         val engineId: String,
@@ -75,11 +77,30 @@ object EnginePluginBootstrap {
     @JvmStatic
     fun provisionIfNeeded(context: Context) {
         val app = context.applicationContext
+        migrateLegacyDefaultEnabled(app)
         for (spec in engines) {
             val runtime = runtimeForEngineId(spec.engineId) ?: continue
             if (GameRuntime.Store.isRemoved(app, runtime)) continue
             provisionEngineIfNeeded(app, spec, requireEnabled = false)
         }
+    }
+
+    /**
+     * 一次性迁移：旧版本引导安装把三个原生运行时默认写成「已停用」，升级后统一
+     * 纠正为默认开启（用户此后显式停用会稳定保留，见 provisionEngineIfNeeded）。
+     */
+    private fun migrateLegacyDefaultEnabled(app: Context) {
+        val prefs = app.getSharedPreferences(EnginePrefs.APP_PREFS, Context.MODE_PRIVATE)
+        if (prefs.getBoolean(MIGRATION_DEFAULT_ENABLED, false)) return
+        for (spec in engines) {
+            if (installState(app, spec.engineId) == NativePluginInstallState.NOT_INSTALLED) continue
+            when (spec.engineId) {
+                NativePluginConstants.ENGINE_KIRIKIROID2 -> NativePluginManager.setKirikiroid2Enabled(app, true)
+                NativePluginConstants.ENGINE_ONS -> NativePluginManager.setOnsEnabled(app, true)
+                NativePluginConstants.ENGINE_ARTEMIS -> NativePluginManager.setArtemisEnabled(app, true)
+            }
+        }
+        prefs.edit().putBoolean(MIGRATION_DEFAULT_ENABLED, true).apply()
     }
 
     /** 卸载运行时（删除实体 + 标记 removed）；恢复需重新下载/导入。 */
@@ -167,8 +188,9 @@ object EnginePluginBootstrap {
             val target = currentDirFor(app, spec.engineId)
             if (target.exists()) target.deleteRecursively()
             extractPluginZip(app, spec.engineId, target)
-            // 重新解压后保留用户启停意图（requireEnabled 仅来自启动预检，且预检已先拦截停用态）
-            val enabledAfter = requireEnabled || state == NativePluginInstallState.INSTALLED_ENABLED
+            // 默认开启：除用户显式停用（DISABLED，含过期重解压场景）外均装为已启用，
+            // 首次引导安装即「已安装+已启用」，无需用户再手动开启
+            val enabledAfter = requireEnabled || state != NativePluginInstallState.INSTALLED_DISABLED
             markInstalled(prefs, spec, enabled = enabledAfter, version = bundledVersion)
             val ready = isReady(app, spec.engineId)
             if (ready) {
