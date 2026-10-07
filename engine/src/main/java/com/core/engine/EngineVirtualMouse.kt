@@ -142,7 +142,7 @@ class EngineVirtualMouse(
         return null
     }
 
-    /** 左摇杆连续移动光标（Activity.dispatchGenericMotionEvent 前置调用）。 */
+    /** 左摇杆连续移动光标（Activity.dispatchGenericMotionEvent 前置调用）。摇杆轴同样按设备框转发。 */
     fun handleMotion(event: MotionEvent): Boolean {
         if ((event.source and InputDevice.SOURCE_CLASS_JOYSTICK) == 0) return false
         val x = event.getAxisValue(MotionEvent.AXIS_X)
@@ -150,9 +150,10 @@ class EngineVirtualMouse(
         val deadzone = 0.15f
         if (-deadzone < x && x < deadzone && -deadzone < y && y < deadzone) return cursorVisible
         ensureCursor()
+        val (rx, ry) = toScreenVector(x to y)
         val speed = 14f * resources.displayMetrics.density
-        cursorX = (cursorX + x * speed).coerceIn(0f, width.toFloat())
-        cursorY = (cursorY + y * speed).coerceIn(0f, height.toFloat())
+        cursorX = (cursorX + rx * speed).coerceIn(0f, width.toFloat())
+        cursorY = (cursorY + ry * speed).coerceIn(0f, height.toFloat())
         invalidate()
         return true
     }
@@ -173,13 +174,35 @@ class EngineVirtualMouse(
     }
 
     private fun stepCursor(action: Int, distance: Float) {
-        when (action) {
-            VirtualMouseBindings.ACTION_UP -> cursorY -= distance
-            VirtualMouseBindings.ACTION_DOWN -> cursorY += distance
-            VirtualMouseBindings.ACTION_LEFT -> cursorX -= distance
-            VirtualMouseBindings.ACTION_RIGHT -> cursorX += distance
-        }
+        val (dx, dy) = toScreenVector(actionVector(action))
+        cursorX += dx * distance
+        cursorY += dy * distance
         clampCursor()
+    }
+
+    /** 动作的设备框方向向量：D-pad/键盘方向键 keycode 相对设备机身为绝对方向。 */
+    private fun actionVector(action: Int): Pair<Float, Float> = when (action) {
+        VirtualMouseBindings.ACTION_UP -> 0f to -1f
+        VirtualMouseBindings.ACTION_DOWN -> 0f to 1f
+        VirtualMouseBindings.ACTION_LEFT -> -1f to 0f
+        VirtualMouseBindings.ACTION_RIGHT -> 1f to 0f
+        else -> 0f to 0f
+    }
+
+    /**
+     * 设备框 → 屏幕框：横竖屏不一致时（横屏游戏跑在竖屏机身上），方向键
+     * keycode 的设备框朝向与屏幕朝向差 90°——不旋转会「按上往右」。按
+     * display.rotation 把位移向量旋到屏幕坐标系，保证按下的方向 =
+     * 光标在屏幕上的移动方向（模拟器 PC 方向键同样按设备框转发）。
+     */
+    private fun toScreenVector(device: Pair<Float, Float>): Pair<Float, Float> {
+        val (dx, dy) = device
+        return when (display?.rotation ?: android.view.Surface.ROTATION_0) {
+            android.view.Surface.ROTATION_90 -> dy to -dx
+            android.view.Surface.ROTATION_180 -> -dx to -dy
+            android.view.Surface.ROTATION_270 -> -dy to dx
+            else -> dx to dy
+        }
     }
 
     private fun ensureCursor() {
@@ -206,6 +229,11 @@ class EngineVirtualMouse(
         stopHold()
         cursorVisible = false
         invalidate()
+    }
+
+    /** 立即显示光标（切进鼠标模式时调用）：悬停画面中心，无需先按方向键。 */
+    fun showCursor() {
+        ensureCursor()
     }
 
     private fun clampCursor() {

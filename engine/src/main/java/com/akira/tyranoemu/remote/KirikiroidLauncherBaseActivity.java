@@ -802,7 +802,11 @@ public abstract class KirikiroidLauncherBaseActivity extends KR2Activity {
         virtualMouseMode = !virtualMouseMode;
         getSharedPreferences(PREF_KRKR_MOUSE_MODE, MODE_PRIVATE).edit()
                 .putBoolean(PREF_KRKR_MOUSE_MODE, virtualMouseMode).apply();
-        if (virtualMouse != null && !virtualMouseMode) virtualMouse.hideCursor();
+        if (virtualMouse != null) {
+            // 切进鼠标立即显示光标（触屏设备没有方向键可按）；切回触摸隐藏
+            if (virtualMouseMode) virtualMouse.showCursor();
+            else virtualMouse.hideCursor();
+        }
     }
 
     /** 引擎键注入：经 KR2 的 nativeKeyAction 直达引擎（BACK 由内核映射为 ESC）。 */

@@ -649,8 +649,12 @@ public class ONScripter extends SDLActivity {
         virtualMouseMode = !virtualMouseMode;
         getSharedPreferences(PREF_OVERLAY, MODE_PRIVATE)
                 .edit().putBoolean(KEY_MOUSE_MODE, virtualMouseMode).apply();
-        // 切回触摸：隐藏光标，D-pad/A 不再被消费
-        if (!virtualMouseMode && virtualMouse != null) virtualMouse.hideCursor();
+        if (virtualMouse != null) {
+            // 切回触摸：隐藏光标，D-pad/A 不再被消费；切进鼠标：立即显示光标
+            //（触屏设备没有方向键可按，不主动显示会看起来「没调出虚拟鼠标」）
+            if (virtualMouseMode) virtualMouse.showCursor();
+            else virtualMouse.hideCursor();
+        }
     }
 
     /** 左缘贴边边距 = 2dp + 左侧系统栏 inset。 */
