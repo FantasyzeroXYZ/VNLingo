@@ -44,6 +44,11 @@
 7. **ARM 转译镜像装 APK 必须带 `--abi arm64-v8a`**：APK 里 artemis 系 .so 只有 arm64，
    不带该参数安装会按 x86_64 主 ABI 解包 → `:artemis.clean` 进程加载
    libartemis_audio_bridge.so 失败直接崩（UnsatisfiedLinkError）。
+   2026-10-07 再犯一次：MCP android_install_app 走裸 streamed install（无 --abi），
+   结果 ONS 启动即 `libSDL2.so is for EM_AARCH64 instead of EM_X86_64` 闪退
+   （app/lib/ 被 x86_64 依赖库带偏，arm64 插件加载必炸）。检查法：
+   `ls /data/app/*tyranor*/lib/` 应为 arm64。修复 = 带 --abi 重装（-r 保留数据）。
+   **任何会话装 APK 都要带 --abi**，MCP install 工具不透传该参数时改用 adb 命令。
 8. **该 AVD 有宿主侧遗留 root 脚本周期性拉起 ScummVM**（logcat `START ... from uid 0`），
    会莫名抢前台干扰 UI 自动化——先 `am force-stop org.scummvm.scummvm.debug` 再操作。
 9. **Git Bash 里 `adb shell uiautomator dump /sdcard/ui.xml` 的路径会被 MSYS 改写**：
