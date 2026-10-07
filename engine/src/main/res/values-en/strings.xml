@@ -116,7 +116,8 @@
     <string name="engine_ons_extract_cloud_title">Save cloud sync (current game)</string>
     <string name="engine_ons_extract_cloud_mode_webdav">WebDAV</string>
     <string name="engine_ons_extract_cloud_mode_github">GitHub</string>
-    <string name="engine_ons_extract_cloud_hint_server">WebDAV URL (e.g. https://dav.jianguoyun.com/dav/)</string>
+    <string name="engine_ons_extract_cloud_hint_server">WebDAV URL (e.g. https://dav.jianguoyun.com/dav/; leave empty to follow the sync-center account)</string>
+    <string name="engine_ons_extract_cloud_hint_follow">With WebDAV fields left empty, the active account from Cloud Sync → Account management is used (%1$s).</string>
     <string name="engine_ons_extract_cloud_hint_repo">GitHub repo (owner/repo)</string>
     <string name="engine_ons_extract_cloud_hint_user">Username</string>
     <string name="engine_ons_extract_cloud_hint_token">Password/token (GitHub PAT)</string>

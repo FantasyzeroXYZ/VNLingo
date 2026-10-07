@@ -26,6 +26,13 @@ class TyranorNextApplication : Application(), DefaultLifecycleObserver, Configur
         com.core.diag.DiagLog.install(this)
         // 游玩会话制统计生命周期钩子
         com.tyranor.next.core.play.PlaySessionLifecycle.install(this)
+        // 存档云通道（OnsSaveCloud）凭据跟随：自有 WebDAV 配置留空时回退到
+        // 云同步中心的活动账户（engine 不反向依赖 app，此处注入凭据来源）
+        com.core.ons.OnsSaveCloud.setWebDavCredentials {
+            val manager = com.tyranor.next.core.sync.SyncManager(this)
+            if (!manager.isConfigured) null
+            else manager.config.let { arrayOf(it.serverUrl, it.username, it.password) }
+        }
         // 共享 prefs 文件更名（yukihub_prefs → tyranor_prefs）：所有进程（含引擎子进程）
         // 启动最早时机一次性迁移，必须先于任何 EngineSettingsStore/引擎偏好读取。
         PrefsRenameMigration.migrate(this)

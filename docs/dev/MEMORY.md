@@ -189,6 +189,19 @@
 3. **清空 Compose 输入框**：没有 select-all 快捷键可用时，
    `input keyevent 123`（MOVE_END）+ 循环 `keyevent 67`（DEL）最稳；
    点字段时光标落点不定，先 MOVE_END 再删。
+4. **engine 静态注入点解「engine 需要的数据在 app」**：模块方向 app → engine
+   不许反向依赖，但 app 进程的 Application.onCreate 可向 engine 静态字段
+   注入回调/提供者（例：OnsSaveCloud.setWebDavCredentials 注入 SyncManager
+   活动账户）。所有进程都会跑同一 Application.onCreate，引擎子进程同样生效。
+5. **pm clear 后重装游戏库不必重扫**：游戏文件在 /sdcard/Download/games/
+   等共享存储不受 pm clear 影响，SAF 重授权 + 扫描即可恢复；首次启动游戏
+   前需系统设置里开「所有文件访问权限」（MANAGE_EXTERNAL_STORAGE），否则
+   启动失败弹「启动失败」对话框。
+6. **存档上传 E2E 不用真玩游戏**：ONS scoped 存档目录
+   `/sdcard/Android/data/<pkg>/files/save/<游戏名>/` 可用 adb 直接种假存档
+   文件（默认 scopedSaveDir=true），再走存档管理页「上传存档到云端」即可
+   验证完整上传链路（本地 WebDAV 服务器 .tmp-test/webdav_server.py +
+   `adb reverse tcp:1222 tcp:1222`）。
 
 ## 实测踩坑（2026-10-07 会话四十一新增：模块依赖方向）
 

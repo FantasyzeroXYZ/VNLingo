@@ -116,7 +116,8 @@
     <string name="engine_ons_extract_cloud_title">存档云同步（当前游戏）</string>
     <string name="engine_ons_extract_cloud_mode_webdav">WebDAV</string>
     <string name="engine_ons_extract_cloud_mode_github">GitHub</string>
-    <string name="engine_ons_extract_cloud_hint_server">WebDAV 地址（如 https://dav.jianguoyun.com/dav/）</string>
+    <string name="engine_ons_extract_cloud_hint_server">WebDAV 地址（如 https://dav.jianguoyun.com/dav/；留空时跟随「云同步中心」账户）</string>
+    <string name="engine_ons_extract_cloud_hint_follow">未填写 WebDAV 字段时，自动使用「云同步中心 → 账号管理」的当前账户（%1$s）。</string>
     <string name="engine_ons_extract_cloud_hint_repo">GitHub 仓库（owner/repo）</string>
     <string name="engine_ons_extract_cloud_hint_user">用户名</string>
     <string name="engine_ons_extract_cloud_hint_token">密码/令牌（GitHub 用 Personal Access Token）</string>

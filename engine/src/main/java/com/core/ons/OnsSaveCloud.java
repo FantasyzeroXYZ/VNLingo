@@ -24,6 +24,10 @@ import java.util.Locale;
  *
  * 配置持久化在 prefs（默认文件），凭据只存本机 SharedPreferences。
  * 路径约定：<远程目录>/<游戏目录名>.zip（按游戏隔离，互不覆盖）。
+ *
+ * WebDAV 凭据跟随：app 层经 {@link #setWebDavCredentials} 注入云同步中心
+ * 的活动账户；自有 WebDAV 字段（server）留空时自动改用该账户，填写后
+ * 以自有配置为准（显式覆盖）。GitHub 模式不参与跟随。
  */
 public final class OnsSaveCloud {
 
@@ -42,6 +46,36 @@ public final class OnsSaveCloud {
     public static final String MODE_GITHUB = "github";
     private static final String GITHUB_API = "https://api.github.com";
     private static final String DEFAULT_DIR = "TyranorNext/saves";
+
+    /** WebDAV 凭据外部来源：返回 {server, username, password}，null/缺项 = 未配置。 */
+    public interface WebDavCredentials {
+        String[] get();
+    }
+
+    private static volatile WebDavCredentials webDavCredentials;
+
+    /** app 启动时注入云同步中心活动账户来源（engine 不反向依赖 app）。 */
+    public static void setWebDavCredentials(WebDavCredentials provider) {
+        webDavCredentials = provider;
+    }
+
+    /** 当前跟随的账户（未注入/未配置返回 null）。 */
+    public static String[] webDavAccount() {
+        WebDavCredentials provider = webDavCredentials;
+        if (provider == null) return null;
+        try {
+            String[] c = provider.get();
+            if (c == null || c.length < 3) return null;
+            if (c[0] == null || c[1] == null || c[2] == null) return null;
+            String server = c[0].trim();
+            String user = c[1].trim();
+            if (server.isEmpty() || user.isEmpty() || c[2].isEmpty()) return null;
+            return new String[]{server, user, c[2]};
+        } catch (Throwable t) {
+            Log.w(TAG, "webDavAccount provider failed", t);
+            return null;
+        }
+    }
 
     /** ok=true 时 message 为成功提示；ok=false 时为错误信息。 */
     public interface Callback {
@@ -77,7 +111,23 @@ public final class OnsSaveCloud {
         if (MODE_GITHUB.equals(p.getString(KEY_MODE, MODE_WEBDAV))) {
             return !p.getString(KEY_REPO, "").isEmpty();
         }
-        return !p.getString(KEY_SERVER, "").isEmpty();
+        return !p.getString(KEY_SERVER, "").isEmpty() || webDavAccount() != null;
+    }
+
+    /**
+     * WebDAV 实际使用的 {server, user, password}：自有 server 非空则用自有配置
+     * （user/token 可部分留空），否则回退云同步中心活动账户，再无则原样返回空串。
+     */
+    private static String[] webdavTarget(SharedPreferences p) {
+        String server = p.getString(KEY_SERVER, "");
+        String user = p.getString(KEY_USER, "");
+        String token = p.getString(KEY_TOKEN, "");
+        if (!server.isEmpty() || MODE_GITHUB.equals(p.getString(KEY_MODE, MODE_WEBDAV))) {
+            return new String[]{server, user, token};
+        }
+        String[] account = webDavAccount();
+        if (account != null) return account;
+        return new String[]{server, user, token};
     }
 
     /** 本机记录的上次成功上传时间（0 = 从未；上传成功后由调用方经 recordUpload 记录）。 */
@@ -97,11 +147,12 @@ public final class OnsSaveCloud {
             long result = 0;
             try {
                 if (!MODE_GITHUB.equals(p.getString(KEY_MODE, MODE_WEBDAV))) {
-                    String base = p.getString(KEY_SERVER, "");
+                    String[] target = webdavTarget(p);
+                    String base = target[0];
                     if (!base.isEmpty()) {
                         HttpURLConnection conn = open((base.endsWith("/") ? base : base + "/")
                                 + remotePath(p, gameName),
-                                p.getString(KEY_USER, ""), p.getString(KEY_TOKEN, ""));
+                                target[1], target[2]);
                         try {
                             conn.setRequestMethod("HEAD");
                             if (conn.getResponseCode() < 400) {
@@ -192,10 +243,11 @@ public final class OnsSaveCloud {
 
     private static void webdavRequest(SharedPreferences p, String method, String remotePath,
                                       File file) throws Exception {
-        String base = p.getString(KEY_SERVER, "");
+        String[] target = webdavTarget(p);
+        String base = target[0];
         if (base.isEmpty()) throw new IllegalStateException("server not configured");
         HttpURLConnection conn = open((base.endsWith("/") ? base : base + "/") + remotePath,
-                p.getString(KEY_USER, ""), p.getString(KEY_TOKEN, ""));
+                target[1], target[2]);
         try {
             conn.setRequestMethod(method);
             if ("PUT".equals(method)) {
@@ -228,7 +280,9 @@ public final class OnsSaveCloud {
     /** 逐级确保远程目录存在（已存在时 MKCOL 报 405，忽略）。 */
     private static void webdavEnsureDir(SharedPreferences p) {
         try {
-            String base = p.getString(KEY_SERVER, "");
+            String[] target = webdavTarget(p);
+            String base = target[0];
+            if (base.isEmpty()) throw new IllegalStateException("server not configured");
             String dir = p.getString(KEY_DIR, DEFAULT_DIR);
             String[] parts = dir.split("/");
             StringBuilder path = new StringBuilder();
@@ -236,7 +290,7 @@ public final class OnsSaveCloud {
                 if (part.isEmpty()) continue;
                 path.append(part).append('/');
                 HttpURLConnection conn = open(base.endsWith("/") ? base + path : base + "/" + path,
-                        p.getString(KEY_USER, ""), p.getString(KEY_TOKEN, ""));
+                        target[1], target[2]);
                 try {
                     conn.setRequestMethod("MKCOL");
                     conn.getResponseCode();
@@ -378,6 +432,21 @@ public final class OnsSaveCloud {
         box.addView(modeRow, new android.widget.LinearLayout.LayoutParams(
                 android.widget.LinearLayout.LayoutParams.MATCH_PARENT,
                 android.widget.LinearLayout.LayoutParams.WRAP_CONTENT));
+
+        // 跟随提示：WebDAV 模式且云同步中心有活动账户时，说明留空字段的回退行为
+        if (!MODE_GITHUB.equals(mode)) {
+            String[] account = webDavAccount();
+            if (account != null) {
+                android.widget.TextView followHint = new android.widget.TextView(activity);
+                followHint.setText(activity.getString(
+                        com.core.engine.R.string.engine_ons_extract_cloud_hint_follow, account[1]));
+                followHint.setTextSize(11);
+                followHint.setPadding(0, dp(activity, 8), 0, 0);
+                box.addView(followHint, new android.widget.LinearLayout.LayoutParams(
+                        android.widget.LinearLayout.LayoutParams.MATCH_PARENT,
+                        android.widget.LinearLayout.LayoutParams.WRAP_CONTENT));
+            }
+        }
 
         android.widget.EditText serverField = field(activity, box,
                 com.core.engine.R.string.engine_ons_extract_cloud_hint_server, p.getString(KEY_SERVER, ""));

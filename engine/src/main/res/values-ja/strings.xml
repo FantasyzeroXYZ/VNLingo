@@ -116,7 +116,8 @@
     <string name="engine_ons_extract_cloud_title">セーブのクラウド同期（現在のゲーム）</string>
     <string name="engine_ons_extract_cloud_mode_webdav">WebDAV</string>
     <string name="engine_ons_extract_cloud_mode_github">GitHub</string>
-    <string name="engine_ons_extract_cloud_hint_server">WebDAV URL（例：https://dav.jianguoyun.com/dav/）</string>
+    <string name="engine_ons_extract_cloud_hint_server">WebDAV URL（例：https://dav.jianguoyun.com/dav/。空欄なら同期センターのアカウントに従う）</string>
+    <string name="engine_ons_extract_cloud_hint_follow">WebDAV 項目が空欄の場合、「クラウド同期 → アカウント管理」の現在のアカウント（%1$s）を自動使用します。</string>
     <string name="engine_ons_extract_cloud_hint_repo">GitHub リポジトリ（owner/repo）</string>
     <string name="engine_ons_extract_cloud_hint_user">ユーザー名</string>
     <string name="engine_ons_extract_cloud_hint_token">パスワード/トークン（GitHub は PAT）</string>
