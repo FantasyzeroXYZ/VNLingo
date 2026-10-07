@@ -22,6 +22,7 @@
 #include <android/log.h>
 #include <jni.h>
 #include <sys/mman.h>
+#include <sys/uio.h>
 #include <unistd.h>
 #include <cerrno>
 #include <fcntl.h>
@@ -54,11 +55,18 @@ constexpr const char* kParserText =
 constexpr const char* kParserTextTail =
     "_ZN7artemis14CArtemisParser8TextTailERNSt6__ndk112basic_stringIcNS1_11char_traitsIcEENS1"
     "_9allocatorIcEEEE";
+// 官方内核脚本 [s] 文本的打印命令处理器（Girl's Blossom Project 实测三个解析器钩子
+// 全静默 → 文本不流经 CArtemisParser::Text / CBackLog::Add，探测此通道）
+constexpr const char* kCommandPrint =
+    "_ZN7artemis8CArtemis12CommandPrintERNS_12CScriptBlockEb";
+constexpr const char* kBlockToString =
+    "_ZN7artemis12CScriptBlock8ToStringENS_11CStringUtil7CHARSETE";
 
 JavaVM* gJvm = nullptr;
 jclass gBridgeClass = nullptr;
 jmethodID gOnTextMethod = nullptr;
 std::atomic<bool> gInstalled{false};
+std::atomic<bool> gFirstEmitLogged{false};
 std::mutex gInstallMutex;
 
 // ---- libc++（__ndk1）std::string 读取（布局与 clean 内核一致，已核验） ----
@@ -77,7 +85,11 @@ std::string readStdString(const void* p) {
 // ---- 上行（ArtemisActivity.onArtemisExtract；引擎线程 attach） ----
 void emitText(const char* text) {
     JavaVM* vm = gJvm;
-    if (vm == nullptr || gBridgeClass == nullptr || gOnTextMethod == nullptr) return;
+    if (vm == nullptr || gBridgeClass == nullptr || gOnTextMethod == nullptr) {
+        LOGW("emitText skip: vm=%p cls=%p m=%p", vm, (void*) gBridgeClass,
+             (void*) gOnTextMethod);
+        return;
+    }
     JNIEnv* env = nullptr;
     bool attached = false;
     if (vm->GetEnv(reinterpret_cast<void**>(&env), JNI_VERSION_1_6) != JNI_OK || env == nullptr) {
@@ -104,9 +116,13 @@ void emitText(const char* text) {
         env->DeleteLocalRef(arr);
     }
     if (result != nullptr) {
-        env->CallStaticVoidMethod(gBridgeClass, gOnTextMethod, result);
+        // onArtemisExtract 签名 (text, voiceName, voiceCached) 三 String——
+        // 少传参数时 CheckJNI 会把 va_list 栈上垃圾当 jobject 校验 → SIGABRT
+        jstring empty = env->NewStringUTF("");
+        env->CallStaticVoidMethod(gBridgeClass, gOnTextMethod, result, empty, empty);
         if (env->ExceptionCheck()) env->ExceptionClear();
         env->DeleteLocalRef(result);
+        if (empty != nullptr) env->DeleteLocalRef(empty);
     }
     if (attached) vm->DetachCurrentThread();
 }
@@ -231,34 +247,129 @@ BackLogAddFn gOrigBackLogAdd = nullptr;
 ParserTextFn gOrigParserText = nullptr;
 ParserTextFn gOrigParserTextTail = nullptr;
 
+// 首调诊断：区分「钩子未被调用」与「被调用但 readStdString 读空」。
+// process_vm_readv 自读可安全探测野指针（失败不崩），原始字节直接判断 ABI——
+// libc++ 短串首字节 = size*2（偶数），const char* 则直接是 ASCII。
+static void logFirstEntry(int slot, const char* name, void* self, const void* strRef) {
+    static std::atomic<unsigned> logged{0};
+    const unsigned bit = 1u << slot;
+    if (logged.load(std::memory_order_relaxed) & bit) return;
+    if (logged.fetch_or(bit, std::memory_order_relaxed) & bit) return;
+    uint8_t head[16] = {};
+    size_t got = 0;
+    if (strRef != nullptr) {
+        struct iovec local = { head, sizeof(head) };
+        struct iovec remote = { const_cast<void*>(strRef), sizeof(head) };
+        ssize_t r = process_vm_readv(getpid(), &local, 1, &remote, 1, 0);
+        if (r > 0) got = static_cast<size_t>(r);
+    }
+    char hex[3 * sizeof(head) + 1] = {};
+    for (size_t i = 0; i < got; ++i) {
+        snprintf(hex + 3 * i, 4, "%02x ", head[i]);
+    }
+    LOGI("official hook: %s FIRST ENTRY self=%p strRef=%p read=%zu [%s]",
+         name, self, strRef, got, hex);
+}
+
 void hookedBackLogAdd(void* self, void* sharedPtr, void* deque,
                       void* vec, int flag, const void* strRef) {
+    logFirstEntry(0, "BackLog::Add", self, strRef);
     const BackLogAddFn orig = gOrigBackLogAdd;
     if (orig != nullptr) orig(self, sharedPtr, deque, vec, flag, strRef);
     if (strRef != nullptr) {
         std::string text = readStdString(strRef);
         if (!text.empty()) {
-            text.insert(0, "[FTLN]");
+            if (!gFirstEmitLogged.exchange(true, std::memory_order_relaxed)) {
+                LOGI("BackLog::Add first capture: len=%zu text=%.60s",
+                     text.size(), text.c_str());
+            }
             emitText(text.c_str());
         }
     }
 }
 
 void hookedParserText(void* self, const void* strRef) {
+    logFirstEntry(1, "Parser::Text", self, strRef);
     const ParserTextFn orig = gOrigParserText;
     if (orig != nullptr) orig(self, strRef);
     if (strRef != nullptr) {
         std::string text = readStdString(strRef);
         if (!text.empty()) {
-            text.insert(0, "[FTRAW]");
             emitText(text.c_str());
         }
     }
 }
 
 void hookedParserTextTail(void* self, const void* strRef) {
+    logFirstEntry(2, "Parser::TextTail", self, strRef);
     const ParserTextFn orig = gOrigParserTextTail;
     if (orig != nullptr) orig(self, strRef);
+}
+
+using CommandPrintFn = void (*)(void*, void*, bool);
+CommandPrintFn gOrigCommandPrint = nullptr;
+
+// CScriptBlock::ToString(CHARSET) — Itanium ABI 返回 std::string 走隐藏 sret：
+//   ToString(std::string* sret, this, charset)。CommandPrint 的文本经此取回。
+using BlockToStringFn = void (*)(void* sret, void* self, int charset);
+BlockToStringFn gOrigBlockToString = nullptr;
+
+void hookedBlockToString(void* sret, void* self, int charset) {
+    const BlockToStringFn orig = gOrigBlockToString;
+    if (orig != nullptr) orig(sret, self, charset);
+    if (sret != nullptr) {
+        std::string text = readStdString(sret);
+        if (!text.empty()) {
+            static std::atomic<bool> firstLogged{false};
+            if (!firstLogged.exchange(true, std::memory_order_relaxed)) {
+                LOGI("Block::ToString first capture: len=%zu text=%.60s",
+                     text.size(), text.c_str());
+            }
+            emitText(text.c_str());
+        }
+    }
+}
+
+// libc++ __tree_node<std::__ndk1::pair<string const, string>>: left+0 right+8
+// parent+0x10 black+0x18 key+0x20 value+0x38（Girl's Blossom Project 实测布局）。
+// 回调返回 true 停止遍历。
+template <typename Fn>
+static void walkArgTree(void* node, int depth, Fn&& fn) {
+    if (node == nullptr || depth > 3) return;
+    uint8_t* p = static_cast<uint8_t*>(node);
+    uint64_t left = 0, right = 0;
+    memcpy(&left, p, 8);
+    memcpy(&right, p + 8, 8);
+    walkArgTree(reinterpret_cast<void*>(left), depth + 1, fn);
+    std::string key = readStdString(p + 0x20);
+    std::string value = readStdString(p + 0x38);
+    if (fn(key, value)) return;
+    walkArgTree(reinterpret_cast<void*>(right), depth + 1, fn);
+}
+
+// 官方内核文本提取主通道（Girl's Blossom Project 实测）：脚本每个 print 命令
+// 触发 CArtemis::CommandPrint，块参数 map 携带 data=<文本>。说话人行与正文行
+// 成对到达（间隔 ~2ms）：speaker("Himari") → 正文。逐条纯文本上行——正文非
+// speaker 前缀，宿主 facade 的句子替换逻辑自动覆盖，speaker 闪现不可见。
+void hookedCommandPrint(void* self, void* blockRef, bool flag) {
+    const CommandPrintFn orig = gOrigCommandPrint;
+    if (blockRef != nullptr) {
+        static std::atomic<bool> firstCaptureLogged{false};
+        uint64_t node = 0;
+        memcpy(&node, static_cast<uint8_t*>(blockRef) + 0x20, 8);
+        if (node > 0x1000) {
+            walkArgTree(reinterpret_cast<void*>(node), 0,
+                    [](const std::string& key, const std::string& value) {
+                        if (key != "data" || value.empty()) return false;
+                        if (!firstCaptureLogged.exchange(true, std::memory_order_relaxed)) {
+                            LOGI("CommandPrint first capture: %.60s", value.c_str());
+                        }
+                        emitText(value.c_str());
+                        return false;
+                    });
+        }
+    }
+    if (orig != nullptr) orig(self, blockRef, flag);
 }
 
 // ---- CArtemisTouch 触摸状态机钩子：官方内核虚拟鼠标点击注入的入口 ----
@@ -359,7 +470,7 @@ extern "C" bool artemis_official_install(void* kernelHandle, JavaVM* jvm, jobjec
         return false;
     }
 
-    InlineHook hooks[6];
+    InlineHook hooks[8];
     int count = 0;
     void* orig = nullptr;
     if (makeTrampoline(backlogAdd, &hooks[count].trampoline, &orig)
@@ -387,23 +498,43 @@ extern "C" bool artemis_official_install(void* kernelHandle, JavaVM* jvm, jobjec
     void* touchBegin = dlsym(kernelHandle, kTouchOnBegin);
     void* touchOnTouch = dlsym(kernelHandle, kTouchOnTouch);
     void* touchEnd = dlsym(kernelHandle, kTouchOnEnd);
-    if (touchBegin != nullptr && count < 6
+    if (touchBegin != nullptr && count < 8
             && makeTrampoline(touchBegin, &hooks[count].trampoline, &orig)
             && patchEntry(touchBegin, reinterpret_cast<void*>(&hookedTouchBegin))) {
         gOrigTouchBegin = reinterpret_cast<TouchOnBeginFn>(orig);
         ++count;
     }
-    if (touchOnTouch != nullptr && count < 6
+    if (touchOnTouch != nullptr && count < 8
             && makeTrampoline(touchOnTouch, &hooks[count].trampoline, &orig)
             && patchEntry(touchOnTouch, reinterpret_cast<void*>(&hookedTouchOnTouch))) {
         gOrigTouchOnTouch = reinterpret_cast<TouchOnTouchFn>(orig);
         ++count;
     }
-    if (touchEnd != nullptr && count < 6
+    if (touchEnd != nullptr && count < 8
             && makeTrampoline(touchEnd, &hooks[count].trampoline, &orig)
             && patchEntry(touchEnd, reinterpret_cast<void*>(&hookedTouchEnd))) {
         gOrigTouchEnd = reinterpret_cast<TouchOnEndFn>(orig);
         ++count;
+    }
+    // 文本通道探测：CommandPrint 首调日志定位真实显示路径
+    void* commandPrint = dlsym(kernelHandle, kCommandPrint);
+    if (commandPrint != nullptr && count < 8
+            && makeTrampoline(commandPrint, &hooks[count].trampoline, &orig)
+            && patchEntry(commandPrint, reinterpret_cast<void*>(&hookedCommandPrint))) {
+        gOrigCommandPrint = reinterpret_cast<CommandPrintFn>(orig);
+        ++count;
+    } else if (commandPrint == nullptr) {
+        LOGW("official hook: CArtemis::CommandPrint not exported");
+    }
+    // 文本提取主通道：CScriptBlock::ToString（CommandPrint 内部经此取文本）
+    void* blockToString = dlsym(kernelHandle, kBlockToString);
+    if (blockToString != nullptr && count < 8
+            && makeTrampoline(blockToString, &hooks[count].trampoline, &orig)
+            && patchEntry(blockToString, reinterpret_cast<void*>(&hookedBlockToString))) {
+        gOrigBlockToString = reinterpret_cast<BlockToStringFn>(orig);
+        ++count;
+    } else if (blockToString == nullptr) {
+        LOGW("official hook: CScriptBlock::ToString not exported");
     }
     (void) hooks;
     gInstalled.store(true, std::memory_order_relaxed);

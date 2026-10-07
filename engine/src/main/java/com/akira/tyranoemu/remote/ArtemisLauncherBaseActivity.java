@@ -127,6 +127,15 @@ public abstract class ArtemisLauncherBaseActivity extends com.ies_net.artemis.Ar
                 plp.y = navBarBottomInset();
                 getWindowManager().addView(panelView, plp);
                 extractPanelView = panelView;
+                // 面板开合后强制窗口重量测：GONE 态塌缩为 0×0，VISIBLE 不会自动
+                // 恢复尺寸（布局回调不触发）——不接线面板展开后永远不可见
+                extractPanel.setPanelVisibilityHook(() -> {
+                    try {
+                        getWindowManager().updateViewLayout(panelView, plp);
+                    } catch (Throwable t) {
+                        Log.w("YukiArtemis", "panel relayout failed", t);
+                    }
+                });
                 Log.i("YukiArtemis", "extract panel installed (artemis, detached window)");
             } catch (Throwable t) {
                 Log.w("YukiArtemis", "installPanels failed", t);
