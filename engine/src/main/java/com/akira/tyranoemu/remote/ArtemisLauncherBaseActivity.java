@@ -238,6 +238,23 @@ public abstract class ArtemisLauncherBaseActivity extends com.ies_net.artemis.Ar
 
     /** 光标处合成一次完整触摸：down 立即、up 延时，均经内核触摸注入。 */
     private void artTouchTap(float x, float y) {
+        // 官方内核无 injectHostTouch 符号：改在钩子捕获的 CArtemisTouch 对象上
+        // 合成 OnBegin/OnTouch/OnEnd（引擎坐标 = 窗口像素，官方移植直通）。
+        // clean 内核仍走 injectHostTouch（内核级注入，同物理触摸管线）。
+        double[] st = null;
+        try {
+            st = artemisTouchState();
+        } catch (UnsatisfiedLinkError ignored) {
+        }
+        if (st != null && st.length >= 2 && st[0] >= 1) {
+            long obj = (long) st[1];
+            try {
+                if (artemisTouchClick(obj, Math.round(x), Math.round(y))) {
+                    return;
+                }
+            } catch (UnsatisfiedLinkError ignored) {
+            }
+        }
         try {
             injectHostTouch(x, y, true);
         } catch (Throwable t) {

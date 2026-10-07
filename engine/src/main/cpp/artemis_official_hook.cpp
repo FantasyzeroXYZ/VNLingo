@@ -32,6 +32,13 @@
 #include <mutex>
 
 #define TAG "ArtemisExtract"
+
+// TPoint<int>（OnTouch 的坐标参数；POD 两 int，const 引用传入）
+template <typename T>
+struct TPoint {
+    T x;
+    T y;
+};
 #define LOGI(...) __android_log_print(ANDROID_LOG_INFO, TAG, __VA_ARGS__)
 #define LOGW(...) __android_log_print(ANDROID_LOG_WARN, TAG, __VA_ARGS__)
 
@@ -254,6 +261,52 @@ void hookedParserTextTail(void* self, const void* strRef) {
     if (orig != nullptr) orig(self, strRef);
 }
 
+// ---- CArtemisTouch 触摸状态机钩子：官方内核虚拟鼠标点击注入的入口 ----
+// 官方内核经 NativeActivity 输入队列驱动 CArtemisTouch（OnBegin/OnTouch/OnEnd）。
+// 钩住三点：捕获触摸对象指针（this）与引擎坐标点（TPoint<int>），供虚拟鼠标
+// 点击时在该对象上合成 OnBegin/OnTouch/OnEnd 序列。
+constexpr const char* kTouchOnBegin = "_ZN7artemis13CArtemisTouch7OnBeginEv";
+constexpr const char* kTouchOnTouch = "_ZN7artemis13CArtemisTouch7OnTouchEiRKNS_6TPointIiEE";
+constexpr const char* kTouchOnEnd = "_ZN7artemis13CArtemisTouch5OnEndEv";
+
+using TouchOnBeginFn = void (*)(void*);
+using TouchOnTouchFn = void (*)(void*, int, const void*);
+using TouchOnEndFn = void (*)(void*);
+
+void* gTouchObj = nullptr;
+std::atomic<bool> gTouchObjCaptured{false};
+std::atomic<int> gTouchPtX{0};
+std::atomic<int> gTouchPtY{0};
+
+TouchOnBeginFn gOrigTouchBegin = nullptr;
+TouchOnTouchFn gOrigTouchOnTouch = nullptr;
+TouchOnEndFn gOrigTouchEnd = nullptr;
+
+void hookedTouchBegin(void* self) {
+    const TouchOnBeginFn orig = gOrigTouchBegin;
+    if (orig != nullptr) orig(self);
+    gTouchObj = self;
+    gTouchObjCaptured.store(true, std::memory_order_relaxed);
+}
+
+void hookedTouchOnTouch(void* self, int id, const void* point) {
+    const TouchOnTouchFn orig = gOrigTouchOnTouch;
+    if (orig != nullptr) orig(self, id, point);
+    gTouchObj = self;
+    gTouchObjCaptured.store(true, std::memory_order_relaxed);
+    if (point != nullptr) {
+        gTouchPtX.store(*static_cast<const int*>(point), std::memory_order_relaxed);
+        gTouchPtY.store(*(reinterpret_cast<const int*>(point) + 1), std::memory_order_relaxed);
+    }
+}
+
+void hookedTouchEnd(void* self) {
+    const TouchOnEndFn orig = gOrigTouchEnd;
+    if (orig != nullptr) orig(self);
+    gTouchObj = self;
+    gTouchObjCaptured.store(true, std::memory_order_relaxed);
+}
+
 }  // namespace
 
 /**
@@ -306,7 +359,7 @@ extern "C" bool artemis_official_install(void* kernelHandle, JavaVM* jvm, jobjec
         return false;
     }
 
-    InlineHook hooks[3];
+    InlineHook hooks[6];
     int count = 0;
     void* orig = nullptr;
     if (makeTrampoline(backlogAdd, &hooks[count].trampoline, &orig)
@@ -330,8 +383,66 @@ extern "C" bool artemis_official_install(void* kernelHandle, JavaVM* jvm, jobjec
         gOrigParserTextTail = reinterpret_cast<ParserTextFn>(orig);
         ++count;
     }
+    // 触摸状态机钩子（虚拟鼠标点击注入入口；序言校验失败仅缺失点击能力）
+    void* touchBegin = dlsym(kernelHandle, kTouchOnBegin);
+    void* touchOnTouch = dlsym(kernelHandle, kTouchOnTouch);
+    void* touchEnd = dlsym(kernelHandle, kTouchOnEnd);
+    if (touchBegin != nullptr && count < 6
+            && makeTrampoline(touchBegin, &hooks[count].trampoline, &orig)
+            && patchEntry(touchBegin, reinterpret_cast<void*>(&hookedTouchBegin))) {
+        gOrigTouchBegin = reinterpret_cast<TouchOnBeginFn>(orig);
+        ++count;
+    }
+    if (touchOnTouch != nullptr && count < 6
+            && makeTrampoline(touchOnTouch, &hooks[count].trampoline, &orig)
+            && patchEntry(touchOnTouch, reinterpret_cast<void*>(&hookedTouchOnTouch))) {
+        gOrigTouchOnTouch = reinterpret_cast<TouchOnTouchFn>(orig);
+        ++count;
+    }
+    if (touchEnd != nullptr && count < 6
+            && makeTrampoline(touchEnd, &hooks[count].trampoline, &orig)
+            && patchEntry(touchEnd, reinterpret_cast<void*>(&hookedTouchEnd))) {
+        gOrigTouchEnd = reinterpret_cast<TouchOnEndFn>(orig);
+        ++count;
+    }
     (void) hooks;
     gInstalled.store(true, std::memory_order_relaxed);
-    LOGI("official hook: installed %d hooks (BackLog::Add / Parser::Text / TextTail)", count);
+    LOGI("official hook: installed %d hooks (BackLog::Add / Parser::Text / TextTail / CArtemisTouch x3)", count);
     return count > 0;
+}
+
+// ---- 虚拟鼠标点击注入（audio_bridge JNI 层经此访问） ----
+
+/** 触摸状态：out[0]=对象已捕获 out[1]=对象指针 out[2]=最近引擎点 x out[3]=y。 */
+extern "C" void artemis_official_touch_state(double* out) {
+    out[0] = gTouchObjCaptured.load(std::memory_order_relaxed) ? 1.0 : 0.0;
+    out[1] = static_cast<double>(reinterpret_cast<uintptr_t>(gTouchObj));
+    out[2] = gTouchPtX.load(std::memory_order_relaxed);
+    out[3] = gTouchPtY.load(std::memory_order_relaxed);
+}
+
+/** 在触摸对象上合成一次点击（OnBegin → OnTouch(id=0, pt) → OnEnd）。 */
+extern "C" bool artemis_official_touch_click(long objPtr, int x, int y) {
+    if (!gTouchObjCaptured.load(std::memory_order_relaxed)) return false;
+    void* obj = reinterpret_cast<void*>(static_cast<uintptr_t>(objPtr));
+    TPoint<int> pt{x, y};
+    if (gOrigTouchBegin != nullptr) gOrigTouchBegin(obj);
+    if (gOrigTouchOnTouch != nullptr) gOrigTouchOnTouch(obj, 0, &pt);
+    if (gOrigTouchEnd != nullptr) gOrigTouchEnd(obj);
+    return true;
+}
+
+// JNI：Kotlin ArtemisActivity.artemisTouchState()/artemisTouchClick()（运行时按名解析）
+extern "C" JNIEXPORT jdoubleArray JNICALL
+Java_com_ies_1net_artemis_ArtemisActivity_artemisTouchState(JNIEnv* env, jclass) {
+    double out[4] = {0, 0, 0, 0};
+    artemis_official_touch_state(out);
+    jdoubleArray arr = env->NewDoubleArray(4);
+    if (arr != nullptr) env->SetDoubleArrayRegion(arr, 0, 4, out);
+    return arr;
+}
+
+extern "C" JNIEXPORT jboolean JNICALL
+Java_com_ies_1net_artemis_ArtemisActivity_artemisTouchClick(JNIEnv*, jclass, jlong objPtr, jint x, jint y) {
+    return artemis_official_touch_click(objPtr, x, y) ? JNI_TRUE : JNI_FALSE;
 }

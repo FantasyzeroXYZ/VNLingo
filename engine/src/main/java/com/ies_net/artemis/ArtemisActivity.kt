@@ -74,6 +74,16 @@ open class ArtemisActivity : NativeActivity() {
      */
     external fun injectHostTouch(x: Float, y: Float, down: Boolean)
 
+    /**
+     * 官方内核虚拟鼠标点击支持（audio_bridge 导出）：读取 CArtemisTouch
+     * 钩子捕获的触摸状态，返回 [have, objPtr, ptX, ptY]；have=0 表示本次
+     * 会话游戏画面还没被真实触摸过（触摸对象未捕获）。
+     */
+    external fun artemisTouchState(): DoubleArray?
+
+    /** 在捕获的触摸对象上合成一次点击（OnBegin/OnTouch/OnEnd，引擎坐标）。 */
+    external fun artemisTouchClick(objPtr: Long, x: Int, y: Int): Boolean
+
     external fun ExecuteTag(tag: String)
 
     fun InAppBilling(a: String, b: String, c: Boolean, d: Boolean) {
