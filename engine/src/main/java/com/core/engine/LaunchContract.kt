@@ -48,6 +48,11 @@ object LaunchContract {
     const val SCOPED_SAVE_NAME = "scopedSaveName"
     const val GAME_SAVE_ROOT = "gameSaveRoot"
 
+    // ---------- 文本提取 ----------
+
+    /** 提取钩子开关（bool，缺省 true）：ONS/KRKR/Artemis 宿主按此武装文本提取钩子与面板。 */
+    const val EXTRACT_HOOK = "extractHook"
+
     // ---------- ONS ----------
 
     const val GAME_ARGS = "gameargs"

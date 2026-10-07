@@ -84,6 +84,8 @@ fun PerGameSettingsScreen(game: ScanGame) {
     var krScoped by remember(gid) { mutableStateOf(PerGameSettingsStore.getBool(ctx, gid, PerGameSettingsStore.F_SCOPED_SAVE_DIR)) }
     var krSkipStartupDialogs by remember(gid) { mutableStateOf(PerGameSettingsStore.getBool(ctx, gid, PerGameSettingsStore.F_SKIP_STARTUP_DIALOGS)) }
     var krPatchOverlayMode by remember(gid) { mutableStateOf(PerGameSettingsStore.getStr(ctx, gid, PerGameSettingsStore.F_PATCH_OVERLAY_MODE)) }
+    var krExtractHook by remember(gid) { mutableStateOf(PerGameSettingsStore.getBool(ctx, gid, PerGameSettingsStore.F_EXTRACT_HOOK)) }
+    var krTextSource by remember(gid) { mutableStateOf(PerGameSettingsStore.getStr(ctx, gid, PerGameSettingsStore.F_KR_TEXT_SOURCE)) }
     var krAnime4kMode by remember(gid) { mutableStateOf(PerGameSettingsStore.getStr(ctx, gid, PerGameSettingsStore.F_ANIME4K_MODE)) }
     var krFont by remember(gid) { mutableStateOf(PerGameSettingsStore.getStr(ctx, gid, PerGameSettingsStore.F_DEFAULT_FONT)) }
     var krForceFont by remember(gid) { mutableStateOf(PerGameSettingsStore.getBool(ctx, gid, PerGameSettingsStore.F_FORCE_DEFAULT_FONT)) }
@@ -100,6 +102,7 @@ fun PerGameSettingsScreen(game: ScanGame) {
     var artSurfaceCache by remember { mutableStateOf(PerGameSettingsStore.getStr(ctx, gid, PerGameSettingsStore.F_ART_SURFACE_CACHE_SIZE)) }
     var artFontCache by remember { mutableStateOf(PerGameSettingsStore.getStr(ctx, gid, PerGameSettingsStore.F_ART_FONT_CACHE_SIZE)) }
     var artPowerSaving by remember { mutableStateOf(PerGameSettingsStore.getStr(ctx, gid, PerGameSettingsStore.F_ART_POWER_SAVING)) }
+    var extractHook by remember(gid) { mutableStateOf(PerGameSettingsStore.getBool(ctx, gid, PerGameSettingsStore.F_EXTRACT_HOOK)) }
     var renpyVersion by remember { mutableStateOf(PerGameSettingsStore.getStr(ctx, gid, PerGameSettingsStore.F_RENPY_VERSION)) }
     var siglusLanguage by remember { mutableStateOf(PerGameSettingsStore.getStr(ctx, gid, PerGameSettingsStore.F_SIGLUS_LANGUAGE)) }
     var fbNls by remember { mutableStateOf(PerGameSettingsStore.getStr(ctx, gid, PerGameSettingsStore.F_FB_NLS)) }
@@ -198,6 +201,14 @@ fun PerGameSettingsScreen(game: ScanGame) {
     val globalKrKernel = EngineSettingsStore.getKrKernel(ctx)
     val globalKrScoped = EngineSettingsStore.isKrScopedSaveDir(ctx)
     val globalKrSkipStartupDialogs = EngineSettingsStore.isKrSkipStartupDialogs(ctx)
+    val globalKrExtractHook = EngineSettingsStore.isKrExtractHook(ctx)
+    val globalKrTextSource = EngineSettingsStore.getKrTextSource(ctx)
+    val globalOnsExtractHook = EngineSettingsStore.isOnsExtractHook(ctx)
+    val globalArtExtractHook = EngineSettingsStore.isArtExtractHook(ctx)
+    val krTextSourceMap = mapOf(
+        EngineSettingsStore.KR_TEXT_SOURCE_HOOK to stringResource(R.string.settings_kr_text_source_hook),
+        EngineSettingsStore.KR_TEXT_SOURCE_ENGINE to stringResource(R.string.settings_kr_text_source_engine),
+    )
     val globalKrPatchOverlayMode = EngineSettingsStore.getKrPatchOverlayMode(ctx)
     val globalKrAnime4kMode = EngineSettingsStore.getKrAnime4kMode(ctx)
     val globalKrFont = EngineSettingsStore.getKrDefaultFont(ctx)
@@ -294,6 +305,8 @@ fun PerGameSettingsScreen(game: ScanGame) {
         PerGameSettingsStore.setStr(ctx, gid, PerGameSettingsStore.F_ENGINE_KERNEL, krKernel)
         PerGameSettingsStore.setBool(ctx, gid, PerGameSettingsStore.F_SCOPED_SAVE_DIR, krScoped)
         PerGameSettingsStore.setBool(ctx, gid, PerGameSettingsStore.F_SKIP_STARTUP_DIALOGS, krSkipStartupDialogs)
+        PerGameSettingsStore.setBool(ctx, gid, PerGameSettingsStore.F_EXTRACT_HOOK, krExtractHook)
+        PerGameSettingsStore.setStr(ctx, gid, PerGameSettingsStore.F_KR_TEXT_SOURCE, krTextSource)
         PerGameSettingsStore.setStr(ctx, gid, PerGameSettingsStore.F_PATCH_OVERLAY_MODE, krPatchOverlayMode)
         PerGameSettingsStore.setStr(ctx, gid, PerGameSettingsStore.F_ANIME4K_MODE, krAnime4kMode?.takeIf { it in EngineSettingsStore.ANIME4K_MODES })
         PerGameSettingsStore.setStr(ctx, gid, PerGameSettingsStore.F_DEFAULT_FONT, krFont)
@@ -433,6 +446,8 @@ fun PerGameSettingsScreen(game: ScanGame) {
                                     globalKrSkipStartupDialogs,
                                     krSkipStartupDialogs,
                                 ) { krSkipStartupDialogs = it }
+                                OverrideSwitch(stringResource(R.string.settings_extract_hook), globalKrExtractHook, krExtractHook) { krExtractHook = it }
+                                OverrideChoice(stringResource(R.string.settings_kr_text_source), krTextSourceMap, globalKrTextSource, krTextSource) { krTextSource = it }
                                 OverrideChoice(stringResource(R.string.engine_settings_engine_version), krVersionMap, globalKrVersion, krVersion) { krVersion = it }
                                 OverrideChoice(stringResource(R.string.engine_settings_engine_kernel), krKernelMap, globalKrKernel, krKernel) { krKernel = it }
                                 if (!isSdl3) {
@@ -535,6 +550,7 @@ fun PerGameSettingsScreen(game: ScanGame) {
                     EngineType.ONS -> item {
                         SectionCard("ONS") {
                             OverrideSwitch(stringResource(R.string.engine_settings_scoped_save_dir), globalOns.scopedSaveDir, onsScoped) { onsScoped = it }
+                            OverrideSwitch(stringResource(R.string.settings_extract_hook), globalOnsExtractHook, extractHook) { extractHook = it }
                             OverrideSwitch(stringResource(R.string.engine_settings_fullscreen_stretch), globalOns.stretchFull, onsStretch) { onsStretch = it }
                             OverrideSwitch(stringResource(R.string.engine_settings_ignore_cutout), globalOns.ignoreCutout, onsCutout) { onsCutout = it }
                             OverrideSwitch(stringResource(R.string.engine_settings_disable_video), globalOns.disableVideo, onsNoVideo) { onsNoVideo = it }
@@ -548,6 +564,7 @@ fun PerGameSettingsScreen(game: ScanGame) {
                                 val effectiveArtKernel = artKernel ?: globalArtKernel
                                 OverrideChoice(stringResource(R.string.engine_settings_engine_kernel), artKernelMap, globalArtKernel, artKernel) { artKernel = it }
                                 OverrideSwitch(stringResource(R.string.engine_settings_rotate_screen), globalArtRotate, artRotate) { artRotate = it }
+                                OverrideSwitch(stringResource(R.string.settings_extract_hook), globalArtExtractHook, extractHook) { extractHook = it }
                                 if (effectiveArtKernel == EngineSettingsStore.ART_KERNEL_OFFICIAL) {
                                     OverrideChoice(stringResource(R.string.engine_settings_engine_version), artVersionMap, globalArtVersion, artVersion) { artVersion = it }
                                     OverrideChoice(stringResource(R.string.engine_settings_auto_patch), artPatchMap, globalArtPatch, artPatch) { artPatch = it }

@@ -97,37 +97,45 @@ public abstract class ArtemisLauncherBaseActivity extends com.ies_net.artemis.Ar
      * 提取数据源待内核文本钩子（见 ArtemisExtractFacade 注释），先接入框架。
      */
     private void installPanels() {
-        try {
-            String path = getIntent() == null ? null : getIntent().getStringExtra(LaunchContract.PATH);
-            if (path == null || path.trim().isEmpty()) return;
-            if (path.startsWith("file://")) path = path.substring("file://".length());
-            facade = new com.core.ons.ArtemisExtractFacade(this, path);
+        // 提取钩子开关（LaunchContract.EXTRACT_HOOK，缺省开）：关闭 = 纯游戏模式，
+        // 不装提取面板；虚拟鼠标窗口与左缘按键组（非提取功能）照常安装
+        boolean extractHook = getIntent() == null ||
+                getIntent().getBooleanExtra(LaunchContract.EXTRACT_HOOK, true);
+        if (extractHook) {
+            try {
+                String path = getIntent() == null ? null : getIntent().getStringExtra(LaunchContract.PATH);
+                if (path == null || path.trim().isEmpty()) return;
+                if (path.startsWith("file://")) path = path.substring("file://".length());
+                facade = new com.core.ons.ArtemisExtractFacade(this, path);
 
-            com.core.ons.OnsExtractPanel extractPanel = new com.core.ons.OnsExtractPanel(facade);
-            // 右缘按键组走独立小窗；面板自身承载为底部独立窗口（可触摸）：
-            // 旧方案（全屏覆盖窗随面板可见性切换触摸态）在面板开启时会吃掉全部
-            // 游戏触摸——触摸推进失效的根因。面板窗口只占面板自身区域，
-            // 其余触摸透传游戏；面板 GONE 时窗口塌缩为 0。
-            extractPanel.setSideButtonsWindowMode(true);
-            installVirtualMouseWindow();
-            android.view.View panelView = extractPanel.installDetached(
-                    this::toggleVirtualMouseMode, this::isVirtualMouseMode);
-            installEngineLeftButtons();
+                com.core.ons.OnsExtractPanel extractPanel = new com.core.ons.OnsExtractPanel(facade);
+                // 右缘按键组走独立小窗；面板自身承载为底部独立窗口（可触摸）：
+                // 旧方案（全屏覆盖窗随面板可见性切换触摸态）在面板开启时会吃掉全部
+                // 游戏触摸——触摸推进失效的根因。面板窗口只占面板自身区域，
+                // 其余触摸透传游戏；面板 GONE 时窗口塌缩为 0。
+                extractPanel.setSideButtonsWindowMode(true);
+                android.view.View panelView = extractPanel.installDetached(
+                        this::toggleVirtualMouseMode, this::isVirtualMouseMode);
 
-            android.view.WindowManager.LayoutParams plp = new android.view.WindowManager.LayoutParams(
-                    extractPanel.preferredWindowWidthPx(),
-                    android.view.WindowManager.LayoutParams.WRAP_CONTENT,
-                    android.view.WindowManager.LayoutParams.TYPE_APPLICATION,
-                    android.view.WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE,
-                    android.graphics.PixelFormat.TRANSLUCENT);
-            plp.gravity = android.view.Gravity.BOTTOM | android.view.Gravity.CENTER_HORIZONTAL;
-            plp.y = navBarBottomInset();
-            getWindowManager().addView(panelView, plp);
-            extractPanelView = panelView;
-            Log.i("YukiArtemis", "extract panel installed (artemis, detached window)");
-        } catch (Throwable t) {
-            Log.w("YukiArtemis", "installPanels failed", t);
+                android.view.WindowManager.LayoutParams plp = new android.view.WindowManager.LayoutParams(
+                        extractPanel.preferredWindowWidthPx(),
+                        android.view.WindowManager.LayoutParams.WRAP_CONTENT,
+                        android.view.WindowManager.LayoutParams.TYPE_APPLICATION,
+                        android.view.WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE,
+                        android.graphics.PixelFormat.TRANSLUCENT);
+                plp.gravity = android.view.Gravity.BOTTOM | android.view.Gravity.CENTER_HORIZONTAL;
+                plp.y = navBarBottomInset();
+                getWindowManager().addView(panelView, plp);
+                extractPanelView = panelView;
+                Log.i("YukiArtemis", "extract panel installed (artemis, detached window)");
+            } catch (Throwable t) {
+                Log.w("YukiArtemis", "installPanels failed", t);
+            }
+        } else {
+            Log.i("YukiArtemis", "extract hook disabled; skip extract panel");
         }
+        installVirtualMouseWindow();
+        installEngineLeftButtons();
     }
 
     /** 导航条高度（横屏底部 inset），面板窗口避开。 */

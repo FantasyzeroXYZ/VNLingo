@@ -61,6 +61,23 @@ object EngineSettingsResolver {
                 EngineSettingsStore.isKrSkipStartupDialogs(app),
             ),
             krExtractTjs = EngineSettingsStore.isKrExtractTjs(app),
+            extractHook = EffectiveEngineSettings.resolveBool(
+                bool(PerGameSettingsStore.F_EXTRACT_HOOK),
+                when (game.engine) {
+                    com.tyranor.next.core.engine.EngineType.KIRIKIRI ->
+                        EngineSettingsStore.isKrExtractHook(app)
+                    com.tyranor.next.core.engine.EngineType.ONS ->
+                        EngineSettingsStore.isOnsExtractHook(app)
+                    com.tyranor.next.core.engine.EngineType.ARTEMIS ->
+                        EngineSettingsStore.isArtExtractHook(app)
+                    else -> true
+                },
+            ),
+            krTextSource = if (game.engine == com.tyranor.next.core.engine.EngineType.KIRIKIRI)
+                EffectiveEngineSettings.resolve(
+                    str(PerGameSettingsStore.F_KR_TEXT_SOURCE),
+                    EngineSettingsStore.getKrTextSource(app),
+                ) else EngineSettingsStore.KR_TEXT_SOURCE_HOOK,
             krAnime4kMode = EffectiveEngineSettings.resolveAllowed(
                 str(PerGameSettingsStore.F_ANIME4K_MODE),
                 EngineSettingsStore.getKrAnime4kMode(app),
@@ -235,6 +252,10 @@ data class ResolvedEngineSettings(
     val krSkipStartupDialogs: Boolean,
     /** KRKR 剧情文本框提取（TJS 发射器，实验性，仅全局开关）。 */
     val krExtractTjs: Boolean,
+    /** 文本提取钩子开关（ONS/KRKR/Artemis 生效；其余引擎恒 true）。 */
+    val extractHook: Boolean,
+    /** KRKR 文本输出源：hook = 运行时文本流；engine_tjs = 引擎自身输出（TJS 发射器，实验性）。 */
+    val krTextSource: String,
     val krAnime4kMode: String,
     val krRenderer: String,
     val artVersion: String,

@@ -425,6 +425,36 @@ object EngineSettingsStore {
     fun setKrExtractTjs(c: Context, b: Boolean) =
         prefs(c).edit().putBoolean(KEY_KR_EXTRACT_TJS, b).apply()
 
+    // ---------- 文本提取钩子（全局默认；单游戏覆盖在 PerGameSettingsStore） ----------
+
+    const val KEY_KR_EXTRACT_HOOK = "kr_extract_hook"
+    const val KEY_ONS_EXTRACT_HOOK = "ons_extract_hook"
+    const val KEY_ARTEMIS_EXTRACT_HOOK = "art_extract_hook"
+    const val KR_TEXT_SOURCE_HOOK = "hook"
+    const val KR_TEXT_SOURCE_ENGINE = "engine_tjs"
+
+    /** KRKR 文本提取钩子（运行时 hook 总开关，默认开）。 */
+    fun isKrExtractHook(c: Context): Boolean =
+        prefs(c).getBoolean(KEY_KR_EXTRACT_HOOK, true)
+    fun setKrExtractHook(c: Context, b: Boolean) =
+        prefs(c).edit().putBoolean(KEY_KR_EXTRACT_HOOK, b).apply()
+
+    /** ONS 文本提取钩子（默认开）。 */
+    fun isOnsExtractHook(c: Context): Boolean =
+        prefs(c).getBoolean(KEY_ONS_EXTRACT_HOOK, true)
+    fun setOnsExtractHook(c: Context, b: Boolean) =
+        prefs(c).edit().putBoolean(KEY_ONS_EXTRACT_HOOK, b).apply()
+
+    /** Artemis 文本提取钩子（默认开）。 */
+    fun isArtExtractHook(c: Context): Boolean =
+        prefs(c).getBoolean(KEY_ARTEMIS_EXTRACT_HOOK, true)
+    fun setArtExtractHook(c: Context, b: Boolean) =
+        prefs(c).edit().putBoolean(KEY_ARTEMIS_EXTRACT_HOOK, b).apply()
+
+    /** KRKR 文本输出源（全局默认）：hook = 运行时文本流；engine_tjs = 引擎自身输出（TJS）。 */
+    fun getKrTextSource(c: Context): String =
+        if (isKrExtractTjs(c)) KR_TEXT_SOURCE_ENGINE else KR_TEXT_SOURCE_HOOK
+
     fun getKrPatchOverlayMode(c: Context): String =
         normalizeKrPatchOverlayMode(prefs(c).getString(KEY_KR_PATCH_OVERLAY_MODE, KR_PATCH_OVERLAY_AUTO))
     fun setKrPatchOverlayMode(c: Context, v: String) =

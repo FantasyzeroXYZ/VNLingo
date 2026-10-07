@@ -125,12 +125,18 @@ public class ONScripter extends SDLActivity {
         observeSurfaceAdvanceTap();  // 游戏面点击观测：提取桥连续页累积的翻页边界信号
         try { nativeInitJavaCallbacks(); } catch (Throwable t) { Log.w(TAG, "nativeInitJavaCallbacks failed", t); }
         setupVirtualControls();
-        // [ONS-BRIDGE] 提取桥与面板：桥先挂接（可能早于面板收到事件），面板装进覆盖层
-        OnsExtractBridge.get().attach(this);
-        try {
-            extractPanel = new OnsExtractPanel(new com.core.ons.OnsExtractFacade(this));
-            extractPanel.install(onsOverlay, this::toggleVirtualMouseMode, this::isVirtualMouseMode);
-        } catch (Throwable t) { Log.w(TAG, "extract panel install failed", t); }
+        // [ONS-BRIDGE] 提取桥与面板：桥先挂接（可能早于面板收到事件），面板装进覆盖层。
+        // 提取钩子开关（LaunchContract.EXTRACT_HOOK，缺省开）：关闭 = 纯游戏模式，
+        // 不挂提取桥、不装面板（查词/翻译/制卡依赖提取文本，随之不可用）。
+        if (getIntent() == null || getIntent().getBooleanExtra(LaunchContract.EXTRACT_HOOK, true)) {
+            OnsExtractBridge.get().attach(this);
+            try {
+                extractPanel = new OnsExtractPanel(new com.core.ons.OnsExtractFacade(this));
+                extractPanel.install(onsOverlay, this::toggleVirtualMouseMode, this::isVirtualMouseMode);
+            } catch (Throwable t) { Log.w(TAG, "extract panel install failed", t); }
+        } else {
+            Log.i(TAG, "extract hook disabled; skip extract bridge and panel");
+        }
         fullscreen();
     }
 

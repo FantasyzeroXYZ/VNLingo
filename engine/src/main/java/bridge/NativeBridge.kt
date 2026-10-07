@@ -29,6 +29,8 @@ object NativeBridge {
     private var steamConfigOverlayPath: String? = null
 
     @JvmStatic external fun initialize(so: String?): Boolean
+    /** 提取钩子开关（KRKR）：initialize 前调用，false = 跳过提取钩子武装（纯游戏模式）。 */
+    @JvmStatic external fun setExtractHookEnabled(enabled: Boolean)
     @JvmStatic external fun isLaunchSceneReady(so: String?): Boolean
     @JvmStatic external fun launch(so: String?, path: String?, useMaps: Boolean): Boolean
     @JvmStatic external fun interceptor(prefix: String?): Unit

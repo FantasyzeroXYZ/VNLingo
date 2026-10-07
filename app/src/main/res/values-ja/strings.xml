@@ -31,6 +31,10 @@
     <string name="settings_anki">Anki 設定</string>
     <string name="settings_tts">TTS 設定</string>
     <string name="settings_dict_page">辞書設定</string>
+    <string name="settings_extract_hook">テキスト抽出フック</string>
+    <string name="settings_kr_text_source">テキスト出力方式</string>
+    <string name="settings_kr_text_source_hook">実行時テキストストリーム</string>
+    <string name="settings_kr_text_source_engine">エンジン出力（TJS・実験的）</string>
     <string name="settings_play_stats">プレイ統計</string>
     <string name="settings_play_stats_summary">合計 / 今週 / 今月 / プレイ記録</string>
     <string name="settings_gamepad">コントローラー設定</string>

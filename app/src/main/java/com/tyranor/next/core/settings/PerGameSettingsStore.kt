@@ -129,6 +129,11 @@ object PerGameSettingsStore {
     // ONS 子对象键
     const val ONS_KEY = "ons"
 
+    // 文本提取（ONS/KRKR/Artemis；null=跟随全局）
+    const val F_EXTRACT_HOOK = "extract_hook"
+    // KRKR 文本输出源（"hook"=运行时文本流 / "engine_tjs"=引擎自身输出；null=跟随全局）
+    const val F_KR_TEXT_SOURCE = "kr_text_source"
+
     private fun prefs(context: Context) =
         context.applicationContext.getSharedPreferences(PREF_NAME, Context.MODE_PRIVATE)
 

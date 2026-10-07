@@ -790,6 +790,14 @@ extern "C" bool krkr_bridge_got_hook(const char* library, const char* symbol,
     return ok;
 }
 
+// 提取钩子开关（LaunchContract.EXTRACT_HOOK 下发；缺省开）
+static std::atomic<bool> gExtractHookEnabled{true};
+
+extern "C" JNIEXPORT void JNICALL
+Java_bridge_NativeBridge_setExtractHookEnabled(JNIEnv*, jclass, jboolean enabled) {
+    gExtractHookEnabled.store(enabled == JNI_TRUE, std::memory_order_relaxed);
+}
+
 extern "C" JNIEXPORT jboolean JNICALL
 Java_bridge_NativeBridge_initialize(JNIEnv* env, jclass, jstring gameLibrary) {
     const std::string library = takeString(env, gameLibrary);
@@ -797,8 +805,14 @@ Java_bridge_NativeBridge_initialize(JNIEnv* env, jclass, jstring gameLibrary) {
     if (!resolveGameLocked(library.c_str())) return JNI_FALSE;
     // [KRKR-EXTRACT] 内核就绪即武装文本提取钩子（cocos2d Label::setString，
     // 三版本符号一致）；失败静默降级为无提取，不影响游戏。
-    krkr_install_extract_hook(gGame.handle, env);
-    krkr_install_ft_probe(gGame.handle, gGame.library.c_str());
+    // 提取钩子开关（setExtractHookEnabled，LaunchContract.EXTRACT_HOOK 下发，
+    // 缺省开）：关闭 = 纯游戏模式，跳过钩子武装。
+    if (gExtractHookEnabled.load(std::memory_order_relaxed)) {
+        krkr_install_extract_hook(gGame.handle, env);
+        krkr_install_ft_probe(gGame.handle, gGame.library.c_str());
+    } else {
+        __android_log_print(ANDROID_LOG_INFO, kTag, "extract hook disabled; skip arming");
+    }
     return JNI_TRUE;
 }
 
@@ -957,6 +971,8 @@ extern "C" JNIEXPORT jint JNICALL JNI_OnLoad(JavaVM* vm, void*) {
     JNINativeMethod methods[] = {
             {const_cast<char*>("initialize"), const_cast<char*>("(Ljava/lang/String;)Z"),
              reinterpret_cast<void*>(Java_bridge_NativeBridge_initialize)},
+            {const_cast<char*>("setExtractHookEnabled"), const_cast<char*>("(Z)V"),
+             reinterpret_cast<void*>(Java_bridge_NativeBridge_setExtractHookEnabled)},
             {const_cast<char*>("launch"), const_cast<char*>("(Ljava/lang/String;Ljava/lang/String;Z)Z"),
              reinterpret_cast<void*>(Java_bridge_NativeBridge_launch)},
             {const_cast<char*>("isLaunchSceneReady"), const_cast<char*>("(Ljava/lang/String;)Z"),

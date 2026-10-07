@@ -713,6 +713,7 @@ object EngineLauncher {
                     putExtra(LaunchContract.LAUNCH_TARGET, game.launchTarget)
                     putExtra(LaunchContract.LAUNCH_MODE, LaunchContract.LAUNCH_MODE_ONS)
                     putExtra(LaunchContract.IGNORE_CUTOUT, ons.ignoreCutout)
+                    putExtra(LaunchContract.EXTRACT_HOOK, settings.extractHook)
                 }
             }
 
@@ -816,7 +817,8 @@ object EngineLauncher {
         val defaultFont = settings.krDefaultFont
         val forceFont = settings.krForceDefaultFont
         val patchOverlay = prepareKrPatchOverlay(
-            context, engineRoot, settings.krPatchOverlayMode, settings.krExtractTjs)
+            context, engineRoot, settings.krPatchOverlayMode,
+            settings.krTextSource == EngineSettingsStore.KR_TEXT_SOURCE_ENGINE)
         val steamConfigOverlay = prepareKrSteamConfigOverlay(context, engineRoot, settings.krPatchOverlayMode)
         return Intent(context, activity).apply {
             // KR2 引擎把 path 视为“启动条目”，gamedir = path 的父目录。
@@ -1059,6 +1061,7 @@ object EngineLauncher {
             putExtra(LaunchContract.ROOT_URI, game.uri)
             putExtra(LaunchContract.LAUNCH_TARGET, game.launchTarget)
             putExtra(LaunchContract.LAUNCH_MODE, LaunchContract.LAUNCH_MODE_ARTEMIS)
+            putExtra(LaunchContract.EXTRACT_HOOK, settings.extractHook)
             putExtra(LaunchContract.ORIENTATION, if (rotate) 8 else 6)
             putExtra(LaunchContract.SCOPED_SAVE_DIR, false)
             // artemis_loader 按 "lib<engineLibName>.so" 拼路径，需传库名（不带 lib 前缀）
@@ -1088,6 +1091,7 @@ object EngineLauncher {
         putExtra(LaunchContract.ROOT_URI, game.uri)
         putExtra(LaunchContract.LAUNCH_TARGET, game.launchTarget)
         putExtra(LaunchContract.LAUNCH_MODE, LaunchContract.LAUNCH_MODE_ARTEMIS)
+        putExtra(LaunchContract.EXTRACT_HOOK, settings.extractHook)
         putExtra(LaunchContract.ORIENTATION, if (settings.artRotate) 8 else 6)
         putExtra(LaunchContract.SCOPED_SAVE_DIR, false)
         // artemis_loader 按 "lib<engineLibName>.so" 拼路径，需传库名（不带 lib 前缀）

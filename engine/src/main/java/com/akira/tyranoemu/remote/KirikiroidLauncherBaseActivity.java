@@ -531,6 +531,11 @@ public abstract class KirikiroidLauncherBaseActivity extends KR2Activity {
     @Override
     public void onLoadNativeLibraries() {
         String gameLibrary = gameLibraryForBridge();
+        // 提取钩子开关（LaunchContract.EXTRACT_HOOK，缺省开）：关闭时通知 native
+        // 跳过提取钩子武装（纯游戏模式）
+        boolean extractHook = getIntent() == null ||
+                getIntent().getBooleanExtra(LaunchContract.EXTRACT_HOOK, true);
+        NativeBridge.setExtractHookEnabled(extractHook);
         boolean initialized = NativeBridge.initialize(gameLibrary);
         nativeBridgeInitialized = initialized;
         recordBridgeDiagnostic("initialize=" + initialized + " library=" + gameLibrary);

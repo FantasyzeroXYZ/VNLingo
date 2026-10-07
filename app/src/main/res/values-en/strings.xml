@@ -31,6 +31,10 @@
     <string name="settings_anki">Anki</string>
     <string name="settings_tts">TTS</string>
     <string name="settings_dict_page">Dictionaries</string>
+    <string name="settings_extract_hook">Text extraction hook</string>
+    <string name="settings_kr_text_source">Text output</string>
+    <string name="settings_kr_text_source_hook">Runtime text stream</string>
+    <string name="settings_kr_text_source_engine">Engine output (TJS, experimental)</string>
     <string name="settings_play_stats">Play statistics</string>
     <string name="settings_play_stats_summary">Total / this week / this month / play records</string>
     <string name="settings_gamepad">Gamepad settings</string>
