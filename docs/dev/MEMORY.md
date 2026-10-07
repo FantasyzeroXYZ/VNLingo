@@ -386,7 +386,9 @@
 
 ## 续作指南（下次会话从这里开始）
 
-1. **推送**：`feat/extract-suite` 分支 8 个提交未推送（用户决定何时 push 到 origin）。
+1. **推送**：`feat/extract-suite` 已推远端（b884e97，2026-10-07 经 GitHub
+   浏览器 OAuth 授权一次完成认证；origin 已改回 github.com 真实地址——
+   gh-proxy 镜像不支持 push）。main 落后 103+ 提交待合并。
 2. **运行时回归**（模拟器装 VNLingo debug——注意会覆盖 Tyranor-Next，且必须
    `adb install -r --abi arm64-v8a`）：
    - ONS（ym/esg）：右缘按键组、提取面板暗色圆钮、查词/翻译/制卡、点击模式切换

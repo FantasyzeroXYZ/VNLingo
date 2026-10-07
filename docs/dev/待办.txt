@@ -40,7 +40,17 @@
       服务器端到端实测：跟随账户上传（MKCOL+PUT）/状态行云端时间（HEAD）/
       下载（GET+导入）全通过，全程零独立配置 ✓
 
-## 未完成 / 遗留 
+## 未完成 / 遗留
+- [ ] AI 助手游玩统计工具是桩：OnsAgentDialog.getPlayStats 写死返回
+      「游玩统计功能开发中」，而 PlaySessionTracker 数据层已完整——断在
+      engine 引不到 app（照 OnsSaveCloud 凭据注入模式给 OnsAgentDialog
+      注入统计数据源即可，工作量小）
+- [ ] 插件 zip 本地导入无 UI：GameRuntimeHost.installFromZip /
+      WebRuntimeAssets.installFromZip 有实现零调用方，原生运行时卸载后只剩
+      「重新下载」一条恢复路；接入点 = 引擎页或运行时管理卡加「导入 zip」
+      （WEB_RPGMV_V1 宿主未接 WebRuntimeAssets、状态恒「已集成」是同源欠账）
+- [ ] main 落后 feat/extract-suite 103+ 提交：功能分支已推远端（b884e97），
+      稳定后合并回 main（merge 或 PR），保持 main 可发布
 - [ ] KRKR 对白完整还原（说话人行带重绘链）——多行页「只出末段」已由连续页
       累积显示解决（2026-10-06 会话二十四：点击+新文本才翻页，否则拼接显示，
       模拟器实测三行页完整）；剩余=说话人行重绘链重复段（候选机制兜底）。
@@ -94,8 +104,6 @@
       256KB 自旋）+ 关键路径埋点（翻译/查词/TTS/同步）+ 调试日志对话框新增
       运行时日志区（大小/查看/清空/导出，FileProvider 分享需 file_paths
       新增 diag/）；模拟器实测对话框与空态 ✓
-- [ ] 调试日志功能页扩展：现仅崩溃记录更名；需做成含运行时 debug 消息缓冲
-      （CrashLogWriter.debug + 关键路径埋点）的查看/导出页
 - [x] 制卡媒体槽位实测（2026-10-06，模拟器 + 本地 TTS 服务器）：截图 png 与
       单词 TTS wav 端到端生成并经 addMedia 进入 collection.media（文件大小与
       服务器返回字节吻合）✓。注：设备上存在早期版本创建的 4 字段旧模型
