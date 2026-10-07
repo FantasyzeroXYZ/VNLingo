@@ -193,9 +193,14 @@ class EngineVirtualMouse(
      * 设备框 → 屏幕框：横竖屏不一致时（横屏游戏跑在竖屏机身上），方向键
      * keycode 的设备框朝向与屏幕朝向差 90°——不旋转会「按上往右」。按
      * display.rotation 把位移向量旋到屏幕坐标系，保证按下的方向 =
-     * 光标在屏幕上的移动方向（模拟器 PC 方向键同样按设备框转发）。
+     * 光标在屏幕上的移动方向。
+     *
+     * 仅模拟器启用：模拟器把 PC 方向键按设备框转发（需补偿）；真机手柄
+     * （Xbox 等）的 D-pad 天然是「所按即屏幕方向」，真机补偿反而把它转回
+     * 竖屏朝向（真机 alioth + Xbox 手柄实测）。
      */
     private fun toScreenVector(device: Pair<Float, Float>): Pair<Float, Float> {
+        if (!runningOnEmulator()) return device
         val (dx, dy) = device
         return when (display?.rotation ?: android.view.Surface.ROTATION_0) {
             android.view.Surface.ROTATION_90 -> dy to -dx
@@ -203,6 +208,15 @@ class EngineVirtualMouse(
             android.view.Surface.ROTATION_270 -> -dy to dx
             else -> dx to dy
         }
+    }
+
+    /** 模拟器判定（指纹/机型含 generic/sdk_；真机恒 false）。 */
+    private fun runningOnEmulator(): Boolean {
+        val f = android.os.Build.FINGERPRINT ?: ""
+        val m = android.os.Build.MODEL ?: ""
+        return f.contains("generic", ignoreCase = true) ||
+            f.contains("emulator", ignoreCase = true) ||
+            m.startsWith("sdk_")
     }
 
     private fun ensureCursor() {

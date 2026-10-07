@@ -163,6 +163,8 @@ public abstract class ArtemisLauncherBaseActivity extends com.ies_net.artemis.Ar
         try {
             virtualMouseMode = getSharedPreferences(PREF_ARTEMIS_MOUSE_MODE, MODE_PRIVATE)
                     .getBoolean(PREF_ARTEMIS_MOUSE_MODE, false);
+            // 鼠标模式开启时保持 native 失焦渲染（游戏不因捕获窗持焦而暂停）
+            com.ies_net.artemis.ArtemisActivity.setKeepNativeFocused(virtualMouseMode);
             mouseKeyCatcher = new android.widget.FrameLayout(this) {
                 @Override
                 public boolean dispatchKeyEvent(android.view.KeyEvent event) {
@@ -304,6 +306,9 @@ public abstract class ArtemisLauncherBaseActivity extends com.ies_net.artemis.Ar
             if (virtualMouseMode) virtualMouse.showCursor();
             else virtualMouse.hideCursor();
         }
+        // 全屏按键捕获窗持焦后游戏窗失焦——同步 keepNativeFocused 让 native
+        // 循环忽略失焦（持续绘制），否则游戏看起来暂停死住
+        com.ies_net.artemis.ArtemisActivity.setKeepNativeFocused(virtualMouseMode);
         applyMouseWindowFocusFlags();
     }
 

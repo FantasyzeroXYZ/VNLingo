@@ -36,6 +36,17 @@ open class ArtemisActivity : NativeActivity() {
 
         @JvmStatic
         fun getExtractCacheDir(): String = extractCacheDirOverride
+
+        /**
+         * 虚拟鼠标模式保持 native 失焦渲染：全屏按键捕获窗持焦后游戏窗失焦，
+         * libartemis 的 native 循环在 APP_CMD_LOST_FOCUS 后停止绘制/响应
+         * （表现为游戏暂停）。该标志置位时（虚拟鼠标开启）不向 native 传播
+         * 失焦事件——引擎持续绘制；输入经捕获窗（移动/点击注入）与内核触摸
+         * 注入继续工作。仅影响失焦传播，不改 onPause 等真实生命周期。
+         */
+        @Volatile
+        @JvmStatic
+        var keepNativeFocused: Boolean = false
     }
 
     /**
@@ -158,6 +169,13 @@ open class ArtemisActivity : NativeActivity() {
     }
 
     override fun onWindowFocusChanged(hasFocus: Boolean) {
+        // 虚拟鼠标模式：失焦不传播到 native（native 循环失焦即停绘/停响应）。
+        // 获得焦点与真实生命周期（onPause 等）照常传播。
+        if (!hasFocus && keepNativeFocused) {
+            @Suppress("DEPRECATION")
+            window.decorView.systemUiVisibility = 5894
+            return
+        }
         super.onWindowFocusChanged(hasFocus)
         @Suppress("DEPRECATION")
         window.decorView.systemUiVisibility = 5894
