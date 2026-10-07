@@ -97,7 +97,7 @@ public final class OnsAgentDialog {
         final JSONArray history = new JSONArray();
 
         // 消息渲染辅助
-        final OnsAgentEngine.ToolHost toolHost = buildToolHost(panel);
+        final OnsAgentEngine.ToolHost toolHost = buildToolHost(activity, panel);
 
         Runnable[] sendAction = new Runnable[1];
         sendAction[0] = () -> {
@@ -200,7 +200,7 @@ public final class OnsAgentDialog {
         scroller.post(() -> scroller.fullScroll(View.FOCUS_DOWN));
     }
 
-    private static OnsAgentEngine.ToolHost buildToolHost(OnsExtractPanel panel) {
+    private static OnsAgentEngine.ToolHost buildToolHost(Activity activity, OnsExtractPanel panel) {
         return new OnsAgentEngine.ToolHost() {
             @Override
             public String getCurrentText() {
@@ -237,6 +237,16 @@ public final class OnsAgentDialog {
             @Override
             public String getPlayStats() {
                 return "游玩统计功能开发中";
+            }
+
+            @Override
+            public String mcpListServers() {
+                return com.core.agent.McpServerProxy.listServers(activity);
+            }
+
+            @Override
+            public String mcpCallTool(String json) {
+                return com.core.agent.McpServerProxy.call(activity, json);
             }
         };
     }

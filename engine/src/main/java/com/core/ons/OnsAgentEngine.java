@@ -39,6 +39,10 @@ public final class OnsAgentEngine {
         String takeScreenshot();
         void speakText(String text);
         String getPlayStats();
+        /** MCP：列出已保存的 MCP 服务器（空 = 无）。 */
+        String mcpListServers();
+        /** MCP：json = {"op":"list","server_id":..} 或 {"op":"call","server_id":..,"tool_name":..,"arguments":{..}} */
+        String mcpCallTool(String json);
     }
 
     /** 工具定义（发给 LLM 的 function schema）。 */
@@ -74,21 +78,43 @@ public final class OnsAgentEngine {
                 new JSONObject().put("type", "object")
                         .put("text", new JSONObject().put("type", "string")
                                 .put("description", "要朗读的文本"))));
+        tools.put(tool("mcp_list_servers",
+                "列出本机已确认保存的 MCP 服务器", new JSONObject()));
+        tools.put(tool("mcp_list_tools",
+                "列出指定 MCP 服务器提供的工具",
+                new JSONObject().put("type", "object")
+                        .put("server_id", new JSONObject().put("type", "string")
+                                .put("description", "mcp_list_servers 返回的 server_id"))));
+        tools.put(tool("mcp_call_tool",
+                "调用 MCP 服务器的远程工具",
+                new JSONObject().put("type", "object")
+                        .put("server_id", new JSONObject().put("type", "string")
+                                .put("description", "服务器 id"))
+                        .put("tool_name", new JSONObject().put("type", "string")
+                                .put("description", "工具名"))
+                        .put("arguments_json", new JSONObject().put("type", "string")
+                                .put("description", "工具参数 JSON 字符串，可为 {}"))));
         return tools;
     }
 
-    private static String systemPrompt(String gameName) {
-        return "你是 VNLingo 游戏助手，帮助用户玩视觉小说游戏。\n"
-            + "当前游戏：" + gameName + "\n"
-            + "你可以：\n"
-            + "- 分析当前对话文本的语法和词汇\n"
-            + "- 翻译句子到任意语言\n"
-            + "- 查询日语词典\n"
-            + "截取游戏画面\n"
-            + "- 朗读文本\n"
-            + "- 提供游戏攻略建议\n"
-            + "使用工具获取游戏实时状态。回复用户时使用与用户相同的语言。"
-            + "如果用户的问题不需要调用工具，直接回答。";
+    private static String systemPrompt(String gameName, String mcpSummary) {
+        StringBuilder sb = new StringBuilder();
+        sb.append("你是 VNLingo 游戏助手，帮助用户玩视觉小说游戏。\n")
+          .append("当前游戏：").append(gameName).append("\n")
+          .append("你可以：\n")
+          .append("- 分析当前对话文本的语法和词汇\n")
+          .append("- 翻译句子到任意语言\n")
+          .append("- 查询日语词典\n")
+          .append("- 截取游戏画面\n")
+          .append("- 朗读文本\n")
+          .append("- 提供游戏攻略建议\n")
+          .append("使用工具获取游戏实时状态。回复用户时使用与用户相同的语言。")
+          .append("如果用户的问题不需要调用工具，直接回答。");
+        if (mcpSummary != null && !mcpSummary.isEmpty()) {
+            sb.append("\n\n").append(mcpSummary);
+            sb.append("\n调用 MCP 工具：mcp_list_servers 列出服务器，mcp_list_tools(server_id) 列出工具，mcp_call_tool(server_id, tool_name, arguments_json) 调用。");
+        }
+        return sb.toString();
     }
 
     /**
@@ -116,7 +142,7 @@ public final class OnsAgentEngine {
                 // 构建消息列表
                 JSONArray messages = new JSONArray();
                 messages.put(new JSONObject().put("role", "system")
-                        .put("content", systemPrompt(host.getGameName())));
+                        .put("content", systemPrompt(host.getGameName(), host.mcpListServers())));
                 if (history != null) {
                     for (int i = 0; i < history.length(); i++) {
                         messages.put(history.getJSONObject(i));
@@ -199,6 +225,21 @@ public final class OnsAgentEngine {
                     if (txt.isEmpty()) return "缺少 text 参数";
                     host.speakText(txt);
                     return "已朗读";
+                }
+                case "mcp_list_servers":
+                    return host.mcpListServers();
+                case "mcp_list_tools": {
+                    String serverId = args.optString("server_id", "");
+                    if (serverId.isEmpty()) return "缺少 server_id";
+                    return host.mcpCallTool("{\"op\":\"list_tools\",\"server_id\":\"" + serverId + "\"}");
+                }
+                case "mcp_call_tool": {
+                    String serverId = args.optString("server_id", "");
+                    String toolName = args.optString("tool_name", "");
+                    if (serverId.isEmpty() || toolName.isEmpty()) return "缺少 server_id 或 tool_name";
+                    String argumentsJson = args.optString("arguments_json", "{}");
+                    return host.mcpCallTool("{\"op\":\"call\",\"server_id\":\"" + serverId
+                            + "\",\"tool_name\":\"" + toolName + "\",\"arguments\":" + argumentsJson + "}");
                 }
                 default:
                     return "未知工具: " + name;
