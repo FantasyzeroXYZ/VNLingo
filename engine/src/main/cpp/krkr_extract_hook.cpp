@@ -30,6 +30,9 @@
 #include <cerrno>
 #include <cstring>
 #include <string>
+#include <csetjmp>
+#include <csignal>
+#include <pthread.h>
 #include <sys/mman.h>
 #include <unistd.h>
 
@@ -152,6 +155,80 @@ bool installShadowhook() {
     }
     ShadowhookInitInfo info{0x01010100, 1, false, nullptr};
     return init(&info) != nullptr;
+}
+
+// ---- shadowhook 防崩护栏 ----
+// 实测部分 ROM（MIUI 12.5 / Android 11，alioth）上 shadowhook_init 不走 errno
+// 返回而是直接 abort（SIGABRT）杀死整个游戏进程，绕过「失败静默降级虚表补丁」
+// 约定。用信号护栏把护栏窗口内的 SIGABRT/SIGSEGV/SIGBUS 转回调用方，降级为
+// 无 inline hook（虚表补丁兜底）。sigsetjmp(1) 保存信号掩码，siglongjmp 出
+// 信号处理器合法；护栏窗口仅覆盖 shadowhook 自身调用，且校验触发线程一致。
+static sigjmp_buf gHookProbeEnv;
+static volatile sig_atomic_t gHookProbeActive = 0;
+static pthread_t gHookProbeThread;
+static volatile sig_atomic_t gHookProbeSignal = 0;
+
+void hookProbeSignalHandler(int sig) {
+    if (gHookProbeActive == 0 || !pthread_equal(pthread_self(), gHookProbeThread)) {
+        // 护栏窗口外的原生崩溃：恢复默认处置重发，保持原生崩溃行为
+        signal(sig, SIG_DFL);
+        raise(sig);
+        return;
+    }
+    gHookProbeSignal = sig;
+    gHookProbeActive = 0;
+    siglongjmp(gHookProbeEnv, 1);
+}
+
+/**
+ * 护栏窗口内完成 shadowhook 初始化 + setString inline hook。
+ * 返回 true = inline hook 已就绪（gOrigSetString 已写）；false = 不可用或
+ * 中途崩溃（调用方降级虚表补丁）。
+ */
+bool probeInlineHook(void* target) {
+    struct sigaction act {};
+    struct sigaction oldAbrt {};
+    struct sigaction oldSegv {};
+    struct sigaction oldBus {};
+    act.sa_handler = hookProbeSignalHandler;
+    sigemptyset(&act.sa_mask);
+    act.sa_flags = 0;
+    sigaction(SIGABRT, &act, &oldAbrt);
+    sigaction(SIGSEGV, &act, &oldSegv);
+    sigaction(SIGBUS, &act, &oldBus);
+
+    volatile bool ok = false;
+    if (sigsetjmp(gHookProbeEnv, 1) == 0) {
+        gHookProbeThread = pthread_self();
+        gHookProbeActive = 1;
+        if (installShadowhook()) {
+            void* shadowhook = shadowhookLib();
+            auto hookAddr = reinterpret_cast<HookFuncAddrFn>(
+                    dlsym(shadowhook, kShadowhookHookFuncAddr));
+            void* orig = nullptr;
+            if (hookAddr != nullptr &&
+                hookAddr(target, reinterpret_cast<void*>(&hookedLabelSetString), &orig) != nullptr) {
+                gOrigSetString = reinterpret_cast<SetStringFn>(orig);
+                ok = true;
+            } else {
+                auto getErrno = reinterpret_cast<int (*)()>(dlsym(shadowhook, kShadowhookGetErrno));
+                auto toErrmsg = reinterpret_cast<const char* (*)(int)>(dlsym(shadowhook, kShadowhookToErrmsg));
+                int err = getErrno ? getErrno() : -1;
+                LOGW("extract hook: inline hook failed errno=%d msg=%s", err,
+                     toErrmsg ? toErrmsg(err) : "?");
+            }
+        }
+        gHookProbeActive = 0;
+    } else {
+        LOGW("extract hook: shadowhook crashed with signal %d in init; degrade to vtable patch",
+             gHookProbeSignal);
+        ok = false;
+    }
+
+    sigaction(SIGABRT, &oldAbrt, nullptr);
+    sigaction(SIGSEGV, &oldSegv, nullptr);
+    sigaction(SIGBUS, &oldBus, nullptr);
+    return ok;
 }
 
 // ---- FT_Get_Char_Index 钩子：字符流 → 行重建（纯运行时 hook 的对白提取，不改内核）----
@@ -486,25 +563,14 @@ extern "C" bool krkr_install_extract_hook(void* gameHandle, JNIEnv* env) {
         return false;
     }
 
-    // 首选 shadowhook inline hook；本进程对插件目录内核不可用（errno=12）时退虚表补丁
-    if (installShadowhook()) {
-        void* shadowhook = shadowhookLib();
-        auto hookAddr = reinterpret_cast<HookFuncAddrFn>(
-                dlsym(shadowhook, kShadowhookHookFuncAddr));
-        void* orig = nullptr;
-        if (hookAddr != nullptr &&
-            hookAddr(target, reinterpret_cast<void*>(&hookedLabelSetString), &orig) != nullptr) {
-            gOrigSetString = reinterpret_cast<SetStringFn>(orig);
-            gHookInstalled.store(true, std::memory_order_relaxed);
-            LOGI("extract hook: Label::setString inline hooked (text extraction armed)");
-            return true;
-        }
-        auto getErrno = reinterpret_cast<int (*)()>(dlsym(shadowhook, kShadowhookGetErrno));
-        auto toErrmsg = reinterpret_cast<const char* (*)(int)>(dlsym(shadowhook, kShadowhookToErrmsg));
-        int err = getErrno ? getErrno() : -1;
-        LOGW("extract hook: inline hook failed errno=%d msg=%s; falling back to vtable patch",
-             err, toErrmsg ? toErrmsg(err) : "?");
+    // 首选 shadowhook inline hook（信号护栏内探测：部分 ROM 上 shadowhook_init
+    // 直接 abort）；护栏返回 false（含崩溃）一律退虚表补丁兜底
+    if (probeInlineHook(target)) {
+        gHookInstalled.store(true, std::memory_order_relaxed);
+        LOGI("extract hook: Label::setString inline hooked (text extraction armed)");
+        return true;
     }
+    LOGW("extract hook: inline hook unavailable; falling back to vtable patch");
 
     // 兜底：Label 虚表补丁。setString 为虚函数，跨编译单元调用经 vtable；
     // 槽内指针与 dlsym 地址相等即定位，mprotect 改槽后恢复只读（RELRO）。
