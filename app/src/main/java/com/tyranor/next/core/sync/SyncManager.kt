@@ -75,6 +75,82 @@ class SyncManager(private val context: Context) {
         client = null
     }
 
+    // ---- 账号管理（多账户注册表；活动账户 = 上方 saveConfig 写入的单账户键）----
+
+    /** 已保存的 WebDAV 账户（服务器地址+账号 唯一）。 */
+    data class WebDavAccount(val serverUrl: String, val username: String, val password: String)
+
+    fun accounts(): List<WebDavAccount> = decodeAccounts(syncPrefs.getString(KEY_ACCOUNTS, "[]") ?: "[]")
+
+    /** 添加账户（同 服务器+账号 视为改密重登）；新账户置顶并设为活动账户。 */
+    @Synchronized
+    @Throws(IllegalArgumentException::class)
+    fun addAccount(serverUrl: String?, username: String?, password: String?, autoSync: Boolean):
+        List<WebDavAccount> {
+        val server = serverUrl?.trim() ?: ""
+        val user = username?.trim() ?: ""
+        if (server.isEmpty() || user.isEmpty() || password.isNullOrEmpty()) {
+            throw IllegalArgumentException("服务器地址、账号与密码均不能为空")
+        }
+        val list = accounts().toMutableList()
+        list.removeAll { it.serverUrl.equals(server, ignoreCase = true) && it.username == user }
+        list.add(0, WebDavAccount(server, user, password))
+        syncPrefs.edit().putString(KEY_ACCOUNTS, encodeAccounts(list)).apply()
+        saveConfig(server, user, password, autoSync)
+        return list
+    }
+
+    /** 删除账户；删除活动账户时顺延切换到列表下一个（无则清空活动配置）。 */
+    @Synchronized
+    fun removeAccount(serverUrl: String, username: String, autoSync: Boolean): List<WebDavAccount> {
+        val server = serverUrl.trim()
+        val user = username.trim()
+        val list = accounts().toMutableList()
+        list.removeAll { it.serverUrl.equals(server, ignoreCase = true) && it.username == user }
+        syncPrefs.edit().putString(KEY_ACCOUNTS, encodeAccounts(list)).apply()
+        val active = config
+        if (active.serverUrl.equals(server, ignoreCase = true) && active.username == user) {
+            val next = list.firstOrNull()
+            saveConfig(next?.serverUrl ?: "", next?.username ?: "", next?.password ?: "", autoSync)
+        }
+        return list
+    }
+
+    /** 切换活动账户（保留自动同步开关状态）。 */
+    @Synchronized
+    fun setActiveAccount(account: WebDavAccount, autoSync: Boolean) {
+        saveConfig(account.serverUrl, account.username, account.password, autoSync)
+    }
+
+    fun isActiveAccount(account: WebDavAccount): Boolean {
+        val c = config
+        return c.serverUrl.equals(account.serverUrl, ignoreCase = true) && c.username == account.username
+    }
+
+    private fun decodeAccounts(raw: String): List<WebDavAccount> {
+        val out = mutableListOf<WebDavAccount>()
+        runCatching {
+            val arr = JSONArray(raw)
+            for (i in 0 until arr.length()) {
+                val obj = arr.optJSONObject(i) ?: continue
+                val server = obj.optString("server", "")
+                val user = obj.optString("username", "")
+                if (server.isEmpty() || user.isEmpty()) continue
+                out.add(WebDavAccount(server, user, obj.optString("password", "")))
+            }
+        }
+        return out
+    }
+
+    private fun encodeAccounts(list: List<WebDavAccount>): String {
+        val arr = JSONArray()
+        for (a in list) {
+            arr.put(JSONObject().put("server", a.serverUrl).put("username", a.username)
+                .put("password", a.password))
+        }
+        return arr.toString()
+    }
+
     @Synchronized
     fun getClient(): WebDavClient? {
         if (client == null && isConfigured) {
@@ -498,6 +574,7 @@ class SyncManager(private val context: Context) {
         private const val KEY_USERNAME = "webdav_username"
         private const val KEY_PASSWORD = "webdav_password"
         private const val KEY_AUTO_SYNC = "auto_sync"
+        private const val KEY_ACCOUNTS = "webdav_accounts"
         private const val KEY_LAST_SYNC = "last_sync_time"
         private const val KEY_LAST_SYNC_HASH = "last_sync_hash"
 

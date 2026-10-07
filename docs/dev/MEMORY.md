@@ -175,6 +175,21 @@
   `com.core.engine.EngineVirtualMouse`（ONS/KRKR/Artemis 共用；Artemis 点击走
   内核 InjectHostTouch JNI、按键走可聚焦光标窗口，见会话二十五）。
 
+## 实测踩坑（2026-10-07 会话四十二新增：Compose 对话框自动化 + toast 消失）
+
+1. **adb 自动化填 Compose 对话框三字段**：悬浮框 AlertDialog 在 IME 打开时
+   整体上移，`ui_resolve` 给的是 occluded 布局坐标——直接照着点会点在键盘上。
+   可靠流程：关键盘点字段 → `input text` 注入（不弹键盘）→ BACK 收键盘 →
+   再点下一字段；填完再点确认键。BACK 在 IME 打开时只收键盘、IME 已收时
+   会关对话框（onDismissRequest），状态全丢。
+2. **流式重装后 toast 可能不显示**：`adb install` 流式重装后 SystemUI 资源
+   缓存指向旧 APK 路径（ziparchive "No such file"），Toast 照常入队但视图
+   膨胀失败——屏幕上看不到。判断 toast 是否触发要靠 logcat
+   `SystemUIToast` 行，别等截图。
+3. **清空 Compose 输入框**：没有 select-all 快捷键可用时，
+   `input keyevent 123`（MOVE_END）+ 循环 `keyevent 67`（DEL）最稳；
+   点字段时光标落点不定，先 MOVE_END 再删。
+
 ## 实测踩坑（2026-10-07 会话四十一新增：模块依赖方向）
 
 1. **engine 模块不能引用 app 类**：Gradle 依赖方向是 app → engine，跨模块

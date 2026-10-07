@@ -69,6 +69,10 @@
             android:configChanges="orientation|screenSize|screenLayout|smallestScreenSize|keyboardHidden|uiMode"
             android:exported="false" />
         <activity
+            android:name=".ui.agent.McpServersActivity"
+            android:configChanges="orientation|screenSize|screenLayout|smallestScreenSize|keyboardHidden|uiMode"
+            android:exported="false" />
+        <activity
             android:name=".ui.archive.ArchiveUnpackActivity"
             android:exported="false" />
         <activity

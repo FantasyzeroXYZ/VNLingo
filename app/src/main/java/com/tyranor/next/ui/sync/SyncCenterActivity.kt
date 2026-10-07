@@ -5,6 +5,7 @@ import android.os.Bundle
 import android.text.format.DateFormat
 import android.widget.Toast
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
@@ -28,13 +29,13 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color as ComposeColor
-import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.PasswordVisualTransformation
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.tyranor.next.R
 import com.tyranor.next.core.sync.SyncManager
-import com.tyranor.next.core.sync.WebDavClient
 import com.tyranor.next.theme.AppComponentCornerRadius
 import com.tyranor.next.theme.MiuixSettingsTheme
 import com.tyranor.next.theme.glassBorder
@@ -46,9 +47,9 @@ import top.yukonga.miuix.kmp.basic.Scaffold as MiuixScaffold
 
 /**
  * 云同步中心（参考 RinneMobile LauncherSyncCenterFragment 重实现，Compose 版）：
- * WebDAV 配置（服务器/账号/密码/自动同步）+ 保存/测试连接/立即同步 + 状态行 +
- * 本地备份导出/导入（.vnlbak，SAF）。双侧冲突时弹对话框让用户选择
- * 使用本地/使用云端/智能合并/取消。
+ * 账号管理（多账户列表 + 「添加账户」悬浮框登录，点账户切换活动账户）+ 自动同步开关 +
+ * 测试连接/立即同步 + 状态行 + 本地备份导出/导入（.vnlbak，SAF）。
+ * 双侧冲突时弹对话框让用户选择 使用本地/使用云端/智能合并/取消。
  */
 class SyncCenterActivity : AppScreenActivity() {
 
@@ -69,10 +70,9 @@ class SyncCenterActivity : AppScreenActivity() {
     private var conflictState by mutableStateOf<SyncManager.Conflict?>(null)
     private var showImportConfirm by mutableStateOf(false)
     private var statusText by mutableStateOf("")
-    private var serverText by mutableStateOf("")
-    private var userText by mutableStateOf("")
-    private var passText by mutableStateOf("")
+    private var accounts by mutableStateOf(listOf<SyncManager.WebDavAccount>())
     private var autoSync by mutableStateOf(false)
+    private var showAddAccount by mutableStateOf(false)
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -80,15 +80,13 @@ class SyncCenterActivity : AppScreenActivity() {
         setAppScreenContent {
             SyncCenterScreen()
             conflictState?.let { conflict -> ConflictDialog(conflict) }
+            if (showAddAccount) AddAccountDialog()
         }
     }
 
     private fun loadConfig() {
-        val config = manager.config
-        serverText = config.serverUrl
-        userText = config.username
-        passText = config.password
-        autoSync = config.autoSync
+        accounts = manager.accounts()
+        autoSync = manager.config.autoSync
         renderStatus()
     }
 
@@ -111,33 +109,45 @@ class SyncCenterActivity : AppScreenActivity() {
         statusText = sb.toString()
     }
 
-    /** 从输入框读取配置（未填完整返回 null 并提示）。 */
-    private fun readConfigInput(): SyncManager.SyncConfig? {
-        val url = serverText.trim()
-        val user = userText.trim()
-        val pass = passText
-        if (url.isEmpty() || user.isEmpty() || pass.isEmpty()) {
-            Toast.makeText(this, R.string.sync_save_first, Toast.LENGTH_SHORT).show()
-            return null
+    /** 添加账户（悬浮框登录）；成功即设为活动账户。 */
+    private fun addAccount(server: String, user: String, pass: String) {
+        try {
+            accounts = manager.addAccount(server, user, pass, autoSync)
+            autoSync = manager.isAutoSyncEnabled
+            showAddAccount = false
+            renderStatus()
+            Toast.makeText(this, getString(R.string.sync_account_added, user), Toast.LENGTH_SHORT).show()
+        } catch (e: IllegalArgumentException) {
+            Toast.makeText(this, e.message, Toast.LENGTH_LONG).show()
         }
-        return SyncManager.SyncConfig(url, user, pass, autoSync)
     }
 
-    private fun saveConfig() {
-        val config = readConfigInput() ?: return
-        manager.saveConfig(config.serverUrl, config.username, config.password, config.autoSync)
-        Toast.makeText(this, R.string.sync_config_saved, Toast.LENGTH_SHORT).show()
+    private fun activateAccount(account: SyncManager.WebDavAccount) {
+        if (manager.isActiveAccount(account)) {
+            Toast.makeText(this, R.string.sync_account_already_active, Toast.LENGTH_SHORT).show()
+            return
+        }
+        manager.setActiveAccount(account, autoSync)
         renderStatus()
+        Toast.makeText(this, getString(R.string.sync_account_switched, account.username), Toast.LENGTH_SHORT).show()
+    }
+
+    private fun removeAccount(account: SyncManager.WebDavAccount) {
+        accounts = manager.removeAccount(account.serverUrl, account.username, autoSync)
+        renderStatus()
+        Toast.makeText(this, R.string.sync_account_removed, Toast.LENGTH_SHORT).show()
     }
 
     private fun testConnection() {
-        val config = readConfigInput() ?: return
-        manager.saveConfig(config.serverUrl, config.username, config.password, config.autoSync)
+        if (!manager.isConfigured) {
+            Toast.makeText(this, R.string.sync_not_configured_error, Toast.LENGTH_SHORT).show()
+            return
+        }
         Toast.makeText(this, R.string.sync_testing, Toast.LENGTH_SHORT).show()
         val appContext = applicationContext
         Thread {
             val ok = try {
-                WebDavClient(config.serverUrl, config.username, config.password).testConnection()
+                manager.testConnection()
             } catch (e: IllegalArgumentException) {
                 Toast.makeText(appContext, e.message, Toast.LENGTH_LONG).show()
                 false
@@ -156,8 +166,10 @@ class SyncCenterActivity : AppScreenActivity() {
     }
 
     private fun syncNow() {
-        val config = readConfigInput() ?: return
-        manager.saveConfig(config.serverUrl, config.username, config.password, config.autoSync)
+        if (!manager.isConfigured) {
+            Toast.makeText(this, R.string.sync_not_configured_error, Toast.LENGTH_SHORT).show()
+            return
+        }
         Toast.makeText(this, R.string.sync_in_progress, Toast.LENGTH_SHORT).show()
         val appContext = applicationContext
         manager.sync(object : SyncManager.SyncListener {
@@ -315,30 +327,55 @@ class SyncCenterActivity : AppScreenActivity() {
                             cornerRadius = AppComponentCornerRadius,
                         ) {
                             Column(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp)) {
-                                OutlinedTextField(
-                                    value = serverText,
-                                    onValueChange = { serverText = it },
-                                    label = { Text(stringResource(R.string.sync_server)) },
-                                    singleLine = true,
-                                    modifier = Modifier.fillMaxWidth(),
+                                Text(
+                                    stringResource(R.string.sync_account_title),
+                                    style = MaterialTheme.typography.titleMedium,
+                                    modifier = Modifier.padding(vertical = 6.dp),
                                 )
-                                OutlinedTextField(
-                                    value = userText,
-                                    onValueChange = { userText = it },
-                                    label = { Text(stringResource(R.string.sync_username)) },
-                                    singleLine = true,
-                                    modifier = Modifier.fillMaxWidth().padding(top = 8.dp),
-                                )
-                                OutlinedTextField(
-                                    value = passText,
-                                    onValueChange = { passText = it },
-                                    label = { Text(stringResource(R.string.sync_password)) },
-                                    singleLine = true,
-                                    visualTransformation = PasswordVisualTransformation(),
-                                    modifier = Modifier.fillMaxWidth().padding(top = 8.dp),
-                                )
+                                if (accounts.isEmpty()) {
+                                    Text(
+                                        stringResource(R.string.sync_account_none),
+                                        style = MaterialTheme.typography.bodySmall,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                        modifier = Modifier.padding(vertical = 4.dp),
+                                    )
+                                }
+                                accounts.forEach { account ->
+                                    val active = manager.isActiveAccount(account)
+                                    Row(
+                                        modifier = Modifier.fillMaxWidth().padding(vertical = 6.dp),
+                                        verticalAlignment = Alignment.CenterVertically,
+                                    ) {
+                                        Column(
+                                            modifier = Modifier.weight(1f).clickable { activateAccount(account) },
+                                        ) {
+                                            Text(
+                                                account.username + if (active) {
+                                                    "　" + stringResource(R.string.sync_account_badge_active)
+                                                } else "",
+                                                style = MaterialTheme.typography.bodyMedium,
+                                                fontWeight = if (active) FontWeight.Bold else FontWeight.Normal,
+                                                maxLines = 1,
+                                                overflow = TextOverflow.Ellipsis,
+                                            )
+                                            Text(
+                                                account.serverUrl,
+                                                style = MaterialTheme.typography.bodySmall,
+                                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                                maxLines = 1,
+                                                overflow = TextOverflow.Ellipsis,
+                                            )
+                                        }
+                                        TextButton(onClick = { removeAccount(account) }) {
+                                            Text(stringResource(R.string.sync_account_delete))
+                                        }
+                                    }
+                                }
+                                TextButton(onClick = { showAddAccount = true }) {
+                                    Text(stringResource(R.string.sync_account_add))
+                                }
                                 Row(
-                                    modifier = Modifier.fillMaxWidth().padding(top = 8.dp),
+                                    modifier = Modifier.fillMaxWidth().padding(top = 4.dp),
                                     verticalAlignment = Alignment.CenterVertically,
                                 ) {
                                     Text(
@@ -346,7 +383,15 @@ class SyncCenterActivity : AppScreenActivity() {
                                         style = MaterialTheme.typography.bodyMedium,
                                         modifier = Modifier.weight(1f),
                                     )
-                                    Switch(checked = autoSync, onCheckedChange = { autoSync = it })
+                                    Switch(
+                                        checked = autoSync,
+                                        onCheckedChange = {
+                                            autoSync = it
+                                            val c = manager.config
+                                            manager.saveConfig(c.serverUrl, c.username, c.password, it)
+                                            renderStatus()
+                                        },
+                                    )
                                 }
                                 Text(
                                     statusText,
@@ -366,9 +411,6 @@ class SyncCenterActivity : AppScreenActivity() {
                                 modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 6.dp),
                                 horizontalArrangement = Arrangement.SpaceBetween,
                             ) {
-                                TextButton(onClick = { saveConfig() }) {
-                                    Text(stringResource(R.string.sync_save))
-                                }
                                 TextButton(onClick = { testConnection() }) {
                                     Text(stringResource(R.string.sync_test))
                                 }
@@ -421,6 +463,54 @@ class SyncCenterActivity : AppScreenActivity() {
                 },
             )
         }
+    }
+
+    /** 悬浮框登录：服务器地址 / 账号 / 密码，确认即保存并切换活动账户。 */
+    @Composable
+    private fun AddAccountDialog() {
+        var server by remember { mutableStateOf("") }
+        var user by remember { mutableStateOf("") }
+        var pass by remember { mutableStateOf("") }
+        AlertDialog(
+            onDismissRequest = { showAddAccount = false },
+            title = { Text(stringResource(R.string.sync_account_add)) },
+            text = {
+                Column {
+                    OutlinedTextField(
+                        value = server,
+                        onValueChange = { server = it },
+                        label = { Text(stringResource(R.string.sync_server)) },
+                        singleLine = true,
+                        modifier = Modifier.fillMaxWidth(),
+                    )
+                    OutlinedTextField(
+                        value = user,
+                        onValueChange = { user = it },
+                        label = { Text(stringResource(R.string.sync_username)) },
+                        singleLine = true,
+                        modifier = Modifier.fillMaxWidth().padding(top = 8.dp),
+                    )
+                    OutlinedTextField(
+                        value = pass,
+                        onValueChange = { pass = it },
+                        label = { Text(stringResource(R.string.sync_password)) },
+                        singleLine = true,
+                        visualTransformation = PasswordVisualTransformation(),
+                        modifier = Modifier.fillMaxWidth().padding(top = 8.dp),
+                    )
+                }
+            },
+            confirmButton = {
+                TextButton(onClick = { addAccount(server, user, pass) }) {
+                    Text(stringResource(R.string.sync_account_login))
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showAddAccount = false }) {
+                    Text(stringResource(R.string.sync_cancel))
+                }
+            },
+        )
     }
 
     @Composable

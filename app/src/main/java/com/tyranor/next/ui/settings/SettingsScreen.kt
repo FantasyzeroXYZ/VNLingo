@@ -394,6 +394,12 @@ fun SettingsScreen(modifier: Modifier = Modifier) {
                                 onClick = { startActivityWithPageTransition(ctx, com.tyranor.next.ui.sync.SyncCenterActivity.createIntent(ctx)) },
                             )
                             ArrowPreference(
+                                title = stringResource(R.string.settings_mcp_servers),
+                                summary = stringResource(R.string.settings_mcp_servers_summary),
+                                startAction = { SettingsItemIcon(R.drawable.ic_settings) },
+                                onClick = { startActivityWithPageTransition(ctx, com.tyranor.next.ui.agent.McpServersActivity.createIntent(ctx)) },
+                            )
+                            ArrowPreference(
                                 title = stringResource(R.string.archive_title),
                                 startAction = { SettingsItemIcon(R.drawable.ic_sheet_archive) },
                                 onClick = { startActivityWithPageTransition(ctx, ArchiveUnpackActivity.createIntent(ctx)) },

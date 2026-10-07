@@ -62,8 +62,9 @@
       PotatoVn JSON 解析 + 预览冲突标记 + 事务写入）——PC 玩家刚需，实现量大
 - [ ] 游戏诊断时间线（参考 GameDiagnostics JSONL 有界事件流）——与 DiagLog
       互补（事件 vs 日志行），可做
-- [ ] AI 助手 MCP 配置：设置页加 MCP 服务器管理入口（当前 Agent 工具为
-      内置同步链，MCP 为后续方向）
+- [x] AI 助手 MCP 配置：设置页「MCP 服务器」入口 + McpServersActivity
+      （列表/添加悬浮框/连接测试/删除；MCP 三类已移入 engine com.core.agent；
+      模拟器实测添加校验 HTTPS、列表、删除 ✓）
 - [ ] 正式词典导入：模拟器现为种子词典（17 词条 + 5 条 romaji 测试别名），正式
       使用需用户经词典页「词典管理」导入 Yomichan zip / jsonl 全量词典
 - [x] 制卡引导：未安装 → toast + 跳商店安装页；未授权 → 对话框「去授权」
