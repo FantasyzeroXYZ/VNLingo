@@ -239,6 +239,8 @@
     <string name="engine_runtime_action_toggle_on">Enable runtime</string>
     <string name="engine_runtime_action_toggle_off">Disable runtime</string>
     <string name="engine_runtime_action_uninstall">Uninstall runtime</string>
+    <string name="engine_runtime_manage_title">Runtime management</string>
+    <string name="engine_runtime_manage_hint_missing">Not installed. To re-download, go back to the engine list and tap the status icon at the end of the engine row.</string>
     <string name="engine_runtime_uninstall_summary">Re-download or import after uninstall to restore</string>
     <string name="engine_runtime_uninstall_confirm">Games on %1$s will not launch after uninstalling — restore by re-downloading or re-importing the runtime. Uninstall?</string>
     <string name="engine_runtime_uninstalled">%1$s uninstalled</string>

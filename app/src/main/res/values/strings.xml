@@ -239,6 +239,8 @@
     <string name="engine_runtime_action_toggle_on">启用运行时</string>
     <string name="engine_runtime_action_toggle_off">停用运行时</string>
     <string name="engine_runtime_action_uninstall">卸载运行时</string>
+    <string name="engine_runtime_manage_title">运行时管理</string>
+    <string name="engine_runtime_manage_hint_missing">未安装。重新下载：返回引擎列表，点击该引擎行尾的状态图标。</string>
     <string name="engine_runtime_uninstall_summary">卸载后需重新下载或导入才能恢复</string>
     <string name="engine_runtime_uninstall_confirm">卸载后，%1$s 的游戏将无法启动，需重新下载或导入运行时才能恢复。确定卸载吗？</string>
     <string name="engine_runtime_uninstalled">已卸载 %1$s</string>

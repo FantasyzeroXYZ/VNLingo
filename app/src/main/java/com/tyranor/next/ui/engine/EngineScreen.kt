@@ -31,6 +31,7 @@ import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material.icons.Icons
@@ -84,6 +85,7 @@ import com.tyranor.next.ui.common.glassNavBottomInset
 import com.tyranor.next.ui.game.startActivityWithPageTransition
 import com.tyranor.next.ui.settings.EngineSettingsActivity
 import com.tyranor.next.ui.settings.artVersionOptions
+import top.yukonga.miuix.kmp.basic.Card as MiuixCard
 import top.yukonga.miuix.kmp.basic.TabRow
 import top.yukonga.miuix.kmp.basic.TabRowDefaults
 import androidx.compose.ui.graphics.Color
@@ -393,6 +395,123 @@ private fun EngineRow(
                     .size(20.dp),
             )
         }
+    }
+}
+
+/**
+ * 运行时管理卡片（KRKR/ONS/Artemis 引擎设置页顶部）：安装状态 + 启用开关 + 卸载。
+ * 启停/卸载即 [GameRuntime.setEnabled]/[GameRuntime.uninstall]（卸载删除实体并标记
+ * removed，引导期不再自动还原）；未安装时提示回引擎列表重新下载（行尾状态图标）。
+ */
+@Composable
+internal fun NativeRuntimeManageCard(engine: EngineType) {
+    val context = LocalContext.current
+    val runtime = nativeRuntimeByEngine[engine] ?: return
+    var state by remember { mutableStateOf(runtime.installState(context)) }
+    var confirmUninstall by remember { mutableStateOf(false) }
+    LifecycleEventEffect(Lifecycle.Event.ON_RESUME) {
+        state = runtime.installState(context)
+    }
+
+    val installed = state == NativePluginInstallState.INSTALLED_ENABLED ||
+        state == NativePluginInstallState.INSTALLED_DISABLED
+    val statusRes = when (state) {
+        NativePluginInstallState.INSTALLED_ENABLED -> R.string.engine_runtime_enabled
+        NativePluginInstallState.INSTALLED_DISABLED -> R.string.engine_runtime_disabled
+        else -> R.string.engine_runtime_not_installed
+    }
+
+    MiuixCard(
+        modifier = Modifier.fillMaxWidth().glassShadow().glassBorder(),
+        cornerRadius = AppComponentCornerRadius,
+    ) {
+        Column(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 10.dp)) {
+            Text(
+                stringResource(R.string.engine_runtime_manage_title),
+                style = MaterialTheme.typography.titleSmall,
+                fontWeight = FontWeight.Bold,
+            )
+            Row(
+                modifier = Modifier.fillMaxWidth().padding(top = 8.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Icon(
+                    if (state == NativePluginInstallState.INSTALLED_ENABLED) {
+                        Icons.Filled.CheckCircle
+                    } else {
+                        Icons.Filled.Cancel
+                    },
+                    contentDescription = stringResource(statusRes),
+                    tint = if (state == NativePluginInstallState.INSTALLED_ENABLED) {
+                        MaterialTheme.colorScheme.primary
+                    } else {
+                        MaterialTheme.colorScheme.error
+                    },
+                    modifier = Modifier.size(20.dp),
+                )
+                Text(
+                    stringResource(statusRes),
+                    style = MaterialTheme.typography.bodyMedium,
+                    modifier = Modifier.weight(1f).padding(start = 8.dp),
+                )
+                Switch(
+                    checked = state == NativePluginInstallState.INSTALLED_ENABLED,
+                    enabled = installed,
+                    onCheckedChange = { enabled ->
+                        runtime.setEnabled(context, enabled)
+                        state = runtime.installState(context)
+                    },
+                )
+            }
+            if (!installed) {
+                Text(
+                    stringResource(R.string.engine_runtime_manage_hint_missing),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.padding(top = 6.dp),
+                )
+            } else {
+                TextButton(onClick = { confirmUninstall = true }) {
+                    Text(
+                        stringResource(R.string.engine_runtime_action_uninstall),
+                        color = MaterialTheme.colorScheme.error,
+                    )
+                }
+            }
+        }
+    }
+
+    if (confirmUninstall) {
+        AppAlertDialog(
+            onDismissRequest = { confirmUninstall = false },
+            title = {
+                Text(
+                    stringResource(R.string.engine_runtime_action_uninstall),
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.Bold,
+                )
+            },
+            text = {
+                Text(stringResource(R.string.engine_runtime_uninstall_confirm, engine.displayName))
+            },
+            confirmButton = {
+                TextButton(onClick = {
+                    runtime.uninstall(context)
+                    state = runtime.installState(context)
+                    confirmUninstall = false
+                    Toast.makeText(
+                        context,
+                        context.getString(R.string.engine_runtime_uninstalled, engine.displayName),
+                        Toast.LENGTH_SHORT,
+                    ).show()
+                }) { Text(stringResource(R.string.common_confirm)) }
+            },
+            dismissButton = {
+                TextButton(onClick = { confirmUninstall = false }) {
+                    Text(stringResource(R.string.common_cancel))
+                }
+            },
+        )
     }
 }
 

@@ -1084,6 +1084,13 @@ internal fun EngineSettingsDetailScreen(kind: EngineSettingsKind) {
                 )
             },
         ) { innerPadding ->
+            // KRKR/ONS/Artemis：列表首项挂运行时管理卡（状态/启停/卸载）
+            val manageEngine = when (kind) {
+                EngineSettingsKind.KRKR -> com.tyranor.next.core.engine.EngineType.KIRIKIRI
+                EngineSettingsKind.ONS -> com.tyranor.next.core.engine.EngineType.ONS
+                EngineSettingsKind.ARTEMIS -> com.tyranor.next.core.engine.EngineType.ARTEMIS
+                else -> null
+            }
             LazyListPlaceholder(
                 kind,
                 krVersion, krKernel, krScoped, krSkipStartupDialogs, krFont, krForceFont, krRenderer, krDrawThread,
@@ -1150,6 +1157,7 @@ internal fun EngineSettingsDetailScreen(kind: EngineSettingsKind) {
                 onWinlator = { winlator = it },
                 onPpssppVersion = { ppssppVersion = it },
                 onWebShellPort = { webShellPort = it },
+                headerItem = manageEngine?.let { engine -> { com.tyranor.next.ui.engine.NativeRuntimeManageCard(engine) } },
             )
         }
     }
@@ -1238,6 +1246,7 @@ private fun LazyListPlaceholder(
     onWinlator: (EngineSettingsStore.Winlator) -> Unit,
     onPpssppVersion: (String) -> Unit,
     onWebShellPort: (Int) -> Unit,
+    headerItem: (@Composable () -> Unit)? = null,
 ) {
     val krSelectMap = krSelectOptions()
     val krKernelMap = krKernelOptions()
@@ -1269,6 +1278,12 @@ private fun LazyListPlaceholder(
         contentPadding = PaddingValues(top = 12.dp, bottom = 24.dp),
         verticalArrangement = Arrangement.spacedBy(12.dp),
     ) {
+        // 头部插槽（KRKR/ONS/Artemis：运行时管理卡 = 状态/启停/卸载）
+        if (headerItem != null) {
+            item(key = "engine-settings-header", contentType = "header") {
+                headerItem()
+            }
+        }
         if (kind == EngineSettingsKind.KRKR) item {
             EngineCard("KRKR") {
                 SwitchPreference(title = stringResource(R.string.engine_settings_scoped_save_dir), checked = krScoped, onCheckedChange = onKrScoped)

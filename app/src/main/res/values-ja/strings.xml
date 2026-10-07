@@ -239,6 +239,8 @@
     <string name="engine_runtime_action_toggle_on">ランタイムを有効化</string>
     <string name="engine_runtime_action_toggle_off">ランタイムを無効化</string>
     <string name="engine_runtime_action_uninstall">ランタイムをアンインストール</string>
+    <string name="engine_runtime_manage_title">ランタイム管理</string>
+    <string name="engine_runtime_manage_hint_missing">未インストール。再ダウンロードはエンジン一覧に戻り、行末のステータスアイコンをタップしてください。</string>
     <string name="engine_runtime_uninstall_summary">アンインストール後は再ダウンロードまたはインポートで復元します</string>
     <string name="engine_runtime_uninstall_confirm">%1$s をアンインストールすると、このエンジンのゲームは起動できなくなります。再ダウンロードまたはインポートで復元できます。アンインストールしますか？</string>
     <string name="engine_runtime_uninstalled">%1$s をアンインストールしました</string>
