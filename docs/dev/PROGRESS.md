@@ -4,6 +4,24 @@
 > `docs/说明/游戏内提取制卡功能方案.md`（提取功能线方案）阅读。
 > 更新时间：2026-10-06
 
+## 2026-10-07 会话（四十）：RinneMobile 功能引入批次一 + 遗漏入口补齐
+
+- **游玩会话制统计**（参考 RinneMobile PlaySessionRepository）：PlaySessionTracker
+  （SQLite play_sessions 表，每游戏会话 start/finish/心跳结算、<5s 删 >12h 封顶、
+  游玩状态）+ PlaySessionLifecycle（Application lifecycle 自动跟踪，零侵入）。
+  PlayStatsActivity 升级双数据源（会话 + 旧 JSON 并入）+ 最近游玩记录区。
+- **补齐遗漏入口**：PlayStatsActivity 自移植起就**没有 UI 入口**（7b923c4 起
+  Manifest 有 Activity 但无人调 createIntent）——本轮在设置页加「游玩统计」
+  条目修复。MCP 配置从未实现（仅方向，无代码），待办补记。
+- **调试日志启停开关**：DiagLog.setEnabled/isEnabled（prefs 持久化）+ 设置页
+  按钮。参考 RinneMobile GameDiagnostics 的有界时间线思想。
+- **AI 游戏助手**（OnsAgentEngine + OnsAgentDialog）：LLM function calling
+  六工具（当前文本/游戏信息/查词/翻译/截图/TTS）+ 聊天面板。参考 RinneMobile
+  Agent 模块方向，实现简化为同步工具链（无 MCP/服务端）。
+- **RinneMobile 分析结论**（本轮评估）：会话制统计/诊断时间线/游玩状态 已引入；
+  三方导入器（Playnite/Vnite/LunaBox/PotatoVn）高价值待做；账号/排行/HD UI
+  不引入（需服务端/定位不符）。
+
 ## 2026-10-06 会话（三十九）：TTS 句读模式 + 朗读循环（TrackReader 对齐）
 
 - **句读模式**（系统引擎）：按句末标点（。！？…；）切分为朗读段，首段

@@ -31,6 +31,8 @@
     <string name="settings_anki">Anki 設定</string>
     <string name="settings_tts">TTS 設定</string>
     <string name="settings_dict_page">辞書設定</string>
+    <string name="settings_play_stats">プレイ統計</string>
+    <string name="settings_play_stats_summary">合計 / 今週 / 今月 / プレイ記録</string>
     <string name="settings_gamepad">コントローラー設定</string>
     <string name="settings_diag_disable">記録を停止</string>
     <string name="settings_diag_enable">記録を開始</string>
@@ -766,6 +768,7 @@
     <string name="pc_add_duplicate">このフォルダーは既に追加済みです</string>
     <string name="pc_add_failed">追加に失敗しました。もう一度お試しください</string>
     <string name="game_cover_flow_caption">%1$s - %2$s</string>
+    <string name="play_stats_recent">最近のプレイ記録</string>
     <string name="play_stats_title">プレイ統計</string>
     <string name="screenshots_title">スクリーンショット管理</string>
     <string name="screenshots_empty">スクリーンショットはまだありません</string>

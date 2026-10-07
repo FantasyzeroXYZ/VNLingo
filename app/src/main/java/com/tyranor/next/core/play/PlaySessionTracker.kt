@@ -160,6 +160,21 @@ object PlaySessionTracker {
         return out
     }
 
+    /** 各游戏总游玩时长（uri -> ms），按时长降序。 */
+    @JvmStatic
+    fun allTotals(context: Context): Map<String, Long> {
+        val db = helper(context).readableDatabase
+        val out = LinkedHashMap<String, Long>()
+        db.rawQuery(
+            "SELECT game_uri, SUM(duration) FROM " + TABLE + " WHERE end_time IS NOT NULL GROUP BY game_uri ORDER BY SUM(duration) DESC",
+            null).use { c ->
+            while (c.moveToNext()) {
+                out[c.getString(0)] = c.getLong(1)
+            }
+        }
+        return out
+    }
+
     /** 指定游戏的总游玩时长（ms）。 */
     fun totalPlayTime(context: Context, gameUri: String): Long {
         val db = helper(context).readableDatabase

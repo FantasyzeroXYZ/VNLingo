@@ -417,6 +417,12 @@ fun SettingsScreen(modifier: Modifier = Modifier) {
                                 onClick = { startActivityWithPageTransition(ctx, CoverScraperSettingsActivity.createIntent(ctx)) },
                             )
                             ArrowPreference(
+                                title = stringResource(R.string.settings_play_stats),
+                                summary = stringResource(R.string.settings_play_stats_summary),
+                                startAction = { SettingsItemIcon(R.drawable.ic_game) },
+                                onClick = { startActivityWithPageTransition(ctx, com.tyranor.next.ui.stats.PlayStatsActivity.createIntent(ctx)) },
+                            )
+                            ArrowPreference(
                                 title = stringResource(R.string.settings_gamepad),
                                 startAction = { SettingsItemIcon(R.drawable.ic_settings) },
                                 onClick = { startActivityWithPageTransition(ctx, com.tyranor.next.ui.gamepad.GamepadSettingsActivity.createIntent(ctx)) },

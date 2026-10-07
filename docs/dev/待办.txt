@@ -58,6 +58,12 @@
       响应（2026-10-06 实测，与 senhana 同类导航障碍）——需真机或改用
       uiautomator 之外的手段（如 monkey/无障碍服务）再试
 - [ ] 官方 revision Artemis 内核不挂钩、无提取（按需再评估）
+- [ ] 三方游戏库导入器（参考 RinneMobile importer：Playnite/Vnite/LunaBox/
+      PotatoVn JSON 解析 + 预览冲突标记 + 事务写入）——PC 玩家刚需，实现量大
+- [ ] 游戏诊断时间线（参考 GameDiagnostics JSONL 有界事件流）——与 DiagLog
+      互补（事件 vs 日志行），可做
+- [ ] AI 助手 MCP 配置：设置页加 MCP 服务器管理入口（当前 Agent 工具为
+      内置同步链，MCP 为后续方向）
 - [ ] 正式词典导入：模拟器现为种子词典（17 词条 + 5 条 romaji 测试别名），正式
       使用需用户经词典页「词典管理」导入 Yomichan zip / jsonl 全量词典
 - [x] 制卡引导：未安装 → toast + 跳商店安装页；未授权 → 对话框「去授权」
