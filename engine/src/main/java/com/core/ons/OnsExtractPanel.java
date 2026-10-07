@@ -1017,9 +1017,18 @@ public class OnsExtractPanel {
         final String lookupTerm = defSentence;
         final boolean hasTrans = transView.getTag() != null;
         // 释义路由到顶部独立悬浮窗（查词命中即显示；翻句 defGroups=null 时收起）。
-        // 不受面板展开状态影响：悬浮窗独立于剧情文本框（jidoujisho 式顶部释义卡）
+        // 不受面板展开状态影响：悬浮窗独立于剧情文本框（jidoujisho 式顶部释义卡）。
+        // 标题只显示词典条目的规范词形（首个分组 term）——不是扫描匹配串，
+        // 更不是点击位置之后的整段原文（用户约定：查询词作标题）。
         if (groups != null && !groups.isEmpty()) {
-            OnsDictOverlay.show(activity, lookupTerm, groups, this::makeWordCard);
+            String overlayTitle = lookupTerm;
+            for (OnsDictStore.Group g : groups) {
+                if (g != null && g.term != null && !g.term.isEmpty()) {
+                    overlayTitle = g.term;
+                    break;
+                }
+            }
+            OnsDictOverlay.show(activity, overlayTitle, groups, this::makeWordCard);
         } else {
             OnsDictOverlay.hide();
         }
