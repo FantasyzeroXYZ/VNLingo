@@ -175,6 +175,19 @@
   `com.core.engine.EngineVirtualMouse`（ONS/KRKR/Artemis 共用；Artemis 点击走
   内核 InjectHostTouch JNI、按键走可聚焦光标窗口，见会话二十五）。
 
+## 实测踩坑（2026-10-07 会话四十新增：移植遗漏与多轮迭代收尾）
+
+1. **移植功能可能没有 UI 入口**：PlayStatsActivity 从 Tyranor-Next 移植时
+   Manifest/Activity 都在，但**没有任何地方调用 createIntent**（基线 commit
+   7b923c4 起即如此，后续无人发现）。排查方法：对每个 Activity 统计
+   createIntent 引用是否为零。功能「移植完成」的验收标准必须包含入口可达。
+2. **多轮迭代后模拟器不稳定**：宿主脚本/GMS 弹窗/应用闪退叠加后，连应用
+   启动都可能落到桌面。`pm clear` + `uninstall/install` 可恢复，但更稳妥
+   的做法是 reboot 后再测（曾实测 reboot 后恢复正常）。
+3. **功能清单对账要定期做**：多轮迭代后易出现「代码写了但 UI 没接」
+   （如 PlaySessionTracker 数据层完成但无统计入口）。每轮收尾对照
+   「Activity 清单 × 入口清单」做差集扫描可发现这类遗漏。
+
 ## 实测踩坑（2026-10-06 会话二十九新增：自动朗读开关断连）
 
 1. **同一功能两处开关必须同键或显式联动**：TTS 自动朗读曾有面板键
