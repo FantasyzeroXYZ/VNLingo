@@ -61,7 +61,7 @@
     <string name="engine_ons_tts_multi_down">MultiTTS is not running; start the MultiTTS app first</string>
     <string name="engine_ons_tts_multi_reject">MultiTTS rejected the request; check the voice configuration</string>
     <string name="engine_ons_tts_http_down">HTTP TTS service unreachable; check the URL and service status</string>
-    <string name="engine_ons_extract_anki_model_missing">Model "%1$s" does not exist: create it in AnkiDroid first, or set the card model back to TyranorNext Word</string>
+    <string name="engine_ons_extract_anki_model_missing">Note type "%1$s" does not exist: pick an existing one in Card settings → Model (no auto-creation)</string>
     <string name="engine_ons_anki_scheme">Scheme</string>
     <string name="engine_ons_anki_scheme_none">Default (no saved scheme)</string>
     <string name="engine_ons_anki_scheme_name_hint">Scheme name</string>
@@ -206,6 +206,11 @@
     <string name="engine_ons_anki_card_voice">Sentence audio source</string>
     <string name="engine_ons_anki_card_capture">Auto-capture screenshot on card</string>
     <string name="engine_ons_anki_card_fields">Field mapping (tap a field to cycle its source)</string>
+    <string name="engine_ons_anki_pick_deck">Pick deck from AnkiDroid…</string>
+    <string name="engine_ons_anki_pick_model">Pick note type from AnkiDroid…</string>
+    <string name="engine_ons_anki_pick_manual">Enter manually…</string>
+    <string name="engine_ons_anki_list_unavailable">List empty (AnkiDroid not ready or not authorized)</string>
+    <string name="engine_ons_anki_refresh_fields">Refresh fields</string>
     <string name="engine_ons_anki_card_field_read_failed">Failed to read model fields</string>
     <string name="engine_ons_anki_card_default_fields">, showing default fields</string>
     <string name="engine_ons_anki_voice_auto">Auto (game voice first)</string>
@@ -224,6 +229,8 @@
     <string name="engine_ons_anki_slot_screenshot">Screenshot</string>
     <string name="engine_ons_anki_slot_sentence_audio">Sentence audio</string>
     <string name="engine_ons_anki_slot_word_audio">Word audio</string>
+    <string name="engine_ons_anki_slot_word_tags">Word tags</string>
+    <string name="engine_ons_anki_slot_source">Source (game)</string>
     <string name="engine_ons_tts_title">TTS settings</string>
     <string name="engine_ons_tts_engine">TTS engine</string>
     <string name="engine_ons_tts_engine_multi">MultiTTS</string>

@@ -148,6 +148,22 @@ class AnkiDroidHelper(private val context: Context) {
         null
     }
 
+    /** 全部牌组名（设置页选择用；空 = 未就绪/查询失败）。 */
+    fun getDeckNames(): List<String> = try {
+        api?.getDeckList()?.values?.toList() ?: emptyList()
+    } catch (t: Throwable) {
+        Log.w(TAG, "getDeckList failed", t)
+        emptyList()
+    }
+
+    /** 全部模型（note type）名。 */
+    fun getModelNames(): List<String> = try {
+        api?.getModelList()?.values?.toList() ?: emptyList()
+    } catch (t: Throwable) {
+        Log.w(TAG, "getModelList failed", t)
+        emptyList()
+    }
+
     /** 取或建牌组。API 返回 null（提供方拒绝/集合未就绪）与异常分开记日志，
      *  制卡失败的「静默无果」路径必须可在 logcat 定位。 */
     fun getOrCreateDeck(deckName: String): Long? {

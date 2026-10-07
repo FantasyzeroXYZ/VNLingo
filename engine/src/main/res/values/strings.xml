@@ -61,7 +61,7 @@
     <string name="engine_ons_tts_multi_down">MultiTTS 未运行：请先启动 MultiTTS 应用</string>
     <string name="engine_ons_tts_multi_reject">MultiTTS 拒绝了合成请求：请检查发音人配置</string>
     <string name="engine_ons_tts_http_down">HTTP TTS 服务不可用：请检查地址与服务状态</string>
-    <string name="engine_ons_extract_anki_model_missing">模型「%1$s」不存在：请在 AnkiDroid 中先创建，或把制卡模型名改回 TyranorNext Word</string>
+    <string name="engine_ons_extract_anki_model_missing">模板「%1$s」不存在：请在 制卡设置 → 模板名 里从 AnkiDroid 选择已有模板（不再自动创建）</string>
     <string name="engine_ons_anki_scheme">方案</string>
     <string name="engine_ons_anki_scheme_none">默认（未保存方案）</string>
     <string name="engine_ons_anki_scheme_name_hint">方案名称</string>
@@ -208,6 +208,11 @@
     <string name="engine_ons_anki_card_voice">例句语音源</string>
     <string name="engine_ons_anki_card_capture">制卡时自动截图</string>
     <string name="engine_ons_anki_card_fields">字段映射（点字段行切换内容来源）</string>
+    <string name="engine_ons_anki_pick_deck">从 AnkiDroid 选择牌组…</string>
+    <string name="engine_ons_anki_pick_model">从 AnkiDroid 选择模板…</string>
+    <string name="engine_ons_anki_pick_manual">手动输入…</string>
+    <string name="engine_ons_anki_list_unavailable">列表为空（AnkiDroid 未就绪或未授权）</string>
+    <string name="engine_ons_anki_refresh_fields">刷新字段</string>
     <string name="engine_ons_anki_card_field_read_failed">字段读取失败</string>
     <string name="engine_ons_anki_card_default_fields">，显示默认字段</string>
     <string name="engine_ons_anki_voice_auto">自动（游戏语音优先）</string>
@@ -226,6 +231,8 @@
     <string name="engine_ons_anki_slot_screenshot">截图</string>
     <string name="engine_ons_anki_slot_sentence_audio">例句语音</string>
     <string name="engine_ons_anki_slot_word_audio">单词语音</string>
+    <string name="engine_ons_anki_slot_word_tags">单词标签</string>
+    <string name="engine_ons_anki_slot_source">来源（游戏）</string>
     <string name="engine_ons_tts_title">TTS 设置</string>
     <string name="engine_ons_tts_engine">TTS 引擎</string>
     <string name="engine_ons_tts_engine_multi">MultiTTS</string>

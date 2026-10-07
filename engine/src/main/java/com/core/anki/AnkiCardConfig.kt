@@ -22,6 +22,8 @@ object AnkiCardConfig {
     const val SLOT_SCREENSHOT = "screenshot"     // 游戏截图 <img>
     const val SLOT_SENTENCE_AUDIO = "sentence_audio" // 例句语音 [sound:]（游戏配对优先，回退 TTS）
     const val SLOT_WORD_AUDIO = "word_audio"     // 单词语音 [sound:]（TTS）
+    const val SLOT_WORD_TAGS = "word_tags"       // 单词标签（查词词典名）
+    const val SLOT_SOURCE = "source"             // 来源（游戏显示名）
 
     // ---- 语音源策略 ----
     const val VOICE_AUTO = "auto"   // 游戏配对语音优先，无则 TTS

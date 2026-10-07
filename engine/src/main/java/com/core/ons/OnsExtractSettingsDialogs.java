@@ -662,6 +662,12 @@ public final class OnsExtractSettingsDialogs {
     /** 制卡设置（AnkiDroid）：牌组 / 模型 / 字段映射（内容槽位→字段）+ 截图与语音源。
      *  参考 web game text 扩展 ankiFieldMap：模型字段列表自 AnkiDroid 读取，
      *  点字段行循环切换内容槽位（无/单词/读音/释义/例句/整页/译文/截图/例句语音/单词语音）。 */
+    /**
+     * 制卡设置（AnkiDroid）：牌组/模板从 AnkiDroid 实时枚举选择（也可手输），
+     * 字段映射 = 模板真实字段 × 内容槽位（点行循环切换），选/改模板即重拉字段行。
+     * 运行时不再自动创建模板（制卡导出契约对齐 video_learn_tool）：模板缺失在
+     * 制卡时明确报错引导到本页选择。
+     */
     public static void showAnkiCardSettings(Activity activity) {
         LinearLayout box = new LinearLayout(activity);
         box.setOrientation(LinearLayout.VERTICAL);
@@ -679,15 +685,62 @@ public final class OnsExtractSettingsDialogs {
                         ? activity.getString(R.string.engine_ons_anki_scheme_none)
                         : activeScheme.get());
         syncScheme.run();
-        EditText deckField = settingField(activity, box,
-                R.string.engine_ons_anki_card_deck, AnkiCardConfig.deck(activity));
-        EditText modelField = settingField(activity, box,
-                R.string.engine_ons_anki_card_model, AnkiCardConfig.model(activity));
 
+        // 字段行重建（先占位声明：牌组/模板选择器与方案回调都先于定义引用）
+        final Runnable[] rebuildFields = new Runnable[1];
+
+        // 牌组行：手输 + 从 AnkiDroid 选择
+        TextView deckHint = new TextView(activity);
+        deckHint.setText(R.string.engine_ons_anki_card_deck);
+        deckHint.setTextColor(TEXT_DIM);
+        deckHint.setTextSize(11);
+        box.addView(deckHint, matchWrap());
+        LinearLayout deckRow = new LinearLayout(activity);
+        deckRow.setOrientation(LinearLayout.HORIZONTAL);
+        deckRow.setGravity(android.view.Gravity.CENTER_VERTICAL);
+        final EditText deckField = new EditText(activity);
+        deckField.setText(AnkiCardConfig.deck(activity));
+        deckField.setTextSize(13);
+        deckField.setSingleLine(true);
+        deckRow.addView(deckField, new LinearLayout.LayoutParams(0,
+                LinearLayout.LayoutParams.WRAP_CONTENT, 1f));
+        deckRow.addView(pickButton(activity, R.string.engine_ons_anki_pick_deck, () -> {
+            java.util.List<String> decks = new AnkiDroidHelper(activity).getDeckNames();
+            showNamePicker(activity, R.string.engine_ons_anki_pick_deck, decks, deckField::setText);
+        }));
+        box.addView(deckRow, matchWrap());
+
+        // 模板行：手输 + 从 AnkiDroid 选择（选定后重建字段映射行）
+        TextView modelHint = new TextView(activity);
+        modelHint.setText(R.string.engine_ons_anki_card_model);
+        modelHint.setTextColor(TEXT_DIM);
+        modelHint.setTextSize(11);
+        box.addView(modelHint, matchWrap());
+        LinearLayout modelRow = new LinearLayout(activity);
+        modelRow.setOrientation(LinearLayout.HORIZONTAL);
+        modelRow.setGravity(android.view.Gravity.CENTER_VERTICAL);
+        final EditText modelField = new EditText(activity);
+        modelField.setText(AnkiCardConfig.model(activity));
+        modelField.setTextSize(13);
+        modelField.setSingleLine(true);
+        modelRow.addView(modelField, new LinearLayout.LayoutParams(0,
+                LinearLayout.LayoutParams.WRAP_CONTENT, 1f));
+        modelRow.addView(pickButton(activity, R.string.engine_ons_anki_pick_model, () -> {
+            java.util.List<String> models = new AnkiDroidHelper(activity).getModelNames();
+            showNamePicker(activity, R.string.engine_ons_anki_pick_model, models, name -> {
+                modelField.setText(name);
+                if (rebuildFields[0] != null) rebuildFields[0].run();
+            });
+        }));
+        box.addView(modelRow, matchWrap());
+
+        // 方案行：加载方案后模板可能已变，字段行随之刷新
         LinearLayout schemeRow = settingNavRow(activity, R.drawable.ic_card,
                 R.string.engine_ons_anki_scheme, schemeValue);
-        schemeRow.setOnClickListener(v -> showSchemeManager(activity, activeScheme, syncScheme,
-                deckField, modelField));
+        schemeRow.setOnClickListener(v -> showSchemeManager(activity, activeScheme, () -> {
+            syncScheme.run();
+            if (rebuildFields[0] != null) rebuildFields[0].run();
+        }, deckField, modelField));
         box.addView(schemeRow);
 
         // 例句语音源行（点击循环：自动→游戏→TTS→关）
@@ -737,63 +790,41 @@ public final class OnsExtractSettingsDialogs {
         });
         box.addView(shotRow);
 
+        // 字段映射区：标题 + 刷新按钮；行容器独立，选/改模板整体重建
+        LinearLayout fieldsHeader = new LinearLayout(activity);
+        fieldsHeader.setOrientation(LinearLayout.HORIZONTAL);
+        fieldsHeader.setGravity(android.view.Gravity.CENTER_VERTICAL);
         TextView section = new TextView(activity);
         section.setText(R.string.engine_ons_anki_card_fields);
         section.setTextColor(TEXT_BUTTON);
         section.setTextSize(13);
         section.setPadding(0, dp(activity, 12), 0, 0);
-        box.addView(section, matchWrap());
+        section.setLayoutParams(new LinearLayout.LayoutParams(0,
+                LinearLayout.LayoutParams.WRAP_CONTENT, 1f));
+        fieldsHeader.addView(section);
+        TextView refresh = new TextView(activity);
+        refresh.setText(R.string.engine_ons_anki_refresh_fields);
+        refresh.setTextColor(TEXT_BUTTON);
+        refresh.setTextSize(12);
+        refresh.setPadding(dp(activity, 8), dp(activity, 12), 0, 0);
+        refresh.setOnClickListener(v -> {
+            if (rebuildFields[0] != null) rebuildFields[0].run();
+        });
+        fieldsHeader.addView(refresh);
+        box.addView(fieldsHeader, matchWrap());
 
-        // 模型字段读取：未装/未授权/模型不存在 → 提示 + 默认四字段兜底编辑
-        String modelName = AnkiCardConfig.model(activity);
-        java.util.List<String> modelFields = new java.util.ArrayList<>();
-        String readError = null;
-        try {
-            AnkiDroidHelper helper = new AnkiDroidHelper(activity);
-            if (!helper.isAnkiDroidInstalled()) {
-                readError = activity.getString(R.string.engine_ons_extract_anki_not_installed);
-            } else if (!helper.hasPermission()) {
-                readError = activity.getString(R.string.engine_ons_extract_anki_need_permission);
-            } else {
-                Long mid = helper.findModelId(modelName);
-                if (mid == null) {
-                    readError = activity.getString(
-                            R.string.engine_ons_extract_anki_model_missing, modelName);
-                } else {
-                    String[] fl = helper.getModelFieldNames(mid);
-                    if (fl == null || fl.length == 0) {
-                        readError = activity.getString(R.string.engine_ons_anki_card_field_read_failed);
-                    } else {
-                        java.util.Collections.addAll(modelFields, fl);
-                    }
-                }
-            }
-        } catch (Throwable t) {
-            readError = activity.getString(R.string.engine_ons_anki_card_field_read_failed);
-        }
-        if (modelFields.isEmpty()) {
-            java.util.Collections.addAll(modelFields, "Word", "Reading", "Meaning", "Sentence");
-        }
-        if (readError != null) {
-            TextView warn = new TextView(activity);
-            warn.setText(readError + activity.getString(R.string.engine_ons_anki_card_default_fields));
-            warn.setTextColor(TEXT_DIM);
-            warn.setTextSize(11);
-            box.addView(warn, matchWrap());
-        }
+        final LinearLayout fieldsContainer = new LinearLayout(activity);
+        fieldsContainer.setOrientation(LinearLayout.VERTICAL);
+        box.addView(fieldsContainer, matchWrap());
 
-        // 字段行：点击循环内容槽位
-        final java.util.Map<String, String> slotByField = new java.util.HashMap<>();
-        for (java.util.Map.Entry<String, String> e
-                : AnkiCardConfig.fieldMap(activity).entrySet()) {
-            if (!slotByField.containsKey(e.getValue())) slotByField.put(e.getValue(), e.getKey());
-        }
+        // 内容槽位全集（点字段行循环切换）
         final String[] slotOrder = {null,
                 AnkiCardConfig.SLOT_WORD, AnkiCardConfig.SLOT_READING,
                 AnkiCardConfig.SLOT_MEANING, AnkiCardConfig.SLOT_SENTENCE,
                 AnkiCardConfig.SLOT_PAGE, AnkiCardConfig.SLOT_TRANSLATION,
                 AnkiCardConfig.SLOT_SCREENSHOT, AnkiCardConfig.SLOT_SENTENCE_AUDIO,
-                AnkiCardConfig.SLOT_WORD_AUDIO};
+                AnkiCardConfig.SLOT_WORD_AUDIO, AnkiCardConfig.SLOT_WORD_TAGS,
+                AnkiCardConfig.SLOT_SOURCE};
         final String[] slotLabels = {
                 activity.getString(R.string.engine_ons_anki_slot_none),
                 activity.getString(R.string.engine_ons_anki_slot_word),
@@ -804,38 +835,89 @@ public final class OnsExtractSettingsDialogs {
                 activity.getString(R.string.engine_ons_anki_slot_translation),
                 activity.getString(R.string.engine_ons_anki_slot_screenshot),
                 activity.getString(R.string.engine_ons_anki_slot_sentence_audio),
-                activity.getString(R.string.engine_ons_anki_slot_word_audio)};
-        for (final String field : modelFields) {
-            TextView value = new TextView(activity);
-            styleNavValue(activity, value);
-            Runnable sync = () -> {
-                String slot = slotByField.get(field);
-                String label = slotLabels[0];
-                if (slot != null) {
-                    for (int i = 1; i < slotOrder.length; i++) {
-                        if (slotOrder[i] != null && slotOrder[i].equals(slot)) {
-                            label = slotLabels[i];
-                            break;
+                activity.getString(R.string.engine_ons_anki_slot_word_audio),
+                activity.getString(R.string.engine_ons_anki_slot_word_tags),
+                activity.getString(R.string.engine_ons_anki_slot_source)};
+
+        // 当前槽位映射（模型字段名 → 槽位），初值取自活动配置
+        final java.util.Map<String, String> slotByField = new java.util.HashMap<>();
+        for (java.util.Map.Entry<String, String> e : AnkiCardConfig.fieldMap(activity).entrySet()) {
+            if (!slotByField.containsKey(e.getValue())) slotByField.put(e.getValue(), e.getKey());
+        }
+
+        // 字段映射行重建：按模板真实字段列表 × 当前槽位映射
+        rebuildFields[0] = () -> {
+            fieldsContainer.removeAllViews();
+            String modelName = modelField.getText() == null ? ""
+                    : modelField.getText().toString().trim();
+            java.util.List<String> modelFields = new java.util.ArrayList<>();
+            String readError = null;
+            try {
+                AnkiDroidHelper helper = new AnkiDroidHelper(activity);
+                if (!helper.isAnkiDroidInstalled()) {
+                    readError = activity.getString(R.string.engine_ons_extract_anki_not_installed);
+                } else if (!helper.hasPermission()) {
+                    readError = activity.getString(R.string.engine_ons_extract_anki_need_permission);
+                } else {
+                    Long mid = helper.findModelId(modelName);
+                    if (mid == null) {
+                        readError = activity.getString(
+                                R.string.engine_ons_extract_anki_model_missing, modelName);
+                    } else {
+                        String[] fl = helper.getModelFieldNames(mid);
+                        if (fl == null || fl.length == 0) {
+                            readError = activity.getString(R.string.engine_ons_anki_card_field_read_failed);
+                        } else {
+                            java.util.Collections.addAll(modelFields, fl);
                         }
                     }
                 }
-                value.setText(label);
-            };
-            sync.run();
-            LinearLayout row = settingNavRowText(activity, field, value);
-            row.setOnClickListener(v -> {
-                String cur = slotByField.get(field);
-                int idx2 = 0;
-                for (int i = 1; i < slotOrder.length; i++) {
-                    if (slotOrder[i] != null && slotOrder[i].equals(cur)) { idx2 = i; break; }
-                }
-                int next = (idx2 + 1) % slotOrder.length;
-                String nextSlot = slotOrder[next];
-                if (nextSlot == null) slotByField.remove(field); else slotByField.put(field, nextSlot);
+            } catch (Throwable t) {
+                readError = activity.getString(R.string.engine_ons_anki_card_field_read_failed);
+            }
+            if (modelFields.isEmpty()) {
+                java.util.Collections.addAll(modelFields, "Word", "Reading", "Meaning", "Sentence");
+            }
+            if (readError != null) {
+                TextView warn = new TextView(activity);
+                warn.setText(readError + activity.getString(R.string.engine_ons_anki_card_default_fields));
+                warn.setTextColor(TEXT_DIM);
+                warn.setTextSize(11);
+                fieldsContainer.addView(warn, matchWrap());
+            }
+            for (final String field : modelFields) {
+                TextView value = new TextView(activity);
+                styleNavValue(activity, value);
+                Runnable sync = () -> {
+                    String slot = slotByField.get(field);
+                    String label = slotLabels[0];
+                    if (slot != null) {
+                        for (int i = 1; i < slotOrder.length; i++) {
+                            if (slotOrder[i] != null && slotOrder[i].equals(slot)) {
+                                label = slotLabels[i];
+                                break;
+                            }
+                        }
+                    }
+                    value.setText(label);
+                };
                 sync.run();
-            });
-            box.addView(row);
-        }
+                LinearLayout row = settingNavRowText(activity, field, value);
+                row.setOnClickListener(v -> {
+                    String cur = slotByField.get(field);
+                    int idx2 = 0;
+                    for (int i = 1; i < slotOrder.length; i++) {
+                        if (slotOrder[i] != null && slotOrder[i].equals(cur)) { idx2 = i; break; }
+                    }
+                    int next = (idx2 + 1) % slotOrder.length;
+                    String nextSlot = slotOrder[next];
+                    if (nextSlot == null) slotByField.remove(field); else slotByField.put(field, nextSlot);
+                    sync.run();
+                });
+                fieldsContainer.addView(row, matchWrap());
+            }
+        };
+        rebuildFields[0].run();
 
         ScrollView scroller = new ScrollView(activity);
         scroller.addView(box);
@@ -863,6 +945,35 @@ public final class OnsExtractSettingsDialogs {
                 .setNegativeButton(android.R.string.cancel, null)
                 .show();
     }
+
+    /** 「选择」文字按钮（制卡设置牌组/模板行的内联入口）。 */
+    private static TextView pickButton(Activity activity, int labelRes, Runnable onClick) {
+        TextView btn = new TextView(activity);
+        btn.setText(labelRes);
+        btn.setTextColor(TEXT_BUTTON);
+        btn.setTextSize(12);
+        btn.setPadding(dp(activity, 10), dp(activity, 6), dp(activity, 10), dp(activity, 6));
+        btn.setGravity(android.view.Gravity.CENTER);
+        btn.setOnClickListener(v -> onClick.run());
+        return btn;
+    }
+
+    /** 名称单选列表（AnkiDroid 枚举结果）；空列表提示后不弹。 */
+    private static void showNamePicker(Activity activity, int titleRes,
+                                       java.util.List<String> names,
+                                       java.util.function.Consumer<String> onPick) {
+        if (names == null || names.isEmpty()) {
+            Toast.makeText(activity, R.string.engine_ons_anki_list_unavailable,
+                    Toast.LENGTH_SHORT).show();
+            return;
+        }
+        new android.app.AlertDialog.Builder(activity)
+                .setTitle(titleRes)
+                .setItems(names.toArray(new String[0]), (d, w) -> onPick.accept(names.get(w)))
+                .setNegativeButton(android.R.string.cancel, null)
+                .show();
+    }
+
     /** 档位循环辅助：取当前值的下一个（循环）。 */
     private static int cycleIndex(int[] values, int current) {
         return (current + 1) % values.length;

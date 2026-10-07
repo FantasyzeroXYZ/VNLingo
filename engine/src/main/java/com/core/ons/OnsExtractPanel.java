@@ -1506,27 +1506,21 @@ public class OnsExtractPanel {
                     return;
                 }
 
-                // 模型解析：已存在 → 读真实字段列表；不存在 → 默认模型四字段兜底创建；
-                // 自定义模型名不存在则报错（不能猜测用户模型的字段组合）
+                // 模板契约（video_learn_tool 制卡导出契约对齐）：模板必须是用户在
+                // AnkiDroid 中已有的模型——不再自动创建；缺失时明确报错引导到
+                // 制卡设置选择。字段列表读真实模型（不猜字段组合）。
                 Long modelId = helper.findModelId(modelName);
-                String[] modelFields;
-                if (modelId != null) {
-                    String[] names = helper.getModelFieldNames(modelId);
-                    if (names == null || names.length == 0) {
-                        main.post(() -> toast(R.string.engine_ons_extract_anki_failed));
-                        return;
-                    }
-                    modelFields = names;
-                } else if (com.core.anki.AnkiCardConfig.DEFAULT_MODEL.equals(modelName)) {
-                    modelId = helper.getOrCreateWordModel(modelName);
-                    modelFields = new String[]{
-                            "Word", "Reading", "Meaning", "Sentence", "Image", "Audio"};
-                } else {
-                    final String missing = modelName;
+                if (modelId == null) {
                     main.post(() -> toast(activity.getString(
-                            R.string.engine_ons_extract_anki_model_missing, missing)));
+                            R.string.engine_ons_extract_anki_model_missing, modelName)));
                     return;
                 }
+                String[] realFields = helper.getModelFieldNames(modelId);
+                if (realFields == null || realFields.length == 0) {
+                    main.post(() -> toast(R.string.engine_ons_extract_anki_failed));
+                    return;
+                }
+                String[] modelFields = realFields;
                 if (modelId == null) {
                     main.post(() -> toast(R.string.engine_ons_extract_anki_failed));
                     return;
@@ -1557,6 +1551,10 @@ public class OnsExtractPanel {
                         android.text.Html.escapeHtml(bridge.getPageText()));
                 slots.put(com.core.anki.AnkiCardConfig.SLOT_TRANSLATION,
                         lastTranslation == null ? "" : lastTranslation);
+                // 新槽位：单词标签（查词词典名）+ 来源（游戏显示名）；未映射时内容闲置
+                slots.put(com.core.anki.AnkiCardConfig.SLOT_WORD_TAGS,
+                        com.core.ons.OnsDictStore.get().getDictName());
+                slots.put(com.core.anki.AnkiCardConfig.SLOT_SOURCE, getGameDisplayName());
 
                 File dir = new File(activity.getExternalFilesDir(null), "extract");
                 dir.mkdirs();
@@ -2765,7 +2763,9 @@ public class OnsExtractPanel {
                     main.post(() -> toast(R.string.engine_ons_extract_anki_need_permission));
                     return;
                 }
-                Long deckId = helper.getOrCreateDeck(com.core.anki.AnkiDroidHelper.DEFAULT_DECK);
+                // 牌组跟配置走（与词卡同一牌组）；句卡模板保持内置 Front/Back
+                // 快路径（不参与字段映射，缺模型时沿用自动创建）
+                Long deckId = helper.getOrCreateDeck(com.core.anki.AnkiCardConfig.deck(activity));
                 Long modelId = helper.getOrCreateModel(com.core.anki.AnkiDroidHelper.DEFAULT_MODEL);
                 if (deckId == null || modelId == null) {
                     main.post(() -> toast(R.string.engine_ons_extract_anki_failed));

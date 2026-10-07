@@ -61,7 +61,7 @@
     <string name="engine_ons_tts_multi_down">MultiTTS が起動していません。先に起動してください</string>
     <string name="engine_ons_tts_multi_reject">MultiTTS がリクエストを拒否しました。音声設定を確認してください</string>
     <string name="engine_ons_tts_http_down">HTTP TTS サービスに接続できません。URL と状態を確認してください</string>
-    <string name="engine_ons_extract_anki_model_missing">モデル「%1$s」が存在しません。AnkiDroid で先に作成するか、モデル名を TyranorNext Word に戻してください</string>
+    <string name="engine_ons_extract_anki_model_missing">モデル「%1$s」が存在しません：カード設定 → モデル名で AnkiDroid の既存モデルを選択してください（自動作成しません）</string>
     <string name="engine_ons_anki_scheme">スキーム</string>
     <string name="engine_ons_anki_scheme_none">デフォルト（保存スキームなし）</string>
     <string name="engine_ons_anki_scheme_name_hint">スキーム名</string>
@@ -209,6 +209,11 @@
     <string name="engine_ons_anki_card_voice">例文音声ソース</string>
     <string name="engine_ons_anki_card_capture">カード作成時に自動スクリーンショット</string>
     <string name="engine_ons_anki_card_fields">フィールドマッピング（行をタップしてソースを切替）</string>
+    <string name="engine_ons_anki_pick_deck">AnkiDroid からデッキを選択…</string>
+    <string name="engine_ons_anki_pick_model">AnkiDroid からモデルを選択…</string>
+    <string name="engine_ons_anki_pick_manual">手動入力…</string>
+    <string name="engine_ons_anki_list_unavailable">一覧が空です（AnkiDroid 未準備・未許可）</string>
+    <string name="engine_ons_anki_refresh_fields">フィールド再取得</string>
     <string name="engine_ons_anki_card_field_read_failed">フィールドの読み取りに失敗しました</string>
     <string name="engine_ons_anki_card_default_fields">。デフォルトフィールドを表示</string>
     <string name="engine_ons_anki_voice_auto">自動（ゲーム音声優先）</string>
@@ -227,6 +232,8 @@
     <string name="engine_ons_anki_slot_screenshot">スクリーンショット</string>
     <string name="engine_ons_anki_slot_sentence_audio">例文音声</string>
     <string name="engine_ons_anki_slot_word_audio">単語音声</string>
+    <string name="engine_ons_anki_slot_word_tags">単語タグ</string>
+    <string name="engine_ons_anki_slot_source">ソース（ゲーム）</string>
     <string name="engine_ons_tts_title">TTS 設定</string>
     <string name="engine_ons_tts_engine">TTS エンジン</string>
     <string name="engine_ons_tts_engine_multi">MultiTTS</string>
