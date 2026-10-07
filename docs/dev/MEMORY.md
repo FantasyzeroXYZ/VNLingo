@@ -175,6 +175,17 @@
   `com.core.engine.EngineVirtualMouse`（ONS/KRKR/Artemis 共用；Artemis 点击走
   内核 InjectHostTouch JNI、按键走可聚焦光标窗口，见会话二十五）。
 
+## 实测踩坑（2026-10-07 会话四十一新增：模块依赖方向）
+
+1. **engine 模块不能引用 app 类**：Gradle 依赖方向是 app → engine，跨模块
+   搬运代码时容易把新类落到 app 包却在 engine 里引用（MCP 三类最初落在
+   `com.tyranor.next.core.agent`，OnsAgentDialog 引用时直接编译失败）。
+   规则：被 engine（游戏内 UI/引擎面板）使用的核心逻辑一律放
+   `engine/src/main/java/com/core/**`；app 包只放纯 UI 入口层。engine 已配
+   Kotlin（stdlib 在依赖里，大量 .kt 文件），移 Kotlin 文件过去零成本。
+2. **跨模块搬运后 grep 旧包名收尾**：`grep -rn "tyranor.next.core.agent"`
+   能抓全残留引用（本次 OnsAgentDialog 有两处全限定名引用，修一处漏一处）。
+
 ## 实测踩坑（2026-10-07 会话四十新增：移植遗漏与多轮迭代收尾）
 
 1. **移植功能可能没有 UI 入口**：PlayStatsActivity 从 Tyranor-Next 移植时
