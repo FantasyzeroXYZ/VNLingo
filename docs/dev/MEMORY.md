@@ -402,3 +402,32 @@
    手柄重映射未在真机手柄上验证。
 4. **文档约定**：方案文档进 `docs/`（状态/目标 → 需求范围 → 架构 → 实施记录）；
    commit 用「类型: 描述」并按单一类型分组；**每次修改后补充对应文档的实施记录**。
+
+## 实测踩坑（2026-10-08 会话新增：Artemis 官方内核提取正解）
+
+1. **官方内核（Girl's Blossom Project / V1）文本提取唯一生效通道 = `CArtemis::CommandPrint`**：
+   `CArtemisParser::Text/TextTail`、`CBackLog::Add` 三个解析器钩子补丁地址全部
+   核对无误（dlsym 偏移与 maps 基址算术吻合）但**零调用**——该游戏的文本根本
+   不流经这些函数。`CArtemis::CommandPrint(CScriptBlock&, bool)` 随每个脚本
+   print 命令触发（boot 期也有），块参数 `std::map<string,string>` 是 libc++
+   `__tree_node`：left+0x00 right+0x08 parent+0x10 black+0x18 **key+0x20
+   value+0x38**（readStdString 直读）；key=`"data"` 携带文本。**说话人行与
+   正文行成对到达（间隔 ~2ms）**：先 `data="Himari"` 再 `data="正文"`。
+   sizeof(CScriptBlock)≈88（数组连续存放，转储按 96 切会错位）。
+   `CScriptBlock::ToString` 有导出但该游戏不走（防御性钩子保留）。
+2. **emitText JNI SIGABRT（CheckJNI）**：`onArtemisExtract` 签名是**三个
+   String**（text, voiceName, voiceCached），CallStaticVoidMethod 少传参数时
+   CheckJNI 会把 va_list 的栈上垃圾当 jobject 校验 → `use of invalid jobject`
+   SIGABRT（abort 地址就在栈帧附近是判别特征）。JNI 可变参调用参数个数必须
+   与签名严格一致；测 JNI 上行务必在 CheckJNI 开启的 debug 包上验。
+3. **MIUI 12.5 (alioth) W^X 加固下的 inline hook 写入**：mprotect 改 RX 后
+   无法恢复写（EACCES）→ 用 `/proc/self/mem` pwrite 内核直写 + pread 回读
+   校验 + `__builtin___clear_cache`，实测补丁在位且可执行。
+4. **官方内核 GOT 钩子必然失败**：DispatchTag/SetMessageLayered/AudioChannels::Play
+   是 clean 内核符号，官方内核不导入（有导出无 GOT 槽）——语音配对要官方内核
+   生效须走同款 dlsym+inline hook（CSoundTrack/CSoundManager 播放路径，待做）。
+5. **横屏游戏的截图坐标**：screencap 返回 2400x1080（横屏），缩略图坐标换算
+   系数 ×2.667；竖屏列表页 1080x2400 系数 ×1.2——先 `python PIL` 打印
+   `im.size` 再换算，方向搞错全部点击落空（本轮反复踩）。
+6. **JNI 存活对象的内存转储用 memcpy 直拷**（调用期内对象有效）；
+   process_vm_readv 自读在页边界会静默截断（返回已读字节数）。

@@ -116,3 +116,11 @@
       先启动应用 / 在线但拒绝提示检查发音人配置；HTTP TTS 失败提示检查地址与服务
 - [x] 设置页弹窗入口 ctx 解包统一 findActivity；词典设置跳 Tab 改用
       MainTabs.TAB_DICT 常量（原写死索引 1，tab 顺序变化会错位）
+
+- [ ] 推送欠账：feat/extract-suite b9de2c6（Artemis 官方内核 CommandPrint
+      提取）本地已提交，2026-10-08 GitHub 直连不可达未推；网络恢复后
+      `git push origin feat/extract-suite`
+- [ ] Artemis 官方内核语音配对：AudioChannels::Play 无 GOT 槽（导出不导入），
+      需 dlsym + inline hook 播放路径取语音名，走 facade pendingVoice 通道
+- [ ] 官方内核提取的跨游戏验证：CommandPrint 通道仅 Girl's Blossom Project
+      实测；其它官方 revision 内核（V2-V6）块布局/树偏移可能不同，需实测微调
