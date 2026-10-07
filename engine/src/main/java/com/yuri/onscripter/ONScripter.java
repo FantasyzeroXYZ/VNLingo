@@ -167,8 +167,23 @@ public class ONScripter extends SDLActivity {
         // 提取面板按键（webgametxt 语义）：面板收起只认 RB 呼出；展开时消费全部按键
         // （手柄不再注入游戏），故置于虚拟鼠标之前
         if (extractPanel != null && extractPanel.handleKey(event)) return true;
-        // 手柄方向键虚拟鼠标：D-pad 移动光标、A 键点击（仅虚拟鼠标模式；触摸模式直传游戏）
-        if (virtualMouseMode && virtualMouse != null && virtualMouse.handleKey(event)) return true;
+        // 手柄方向键虚拟鼠标：D-pad 移动光标、A 键点击（仅虚拟鼠标模式；触摸模式直传游戏）。
+        // 诊断日志（首按一条）：真机手柄实际键值/来源/设备名——定位「无法移动/连续点击」
+        // 类反馈的输入流差异；未消费的键也记一条（按键被上游吃掉的排查入口）。
+        if (virtualMouseMode && virtualMouse != null) {
+            if (event != null && event.getAction() == android.view.KeyEvent.ACTION_DOWN
+                    && event.getRepeatCount() == 0) {
+                android.view.InputDevice dev = android.view.InputDevice.getDevice(event.getDeviceId());
+                Log.i(TAG, "vmouse key code=" + event.getKeyCode()
+                        + " source=" + event.getSource()
+                        + " device=" + (dev == null ? "?" : dev.getName()));
+            }
+            if (virtualMouse.handleKey(event)) return true;
+            if (event != null && event.getAction() == android.view.KeyEvent.ACTION_DOWN
+                    && event.getRepeatCount() == 0) {
+                Log.i(TAG, "vmouse key NOT consumed: code=" + event.getKeyCode());
+            }
+        }
         // 播片期间按键优先给视频层：任意键跳过，音量键仍交还系统。
         // BACK 不在此列——它沿用下面 tyn 自己的双击退出语义，
         // 避免播 OP 时误触退出游戏。

@@ -56,6 +56,7 @@ class EngineVirtualMouse(
     private companion object {
         const val REPEAT_DELAY_MS = 350L
         const val REPEAT_INTERVAL_MS = 60L
+        const val CLICK_COOLDOWN_MS = 250L
         const val STEP_BASE = 14f
         const val STEP_MAX = 48f
 
@@ -77,6 +78,9 @@ class EngineVirtualMouse(
         private set
     var cursorY = 0f
         private set
+
+    /** 点击冷却：部分手柄/ROM 会重复下发确认键（双设备/按键抖动），窗口内只点一次。 */
+    private var lastClickAtMs = 0L
     private var cursorVisible = false
 
     /** 当前按住的方向动作（-1 = 无）；内部重复引擎按它连续步进。 */
@@ -259,6 +263,9 @@ class EngineVirtualMouse(
     }
 
     private fun clickAtCursor() {
+        val now = android.os.SystemClock.uptimeMillis()
+        if (now - lastClickAtMs < CLICK_COOLDOWN_MS) return
+        lastClickAtMs = now
         // 覆盖层优先：光标悬停在悬浮球/面板控件上时点平台控件，不穿进游戏画面
         if (overlayClickHandler != null && overlayClickHandler.onClickAt(cursorX, cursorY)) return
         val surface = surfaceProvider() ?: return
