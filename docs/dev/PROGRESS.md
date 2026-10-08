@@ -4,6 +4,41 @@
 > `docs/说明/游戏内提取制卡功能方案.md`（提取功能线方案）阅读。
 > 更新时间：2026-10-08
 
+## 2026-10-08 会话（五十七）：所有「点击循环」的设置项改成下拉选择
+
+用户要求：凡是靠「点一次换下一个值」才能选设置的行，全部改成下拉框。
+
+**新增共享控件层**（engine）：`com.core.ons.SettingsWidgets`
+- `dropdownRow(activity, iconRes, label, options, selectedIndex, onSelect)`：图标（可选）+ 标题 + Spinner；
+- `switchRow(activity, iconRes, label, checked, onChange)`：布尔项用开关，不用文字行点按切换。
+
+**engine 侧改下拉**（`OnsExtractSettingsDialogs` / `OnsExtractPanel`）：
+
+| 设置项 | 之前 | 现在 |
+|---|---|---|
+| 翻译引擎（设置页 / 面板） | 8 引擎点按循环 | 下拉（API/本地/Google/Bing/DeepL/百度/Gemini/Claude） |
+| 翻译测试 原文/目标语言（两个入口） | 点按循环 | 下拉 |
+| TTS 语速 / 音高 / 音量 | 点按循环 0→25→50→75→100 | 下拉（五档） |
+| TTS 引擎 | 点按循环 | 下拉（MultiTTS / HTTP / 系统） |
+| 朗读循环次数 | 点按循环 0→1→2→3 | 下拉（不循环 / 1 / 2 / 3） |
+| TTS 自动朗读 / 句读模式 | 文字行点按切换 | 开关（Switch） |
+| 面板 语速 | 点按循环档位 | 下拉 |
+| 面板 透明度 | 点按循环 100/85/70/55/40 | 下拉 |
+
+顺带删掉随之无用的循环辅助（`nextStep` / `nextCode` / `cycleIndex`），避免以后又被拿来写循环；
+右缘面板的「透明度」快捷按钮仍保留点按循环（它是工具栏快捷键，不是设置行）。
+
+**词典页改下拉**（`DictionaryScreen`）：「查询语言」「汉字优先」「词典语言范围」由 `CycleRow`
+（点按切换）改为 `ChoiceRow`。
+
+**踩坑**：最初用 Miuix 的 `OverlayDropdownPreference` 做 `ChoiceRow`，在**词典管理这个 Compose
+Dialog 里点不开**（连续两次点击截图完全一致）；改用 Material3 `ExposedDropdownMenuBox`
+（同一窗口内的 Popup）后正常。
+
+**真机验证**：TTS 页 语速/音高/音量/引擎/循环次数 均显示下拉箭头、自动朗读与句读为开关；
+翻译页 翻译引擎 下拉展开列出 8 个引擎；词典管理 查询语言下拉展开列出 6 项，选「中文」后
+`shared_prefs` 写入 `dict_query_lang=zh`，「汉字优先」按条件隐藏，改回「自动」后写回 `auto`。
+
 ## 2026-10-08 会话（五十六）：翻译/Anki/TTS 设置改独立页（不再悬浮弹窗）
 
 用户要求：设置页的「翻译设置 / Anki 设置 / TTS 设置」入口点击后进入**独立页**，

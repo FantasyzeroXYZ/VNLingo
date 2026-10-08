@@ -38,6 +38,7 @@
     <string name="dict_han_priority">Han priority</string>
     <string name="dict_reading">Reading lookup</string>
     <string name="dict_reading_summary">When off, match by term only (Japanese only)</string>
+    <string name="dict_scope">Language scope</string>
     <string name="dict_scope_row">Language scope: %1$s</string>
     <string name="dict_scope_universal">All</string>
     <string name="dict_section_installed">Installed dictionaries (%1$d)</string>

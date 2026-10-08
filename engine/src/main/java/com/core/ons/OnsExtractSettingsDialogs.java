@@ -78,30 +78,21 @@ public final class OnsExtractSettingsDialogs {
         syncEngineCfg.run();
         styleNavValue(activity, engineCfgValue);
 
-        // 翻译引擎行：八引擎循环（API / 本地 / Google / Bing / DeepL / 百度 / Gemini / Claude）
-        TextView engineValue = new TextView(activity);
-        Runnable syncEngineText = () -> engineValue.setText(engineDisplayName(activity,
-                OnsTranslateClient.getEngine(activity)));
-        syncEngineText.run();
-        styleNavValue(activity, engineValue);
-        LinearLayout engineRow = settingNavRow(activity, R.drawable.ic_translate,
-                R.string.engine_ons_translate_engine, engineValue);
-        engineRow.setOnClickListener(v -> {
-            String[] engines = OnsTranslateClient.ENGINES;
-            String current = OnsTranslateClient.getEngine(activity);
-            int idx = 0;
-            for (int i = 0; i < engines.length; i++) {
-                if (engines[i].equals(current)) {
-                    idx = i;
-                    break;
-                }
-            }
-            String next = engines[(idx + 1) % engines.length];
-            OnsTranslateClient.prefs(activity).edit()
-                    .putString(OnsTranslateClient.KEY_ENGINE, next).apply();
-            syncEngineText.run();
-            syncEngineCfg.run();
-        });
+        // 翻译引擎行：下拉选择（八引擎：API / 本地 / Google / Bing / DeepL / 百度 / Gemini / Claude）
+        final java.util.List<String> engineLabels = new java.util.ArrayList<>();
+        for (String e : OnsTranslateClient.ENGINES) {
+            engineLabels.add(engineDisplayName(activity, e));
+        }
+        LinearLayout engineRow = SettingsWidgets.dropdownRow(activity, R.drawable.ic_translate,
+                activity.getString(R.string.engine_ons_translate_engine), engineLabels,
+                indexOfString(java.util.Arrays.asList(OnsTranslateClient.ENGINES),
+                        OnsTranslateClient.getEngine(activity)),
+                position -> {
+                    OnsTranslateClient.prefs(activity).edit()
+                            .putString(OnsTranslateClient.KEY_ENGINE,
+                                    OnsTranslateClient.ENGINES[position]).apply();
+                    syncEngineCfg.run();
+                });
         box.addView(engineRow);
 
         LinearLayout engineCfgRow = settingNavRow(activity, R.drawable.ic_settings,
@@ -416,47 +407,42 @@ public final class OnsExtractSettingsDialogs {
                 .show();
     }
 
-    /** 翻译测试：源/目标循环切换 + 输入 + 运行 + 结果。 */
+    /** 翻译测试：源/目标下拉选择 + 输入 + 运行 + 结果。 */
     public static void showTranslateTestDialog(Activity activity) {
         SharedPreferences p = OnsTranslateClient.prefs(activity);
         LinearLayout box = new LinearLayout(activity);
         box.setOrientation(LinearLayout.VERTICAL);
         int pad = dp(activity, 16);
         box.setPadding(pad, dp(activity, 8), pad, 0);
-        String[] srcCodes = {"auto", "zh", "en", "ja", "ko"};
-        String[][] codeNames = {{"zh", "中文"}, {"en", "英语"}, {"ja", "日语"}, {"ko", "韩语"}};
-        TextView srcView = new TextView(activity);
-        TextView tgtView = new TextView(activity);
-        Runnable syncLangs = () -> {
-            String src = p.getString(OnsTranslateClient.KEY_SOURCE, OnsTranslateClient.DEFAULT_SOURCE);
-            String srcName = "auto".equals(src)
-                    ? activity.getString(R.string.engine_ons_translate_auto)
-                    : codeName(codeNames, src);
-            srcView.setText(activity.getString(R.string.engine_ons_translate_src_set, srcName));
-            tgtView.setText(activity.getString(
-                    R.string.engine_ons_translate_tgt, codeName(codeNames, OnsTranslateClient.targetCode(activity))));
-        };
-        srcView.setTextColor(TEXT_BODY);
-        srcView.setTextSize(13);
+        final String[] srcCodes = {"auto", "zh", "en", "ja", "ko"};
+        final String[] tgtCodes = {"zh", "en", "ja", "ko"};
+        final String[][] codeNames = {{"zh", "中文"}, {"en", "英语"}, {"ja", "日语"}, {"ko", "韩语"}};
+        final java.util.List<String> srcLabels = new java.util.ArrayList<>();
+        for (String c : srcCodes) {
+            srcLabels.add("auto".equals(c)
+                    ? activity.getString(R.string.engine_ons_translate_auto) : codeName(codeNames, c));
+        }
+        final java.util.List<String> tgtLabels = new java.util.ArrayList<>();
+        for (String c : tgtCodes) tgtLabels.add(codeName(codeNames, c));
+
         int pad8 = dp(activity, 8);
-        srcView.setPadding(0, pad8, 0, 0);
-        srcView.setOnClickListener(v -> {
-            String cur = p.getString(OnsTranslateClient.KEY_SOURCE, OnsTranslateClient.DEFAULT_SOURCE);
-            p.edit().putString(OnsTranslateClient.KEY_SOURCE, nextCode(srcCodes, cur)).apply();
-            syncLangs.run();
-        });
-        box.addView(srcView);
-        tgtView.setTextColor(TEXT_BODY);
-        tgtView.setTextSize(13);
-        tgtView.setPadding(0, pad8, 0, 0);
-        tgtView.setOnClickListener(v -> {
-            String next = nextCode(new String[]{"zh", "en", "ja", "ko"},
-                    OnsTranslateClient.targetCode(activity));
-            p.edit().putString(OnsTranslateClient.KEY_TARGET, codeName(codeNames, next)).apply();
-            syncLangs.run();
-        });
-        box.addView(tgtView);
-        syncLangs.run();
+        String srcCur = p.getString(OnsTranslateClient.KEY_SOURCE, OnsTranslateClient.DEFAULT_SOURCE);
+        LinearLayout srcRow = SettingsWidgets.dropdownRow(activity, 0,
+                activity.getString(R.string.engine_ons_translate_src), srcLabels,
+                indexOfString(java.util.Arrays.asList(srcCodes), srcCur), position ->
+                        p.edit().putString(OnsTranslateClient.KEY_SOURCE, srcCodes[position]).apply());
+        srcRow.setPadding(0, pad8, 0, 0);
+        box.addView(srcRow);
+
+        LinearLayout tgtRow = SettingsWidgets.dropdownRow(activity, 0,
+                activity.getString(R.string.engine_ons_translate_tgt), tgtLabels,
+                indexOfString(java.util.Arrays.asList(tgtCodes),
+                        OnsTranslateClient.targetCode(activity)), position ->
+                        p.edit().putString(OnsTranslateClient.KEY_TARGET,
+                                codeName(codeNames, tgtCodes[position])).apply());
+        tgtRow.setPadding(0, pad8, 0, 0);
+        box.addView(tgtRow);
+
         EditText input = new EditText(activity);
         input.setHint(R.string.engine_ons_translate_test);
         input.setTextSize(13);
@@ -603,15 +589,6 @@ public final class OnsExtractSettingsDialogs {
             if (row[0].equals(code)) return row[1];
         }
         return code;
-    }
-
-    private static String nextCode(String[] codes, String current) {
-        for (int i = 0; i < codes.length; i++) {
-            if (codes[i].equals(current)) {
-                return codes[(i + 1) % codes.length];
-            }
-        }
-        return codes[0];
     }
 
     /** 弹窗内主操作按钮（全宽圆角）。 */
@@ -1374,11 +1351,6 @@ public final class OnsExtractSettingsDialogs {
                 .show();
     }
 
-    /** 档位循环辅助：取当前值的下一个（循环）。 */
-    private static int cycleIndex(int[] values, int current) {
-        return (current + 1) % values.length;
-    }
-
     /** TTS 设置（独立页内容）：引擎 / 语速 / 音高 / 音量 / 发音人 / MultiTTS 服务器 /
      *  HTTP 模板 / 试听。 */
     public static Page buildTtsPage(Activity activity) {
@@ -1421,51 +1393,26 @@ public final class OnsExtractSettingsDialogs {
             httpField.setEnabled(http);
         };
 
-        // 语速 / 音高 / 音量（0..100，步进 25 档位循环）
+        // 语速 / 音高 / 音量（0..100 五档，下拉选择）
         final int[] steps = {0, 25, 50, 75, 100};
-        final String[] stepLabels = {"0", "25", "50", "75", "100"};
+        final java.util.List<String> stepLabels = java.util.Arrays.asList("0", "25", "50", "75", "100");
 
-        TextView rateValue = new TextView(activity);
-        styleNavValue(activity, rateValue);
-        Runnable syncRate = () -> rateValue.setText(stepLabels[
-                indexOfStep(steps, OnsTtsEngines.rate(activity))]);
-        syncRate.run();
-        LinearLayout rateRow = settingNavRow(activity, R.drawable.ic_volume,
-                R.string.engine_ons_tts_rate, rateValue);
-        rateRow.setOnClickListener(v -> {
-            int i = indexOfStep(steps, OnsTtsEngines.rate(activity));
-            int next = steps[cycleIndex(steps, i)];
-            OnsTtsEngines.setRate(activity, next);
-            syncRate.run();
-        });
+        LinearLayout rateRow = SettingsWidgets.dropdownRow(activity, R.drawable.ic_volume,
+                activity.getString(R.string.engine_ons_tts_rate), stepLabels,
+                indexOfStep(steps, OnsTtsEngines.rate(activity)),
+                position -> OnsTtsEngines.setRate(activity, steps[position]));
         box.addView(rateRow);
 
-        TextView pitchValue = new TextView(activity);
-        styleNavValue(activity, pitchValue);
-        Runnable syncPitch = () -> pitchValue.setText(stepLabels[
-                indexOfStep(steps, OnsTtsEngines.pitch(activity))]);
-        syncPitch.run();
-        LinearLayout pitchRow = settingNavRow(activity, R.drawable.ic_volume,
-                R.string.engine_ons_tts_pitch, pitchValue);
-        pitchRow.setOnClickListener(v -> {
-            int i = indexOfStep(steps, OnsTtsEngines.pitch(activity));
-            OnsTtsEngines.setPitch(activity, steps[cycleIndex(steps, i)]);
-            syncPitch.run();
-        });
+        LinearLayout pitchRow = SettingsWidgets.dropdownRow(activity, R.drawable.ic_volume,
+                activity.getString(R.string.engine_ons_tts_pitch), stepLabels,
+                indexOfStep(steps, OnsTtsEngines.pitch(activity)),
+                position -> OnsTtsEngines.setPitch(activity, steps[position]));
         box.addView(pitchRow);
 
-        TextView volumeValue = new TextView(activity);
-        styleNavValue(activity, volumeValue);
-        Runnable syncVolume = () -> volumeValue.setText(stepLabels[
-                indexOfStep(steps, OnsTtsEngines.volume(activity))]);
-        syncVolume.run();
-        LinearLayout volumeRow = settingNavRow(activity, R.drawable.ic_volume,
-                R.string.engine_ons_tts_volume, volumeValue);
-        volumeRow.setOnClickListener(v -> {
-            int i = indexOfStep(steps, OnsTtsEngines.volume(activity));
-            OnsTtsEngines.setVolume(activity, steps[cycleIndex(steps, i)]);
-            syncVolume.run();
-        });
+        LinearLayout volumeRow = SettingsWidgets.dropdownRow(activity, R.drawable.ic_volume,
+                activity.getString(R.string.engine_ons_tts_volume), stepLabels,
+                indexOfStep(steps, OnsTtsEngines.volume(activity)),
+                position -> OnsTtsEngines.setVolume(activity, steps[position]));
         box.addView(volumeRow);
 
         // 发音人行：点击按当前引擎拉取发音人列表（后台）弹单选
@@ -1516,30 +1463,16 @@ public final class OnsExtractSettingsDialogs {
         });
         box.addView(hostRow);
 
-        // 引擎行 + HTTP 模板
-        TextView engineValue = new TextView(activity);
-        styleNavValue(activity, engineValue);
-        Runnable syncEngine = () -> {
-            int idx = 0;
-            for (int i = 0; i < engineKeys.length; i++) {
-                if (engineKeys[i].equals(engineState[0])) { idx = i; break; }
-            }
-            engineValue.setText(engineLabels[idx]);
-        };
-        syncEngine.run();
-        syncHttpVisibility.run();
-        LinearLayout engineRow = settingNavRow(activity, R.drawable.ic_volume,
-                R.string.engine_ons_tts_engine, engineValue);
-        engineRow.setOnClickListener(v -> {
-            int idx = 0;
-            for (int i = 0; i < engineKeys.length; i++) {
-                if (engineKeys[i].equals(engineState[0])) { idx = i; break; }
-            }
-            engineState[0] = engineKeys[(idx + 1) % engineKeys.length];
-            syncEngine.run();
-            syncHttpVisibility.run();
-            syncVoice.run();
-        });
+        // 引擎行：下拉选择（MultiTTS / HTTP / 系统）+ HTTP 模板
+        final java.util.List<String> ttsEngineLabels = java.util.Arrays.asList(engineLabels);
+        LinearLayout engineRow = SettingsWidgets.dropdownRow(activity, R.drawable.ic_volume,
+                activity.getString(R.string.engine_ons_tts_engine), ttsEngineLabels,
+                indexOfString(java.util.Arrays.asList(engineKeys), engineState[0]),
+                position -> {
+                    engineState[0] = engineKeys[position];
+                    syncHttpVisibility.run();
+                    syncVoice.run();
+                });
         box.addView(engineRow);
         box.addView(testHint, matchWrap());
         box.addView(testField, matchWrap());
@@ -1554,55 +1487,37 @@ public final class OnsExtractSettingsDialogs {
 
         // 自动朗读开关（无语音句自动 TTS；面板隐藏也生效——autoPlay 不依赖面板可见性）
         final boolean[] autoState = {com.core.ons.OnsTtsEngines.autoRead(activity)};
-        TextView autoValue = new TextView(activity);
-        styleNavValue(activity, autoValue);
-        Runnable syncAuto = () -> autoValue.setText(autoState[0]
-                ? activity.getString(R.string.engine_ons_anki_on)
-                : activity.getString(R.string.engine_ons_anki_off));
-        syncAuto.run();
-        LinearLayout autoRow = settingNavRow(activity, R.drawable.ic_volume,
-                R.string.engine_ons_tts_auto_read, autoValue);
-        autoRow.setOnClickListener(v -> {
-            autoState[0] = !autoState[0];
-            com.core.ons.OnsTtsEngines.setAutoRead(activity, autoState[0]);
-            syncAuto.run();
-        });
+        LinearLayout autoRow = SettingsWidgets.switchRow(activity, R.drawable.ic_volume,
+                activity.getString(R.string.engine_ons_tts_auto_read), autoState[0], value -> {
+                    autoState[0] = value;
+                    com.core.ons.OnsTtsEngines.setAutoRead(activity, value);
+                });
         box.addView(autoRow);
 
         // 句读模式（系统引擎）：按标点分段朗读，段间自然停顿
         android.content.SharedPreferences ttsP = activity.getSharedPreferences(
                 "ons_extract_tts", android.content.Context.MODE_PRIVATE);
         final boolean[] judouState = {ttsP.getBoolean("tts_judou", false)};
-        TextView judouValue = new TextView(activity);
-        styleNavValue(activity, judouValue);
-        Runnable syncJudou = () -> judouValue.setText(judouState[0]
-                ? activity.getString(R.string.engine_ons_anki_on)
-                : activity.getString(R.string.engine_ons_anki_off));
-        syncJudou.run();
-        LinearLayout judouRow = settingNavRow(activity, R.drawable.ic_volume,
-                R.string.engine_ons_tts_judou, judouValue);
-        judouRow.setOnClickListener(v -> {
-            judouState[0] = !judouState[0];
-            ttsP.edit().putBoolean("tts_judou", judouState[0]).apply();
-            syncJudou.run();
-        });
+        LinearLayout judouRow = SettingsWidgets.switchRow(activity, R.drawable.ic_volume,
+                activity.getString(R.string.engine_ons_tts_judou), judouState[0], value -> {
+                    judouState[0] = value;
+                    ttsP.edit().putBoolean("tts_judou", value).apply();
+                });
         box.addView(judouRow);
 
-        // 循环次数（0 = 不循环；点按循环 0→1→2→3→0）
+        // 循环次数（0 = 不循环；下拉选择 0/1/2/3）
         final int[] loopState = {ttsP.getInt("tts_loop", 0)};
-        TextView loopValue = new TextView(activity);
-        styleNavValue(activity, loopValue);
-        Runnable syncLoop = () -> loopValue.setText(loopState[0] == 0
-                ? activity.getString(R.string.engine_ons_tts_loop_off)
-                : activity.getString(R.string.engine_ons_tts_loop_n, loopState[0]));
-        syncLoop.run();
-        LinearLayout loopRow = settingNavRow(activity, R.drawable.ic_autorenew,
-                R.string.engine_ons_tts_loop, loopValue);
-        loopRow.setOnClickListener(v -> {
-            loopState[0] = (loopState[0] + 1) % 4;
-            ttsP.edit().putInt("tts_loop", loopState[0]).apply();
-            syncLoop.run();
-        });
+        final java.util.List<String> loopLabels = java.util.Arrays.asList(
+                activity.getString(R.string.engine_ons_tts_loop_off),
+                activity.getString(R.string.engine_ons_tts_loop_n, 1),
+                activity.getString(R.string.engine_ons_tts_loop_n, 2),
+                activity.getString(R.string.engine_ons_tts_loop_n, 3));
+        LinearLayout loopRow = SettingsWidgets.dropdownRow(activity, R.drawable.ic_autorenew,
+                activity.getString(R.string.engine_ons_tts_loop), loopLabels,
+                Math.max(0, Math.min(3, loopState[0])), position -> {
+                    loopState[0] = position;
+                    ttsP.edit().putInt("tts_loop", position).apply();
+                });
         box.addView(loopRow);
 
         // 试听行：用当前引擎 + 全部参数朗读测试句

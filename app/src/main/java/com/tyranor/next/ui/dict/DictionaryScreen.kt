@@ -20,7 +20,12 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.DropdownMenuItem
+import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.ExposedDropdownMenuBox
+import androidx.compose.material3.ExposedDropdownMenuDefaults
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.MenuAnchorType
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
@@ -431,28 +436,29 @@ fun DictionaryScreen(modifier: Modifier = Modifier) {
                                 color = MaterialTheme.colorScheme.onSurface,
                                 modifier = Modifier.padding(horizontal = 16.dp, vertical = 6.dp),
                             )
-                            CycleRow(
+                            ChoiceRow(
                                 title = stringResource(R.string.dict_query_lang),
-                                value = queryLangLabel(dictQueryLang),
-                                onNext = {
-                                    val idx = EngineSettingsStore.DICT_LANG_ORDER
-                                        .indexOf(dictQueryLang).coerceAtLeast(0)
-                                    dictQueryLang = EngineSettingsStore.DICT_LANG_ORDER[
-                                        (idx + 1) % EngineSettingsStore.DICT_LANG_ORDER.size]
+                                options = EngineSettingsStore.DICT_LANG_ORDER.map { queryLangLabel(it) },
+                                selectedIndex = EngineSettingsStore.DICT_LANG_ORDER
+                                    .indexOf(dictQueryLang).coerceAtLeast(0),
+                                onSelect = { index ->
+                                    dictQueryLang = EngineSettingsStore.DICT_LANG_ORDER[index]
                                     EngineSettingsStore.setDictQueryLang(context, dictQueryLang)
                                 },
                             )
                             if (EngineSettingsStore.DICT_LANG_AUTO == dictQueryLang) {
-                                CycleRow(
+                                ChoiceRow(
                                     title = stringResource(R.string.dict_han_priority),
-                                    value = if (dictHanPriority == EngineSettingsStore.DICT_HAN_ZH)
-                                        stringResource(R.string.dict_lang_zh)
-                                    else stringResource(R.string.dict_lang_ja),
-                                    onNext = {
-                                        dictHanPriority =
-                                            if (dictHanPriority == EngineSettingsStore.DICT_HAN_ZH)
-                                                EngineSettingsStore.DICT_HAN_JA
-                                            else EngineSettingsStore.DICT_HAN_ZH
+                                    options = listOf(
+                                        stringResource(R.string.dict_lang_ja),
+                                        stringResource(R.string.dict_lang_zh),
+                                    ),
+                                    selectedIndex =
+                                        if (dictHanPriority == EngineSettingsStore.DICT_HAN_ZH) 1 else 0,
+                                    onSelect = { index ->
+                                        dictHanPriority = if (index == 1)
+                                            EngineSettingsStore.DICT_HAN_ZH
+                                        else EngineSettingsStore.DICT_HAN_JA
                                         EngineSettingsStore.setDictHanPriority(context, dictHanPriority)
                                     },
                                 )
@@ -725,15 +731,13 @@ private fun DictRow(
                         modifier = Modifier.align(Alignment.CenterVertically),
                     )
                 }
-                // M4/G8 词典语言范围：点一次切下一个（全部→日本語→中文→한국어→English→Tiếng Việt）
-                TextButton(onClick = {
-                    val next = OnsDictStore.SCOPES[
-                        (OnsDictStore.SCOPES.indexOf(dict.scope).coerceAtLeast(0) + 1)
-                            % OnsDictStore.SCOPES.size]
-                    onScopeChanged(next)
-                }) {
-                    Text(stringResource(R.string.dict_scope_row, scopeLabel(dict.scope)))
-                }
+                // M4/G8 词典语言范围：下拉选择（全部→日本語→中文→한국어→English→Tiếng Việt）
+                ChoiceRow(
+                    title = stringResource(R.string.dict_scope),
+                    options = OnsDictStore.SCOPES.map { scopeLabel(it) },
+                    selectedIndex = OnsDictStore.SCOPES.indexOf(dict.scope).coerceAtLeast(0),
+                    onSelect = { index -> onScopeChanged(OnsDictStore.SCOPES[index]) },
+                )
                 TextButton(onClick = onDelete) {
                     Text(stringResource(R.string.common_delete), color = MaterialTheme.colorScheme.error)
                 }
@@ -764,17 +768,53 @@ private fun queryLangLabel(lang: String): String = when (lang) {
     else -> stringResource(R.string.dict_lang_auto)
 }
 
-/** 单行循环选择（点击切下一个取值）；与设置页的选择行交互一致。 */
+/**
+ * 下拉选择行（设置项一律下拉，不做点击循环）。
+ *
+ * 用 Material3 的 ExposedDropdownMenuBox 而不是 Miuix 的 OverlayDropdownPreference：
+ * 词典管理是 Compose Dialog，Miuix 的浮层在弹窗里点不出来（实测两次点击无反应），
+ * Material3 的菜单是同一窗口内的 Popup，弹窗里正常。
+ */
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
-private fun CycleRow(title: String, value: String, onNext: () -> Unit) {
-    Row(
-        verticalAlignment = Alignment.CenterVertically,
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(horizontal = 16.dp, vertical = 6.dp),
+private fun ChoiceRow(
+    title: String,
+    options: List<String>,
+    selectedIndex: Int,
+    onSelect: (Int) -> Unit,
+) {
+    var expanded by remember { mutableStateOf(false) }
+    val safeIndex = selectedIndex.coerceIn(0, (options.size - 1).coerceAtLeast(0))
+    ExposedDropdownMenuBox(
+        expanded = expanded,
+        onExpandedChange = { expanded = it },
+        modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 4.dp),
     ) {
-        Text(title, style = MaterialTheme.typography.bodyLarge, modifier = Modifier.weight(1f))
-        TextButton(onClick = onNext) { Text("$value ▾") }
+        OutlinedTextField(
+            value = options.getOrElse(safeIndex) { "" },
+            onValueChange = {},
+            readOnly = true,
+            singleLine = true,
+            label = { Text(title) },
+            trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = expanded) },
+            modifier = Modifier
+                .fillMaxWidth()
+                .menuAnchor(MenuAnchorType.PrimaryNotEditable),
+        )
+        ExposedDropdownMenu(
+            expanded = expanded,
+            onDismissRequest = { expanded = false },
+        ) {
+            options.forEachIndexed { index, label ->
+                DropdownMenuItem(
+                    text = { Text(label) },
+                    onClick = {
+                        expanded = false
+                        onSelect(index)
+                    },
+                )
+            }
+        }
     }
 }
 

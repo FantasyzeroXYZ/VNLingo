@@ -833,3 +833,19 @@
    翻译/Anki/TTS 之前是悬浮弹窗，风格割裂；新增 Activity 后要与之一致地设置
    浅色状态栏与导航栏底色。
 
+## 实测踩坑（2026-10-08 会话五十七新增：下拉选择控件）
+
+1. **Miuix 的 `OverlayDropdownPreference` 在 Compose Dialog 里点不开**：它依赖自己的浮层宿主，
+   放进 `AppAlertDialog`（Compose Dialog）后点击无任何反应（连续两次点击截图完全相同，可据此
+   判定「没弹出来」）。**弹窗内的下拉要用 Material3 `ExposedDropdownMenuBox`**（同一窗口内的
+   Popup）；Miuix 那个只在普通页面（设置页）可用。
+2. **`Modifier.menuAnchor()` 需要类型参数**：Compose BOM 2026.05 对应的 Material3 里必须写
+   `menuAnchor(MenuAnchorType.PrimaryNotEditable)`，只读下拉否则编译不过。
+3. **设置控件要有统一层**：循环选择散落在各弹窗里，改起来容易漏。engine 侧新增
+   `SettingsWidgets.dropdownRow/switchRow`，之后所有设置行都走它；
+   **改完记得删掉旧的循环辅助函数**（`nextStep/nextCode/cycleIndex`），否则很容易又被拿去写循环。
+4. **Spinner 首次布局也会回调 `onItemSelected`**：回调里若直接写配置，会在打开页面时
+   重写一遍当前值（同值，无害），但不要在回调里做重活（如重建整页）。
+5. **工具栏快捷键与设置行是两回事**：右缘面板的「透明度」按钮点按循环属于快捷操作，
+   保留循环；但设置弹窗里的同名项必须是下拉（否则用户找不到「选一个值」的入口）。
+

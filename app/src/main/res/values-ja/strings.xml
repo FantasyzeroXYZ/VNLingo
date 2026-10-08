@@ -38,6 +38,7 @@
     <string name="dict_han_priority">漢字の優先</string>
     <string name="dict_reading">読み検索</string>
     <string name="dict_reading_summary">オフにすると見出し語のみで検索します（日本語のみ有効）</string>
+    <string name="dict_scope">言語範囲</string>
     <string name="dict_scope_row">言語範囲：%1$s</string>
     <string name="dict_scope_universal">すべて</string>
     <string name="dict_section_installed">導入済み辞書（%1$d）</string>

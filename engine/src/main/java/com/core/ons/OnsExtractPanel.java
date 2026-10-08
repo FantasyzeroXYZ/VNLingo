@@ -708,21 +708,20 @@ public class OnsExtractPanel {
                     return multiTtsEnabled;
                 }));
 
-        // 语速行：显示当前百分比，点行循环档位（系统 TTS 与 MultiTTS 共用）
-        TextView rateValue = new TextView(activity);
-        Runnable syncRateText = () -> rateValue.setText(activity.getString(
-                R.string.engine_ons_extract_opacity_fmt, ttsRate));
-        syncRateText.run();
-        LinearLayout rateRow = settingNavRow(R.drawable.ic_volume,
-                R.string.engine_ons_extract_rate, rateValue);
-        rateRow.setOnClickListener(v -> {
-            ttsRate = nextStep(RATE_STEPS, ttsRate);
-            p.edit().putInt(KEY_TTS_RATE, ttsRate).apply();
-            syncRateText.run();
-            if (tts != null) {
-                try { tts.setSpeechRate(ttsRate / 100f); } catch (Throwable ignored) {}
-            }
-        });
+        // 语速行：下拉选择档位（系统 TTS 与 MultiTTS 共用）
+        final java.util.List<String> rateLabels = new java.util.ArrayList<>();
+        for (int step : RATE_STEPS) {
+            rateLabels.add(activity.getString(R.string.engine_ons_extract_opacity_fmt, step));
+        }
+        LinearLayout rateRow = SettingsWidgets.dropdownRow(activity, R.drawable.ic_volume,
+                activity.getString(R.string.engine_ons_extract_rate), rateLabels,
+                stepIndex(RATE_STEPS, ttsRate), position -> {
+                    ttsRate = RATE_STEPS[position];
+                    p.edit().putInt(KEY_TTS_RATE, ttsRate).apply();
+                    if (tts != null) {
+                        try { tts.setSpeechRate(ttsRate / 100f); } catch (Throwable ignored) {}
+                    }
+                });
         box.addView(rateRow);
 
         // 翻译 / 词典 / 云同步设置已移至应用「设置」页（产品调整：游戏内不再放配置类条目）
@@ -748,17 +747,22 @@ public class OnsExtractPanel {
                     return OnsHistoryOverlay.showing();
                 }));
 
-        // 透明度行：显示当前百分比，点行循环档位
-        TextView opacityValue = new TextView(activity);
-        Runnable updateOpacityText = () -> opacityValue.setText(activity.getString(
-                R.string.engine_ons_extract_opacity_fmt, panelOpacity));
-        updateOpacityText.run();
-        LinearLayout opacityRow = settingNavRow(R.drawable.ic_settings,
-                R.string.engine_ons_extract_opacity, opacityValue);
-        opacityRow.setOnClickListener(v -> {
-            cycleOpacity();
-            updateOpacityText.run();
-        });
+        // 透明度行：下拉选择档位
+        final java.util.List<String> opacityLabels = new java.util.ArrayList<>();
+        for (int step : OPACITY_STEPS) {
+            opacityLabels.add(activity.getString(R.string.engine_ons_extract_opacity_fmt, step));
+        }
+        LinearLayout opacityRow = SettingsWidgets.dropdownRow(activity, R.drawable.ic_settings,
+                activity.getString(R.string.engine_ons_extract_opacity), opacityLabels,
+                stepIndex(OPACITY_STEPS, panelOpacity), position -> {
+                    panelOpacity = OPACITY_STEPS[position];
+                    ttsPrefs().edit().putInt(KEY_OPACITY, panelOpacity).apply();
+                    if (opacityToggle != null) {
+                        opacityToggle.setText(activity.getString(
+                                R.string.engine_ons_extract_opacity_fmt, panelOpacity));
+                    }
+                    applyOpacity();
+                });
         box.addView(opacityRow);
 
         // 分区较多，内容整体可滚动（AlertDialog 不自动给自定义视图加滚动）
@@ -817,12 +821,12 @@ public class OnsExtractPanel {
         value.setMaxWidth(dp(170));
     }
 
-    private static int nextStep(int[] steps, int current) {
-        int index = 0;
+    /** 档位数组下标（找不到返回 0），供下拉框选中项定位。 */
+    private static int stepIndex(int[] steps, int value) {
         for (int i = 0; i < steps.length; i++) {
-            if (steps[i] == current) index = i;
+            if (steps[i] == value) return i;
         }
-        return steps[(index + 1) % steps.length];
+        return 0;
     }
 
     /** 设置行：图标 + 标题 + 开/关状态，点整行切换并同步面板开关按钮视觉。 */
@@ -2230,41 +2234,35 @@ public class OnsExtractPanel {
         box.setOrientation(LinearLayout.VERTICAL);
         int pad = dp(16);
         box.setPadding(pad, dp(8), pad, 0);
-        String[] srcCodes = {"auto", "zh", "en", "ja", "ko"};
-        String[][] codeNames = {{"zh", "中文"}, {"en", "英语"}, {"ja", "日语"}, {"ko", "韩语"}};
-        TextView srcView = new TextView(activity);
-        TextView tgtView = new TextView(activity);
-        Runnable syncLangs = () -> {
-            String src = p.getString(OnsTranslateClient.KEY_SOURCE, OnsTranslateClient.DEFAULT_SOURCE);
-            String srcName = "auto".equals(src)
-                    ? activity.getString(R.string.engine_ons_translate_auto)
-                    : codeName(codeNames, src);
-            srcView.setText(activity.getString(
-                    R.string.engine_ons_translate_src_set, srcName));
-            tgtView.setText(activity.getString(
-                    R.string.engine_ons_translate_tgt, codeName(codeNames, OnsTranslateClient.targetCode(activity))));
-        };
-        srcView.setTextColor(TEXT_BODY);
-        srcView.setTextSize(13);
+        final String[] srcCodes = {"auto", "zh", "en", "ja", "ko"};
+        final String[] tgtCodes = {"zh", "en", "ja", "ko"};
+        final String[][] codeNames = {{"zh", "中文"}, {"en", "英语"}, {"ja", "日语"}, {"ko", "韩语"}};
+        final java.util.List<String> srcLabels = new java.util.ArrayList<>();
+        for (String c : srcCodes) {
+            srcLabels.add("auto".equals(c)
+                    ? activity.getString(R.string.engine_ons_translate_auto) : codeName(codeNames, c));
+        }
+        final java.util.List<String> tgtLabels = new java.util.ArrayList<>();
+        for (String c : tgtCodes) tgtLabels.add(codeName(codeNames, c));
         int pad8 = dp(8);
-        srcView.setPadding(0, pad8, 0, 0);
-        srcView.setOnClickListener(v -> {
-            String cur = p.getString(OnsTranslateClient.KEY_SOURCE, OnsTranslateClient.DEFAULT_SOURCE);
-            p.edit().putString(OnsTranslateClient.KEY_SOURCE, nextCode(srcCodes, cur)).apply();
-            syncLangs.run();
-        });
-        box.addView(srcView);
-        tgtView.setTextColor(TEXT_BODY);
-        tgtView.setTextSize(13);
-        tgtView.setPadding(0, pad8, 0, 0);
-        tgtView.setOnClickListener(v -> {
-            String next = nextCode(new String[]{"zh", "en", "ja", "ko"},
-                    OnsTranslateClient.targetCode(activity));
-            p.edit().putString(OnsTranslateClient.KEY_TARGET, codeName(codeNames, next)).apply();
-            syncLangs.run();
-        });
-        box.addView(tgtView);
-        syncLangs.run();
+        String srcCur = p.getString(OnsTranslateClient.KEY_SOURCE, OnsTranslateClient.DEFAULT_SOURCE);
+        int srcIdx = 0;
+        for (int i = 0; i < srcCodes.length; i++) if (srcCodes[i].equals(srcCur)) srcIdx = i;
+        LinearLayout srcRow = SettingsWidgets.dropdownRow(activity, 0,
+                activity.getString(R.string.engine_ons_translate_src), srcLabels, srcIdx,
+                position -> p.edit().putString(
+                        OnsTranslateClient.KEY_SOURCE, srcCodes[position]).apply());
+        srcRow.setPadding(0, pad8, 0, 0);
+        box.addView(srcRow);
+        String tgtCur = OnsTranslateClient.targetCode(activity);
+        int tgtIdx = 0;
+        for (int i = 0; i < tgtCodes.length; i++) if (tgtCodes[i].equals(tgtCur)) tgtIdx = i;
+        LinearLayout tgtRow = SettingsWidgets.dropdownRow(activity, 0,
+                activity.getString(R.string.engine_ons_translate_tgt), tgtLabels, tgtIdx,
+                position -> p.edit().putString(OnsTranslateClient.KEY_TARGET,
+                        codeName(codeNames, tgtCodes[position])).apply());
+        tgtRow.setPadding(0, pad8, 0, 0);
+        box.addView(tgtRow);
         EditText input = new EditText(activity);
         input.setHint(R.string.engine_ons_translate_test);
         input.setTextSize(13);
@@ -2304,15 +2302,6 @@ public class OnsExtractPanel {
             if (row[0].equals(code)) return row[1];
         }
         return code;
-    }
-
-    private static String nextCode(String[] codes, String current) {
-        for (int i = 0; i < codes.length; i++) {
-            if (codes[i].equals(current)) {
-                return codes[(i + 1) % codes.length];
-            }
-        }
-        return codes[0];
     }
 
     /** 弹窗内主操作按钮（全宽圆角）。 */

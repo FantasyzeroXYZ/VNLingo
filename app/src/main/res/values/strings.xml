@@ -38,6 +38,7 @@
     <string name="dict_han_priority">汉字优先</string>
     <string name="dict_reading">读音查询</string>
     <string name="dict_reading_summary">关闭后只按词形查（仅日语有效）</string>
+    <string name="dict_scope">语言范围</string>
     <string name="dict_scope_row">语言范围：%1$s</string>
     <string name="dict_scope_universal">全部</string>
     <string name="dict_section_installed">已导入词典（%1$d）</string>
