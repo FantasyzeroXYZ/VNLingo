@@ -4,6 +4,39 @@
 > `docs/说明/游戏内提取制卡功能方案.md`（提取功能线方案）阅读。
 > 更新时间：2026-10-08
 
+## 2026-10-08 会话（五十五）：制卡要素名对齐参考（不再自造）
+
+用户指出：字段映射的内容不要乱加，对照 web game text 有的映射名称即可。
+
+核对参考：`web game text` 的 `src/domain/anki/field-mapper.ts` 只是 re-export
+`@trackreader/domain/anki/field-mapper`，源头在 TrackReader
+`packages/domain/src/anki/field-mapper.ts` 的 **`WORD_FIELDS`**（+ basic 方案用
+`BASIC_ELEMENT_KEYS`）。据此把我们的要素表改成**同名同标签**：
+
+| 参考 key / label | 我们之前 | 现在 |
+|---|---|---|
+| word 单词 | word 单词 | 同 |
+| reading 读音 | reading 读音 | 同 |
+| **definition 释义** | meaning 释义（自造 key） | 改 `definition` |
+| **audio 单词音频** | word_audio 单词语音 | 改 `audio` |
+| **sentence 句子** | sentence 例句 | label 改「句子」 |
+| **translation 句子翻译** | translation 译文 | label 改「句子翻译」 |
+| **sentenceAudio 句子音频** | sentence_audio 例句语音 | 改 `sentenceAudio` |
+| source 来源 | source 来源（游戏） | label 改「来源」 |
+| wordTags 单词标签 | word_tags | 改 `wordTags` |
+| **deinflection 词形还原** | deinflection 还原路径 | 同 key，label 改「词形还原」 |
+| **image 图片** | screenshot 截图 | 改 `image` |
+| — | page 整页（自造） | **删除** |
+| — | match_type 命中方式（自造） | **删除** |
+
+其它对齐：默认映射改为参考初值 `{word: 'Front', definition: 'Back'}`；读取时把旧 key
+（meaning/screenshot/sentence_audio/word_audio/word_tags）**迁移**到新 key，page/match_type
+丢弃；句卡不再把「截图+语音+整页」硬塞进前两个字段，改为与词卡同一套映射（句子/句子翻译/
+句子音频/图片/来源），一个要素都没映射时提示先配置。
+
+**真机验证**：制卡设置里要素行依次为 单词/读音/释义/单词音频/句子/句子翻译/句子音频/来源/
+单词标签/词形还原/图片（截图见 `.tmp/v11_elements3.png`）；牌组/模板下拉首项仍是「请选择…」。
+
 ## 2026-10-08 会话（五十四）：彻底去掉预设牌组/模板名
 
 用户指出：不要再预设自定义的牌组名/模板名（TyranorNext 之类）。根因是**默认值即隐式预设**：

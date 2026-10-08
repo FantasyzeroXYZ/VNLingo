@@ -225,19 +225,18 @@
     <string name="engine_ons_anki_on">开</string>
     <string name="engine_ons_anki_off">关</string>
     <string name="engine_ons_anki_slot_none">无</string>
+    <!-- 制卡要素名：必须与参考 web game text / TrackReader 的 WORD_FIELDS label 一致 -->
     <string name="engine_ons_anki_slot_word">单词</string>
     <string name="engine_ons_anki_slot_reading">读音</string>
-    <string name="engine_ons_anki_slot_meaning">释义</string>
-    <string name="engine_ons_anki_slot_sentence">例句</string>
-    <string name="engine_ons_anki_slot_page">整页</string>
-    <string name="engine_ons_anki_slot_translation">译文</string>
-    <string name="engine_ons_anki_slot_screenshot">截图</string>
-    <string name="engine_ons_anki_slot_sentence_audio">例句语音</string>
-    <string name="engine_ons_anki_slot_word_audio">单词语音</string>
+    <string name="engine_ons_anki_slot_definition">释义</string>
+    <string name="engine_ons_anki_slot_audio">单词音频</string>
+    <string name="engine_ons_anki_slot_sentence">句子</string>
+    <string name="engine_ons_anki_slot_translation">句子翻译</string>
+    <string name="engine_ons_anki_slot_sentence_audio">句子音频</string>
+    <string name="engine_ons_anki_slot_source">来源</string>
     <string name="engine_ons_anki_slot_word_tags">单词标签</string>
-    <string name="engine_ons_anki_slot_source">来源（游戏）</string>
-    <string name="engine_ons_anki_slot_deinflection">还原路径</string>
-    <string name="engine_ons_anki_slot_match_type">命中方式</string>
+    <string name="engine_ons_anki_slot_deinflection">词形还原</string>
+    <string name="engine_ons_anki_slot_image">图片</string>
     <string name="engine_ons_anki_card_read_failed">读取 AnkiDroid 数据失败</string>
     <string name="engine_ons_anki_card_keep_current">，保持当前配置：%1$s</string>
     <string name="engine_ons_anki_card_value_missing">当前配置的「%1$s」在 AnkiDroid 中不存在，请从下方重新选择</string>
@@ -251,6 +250,7 @@
     <string name="engine_ons_anki_manual_empty">至少填写一个字段</string>
     <string name="engine_ons_anki_manual_ok">已制卡</string>
     <string name="engine_ons_anki_manual_failed">制卡失败（检查 AnkiDroid 权限/牌组/模板）</string>
+    <string name="engine_ons_anki_need_field_map">该模板还没有映射任何要素：请先在「设置 → Anki 设置」里配置字段映射</string>
     <string name="engine_ons_anki_pick_placeholder">请选择…</string>
     <string name="engine_ons_anki_need_config">请先在「设置 → Anki 设置」里选择牌组与模板</string>
     <string name="engine_ons_anki_target_missing">牌组或模板在 AnkiDroid 中不存在（牌组 %1$s / 模板 %2$s），请重新选择</string>

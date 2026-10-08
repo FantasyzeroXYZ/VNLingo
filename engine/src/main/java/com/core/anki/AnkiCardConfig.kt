@@ -13,21 +13,21 @@ import android.content.Context
 object AnkiCardConfig {
 
     // ---- 逻辑槽位（fieldMap 的 key）----
-    const val SLOT_WORD = "word"                 // 查词词（释义命中的词）
-    const val SLOT_READING = "reading"           // 读音
-    const val SLOT_MEANING = "meaning"           // 释义（HTML）
-    const val SLOT_SENTENCE = "sentence"         // 当前句
-    const val SLOT_PAGE = "page"                 // 整页文本
-    const val SLOT_TRANSLATION = "translation"   // 译文（有则填）
-    const val SLOT_SCREENSHOT = "screenshot"     // 游戏截图 <img>
-    const val SLOT_SENTENCE_AUDIO = "sentence_audio" // 例句语音 [sound:]（游戏配对优先，回退 TTS）
-    const val SLOT_WORD_AUDIO = "word_audio"     // 单词语音 [sound:]（TTS）
-    const val SLOT_WORD_TAGS = "word_tags"       // 单词标签（查词词典名）
-    const val SLOT_SOURCE = "source"             // 来源（游戏显示名）
-    /** M6：还原路径（如 `-te→v1`；查表还原为 `table`；非还原命中为空）。 */
-    const val SLOT_DEINFLECTION = "deinflection"
-    /** M6：命中方式（term/reading/table-deinflect/deinflect-term/deinflect-reading）。 */
-    const val SLOT_MATCH_TYPE = "match_type"
+    // **必须与参考 web game text / TrackReader 的要素表一致**
+    // （packages/domain/src/anki/field-mapper.ts 的 WORD_FIELDS：word / reading /
+    // definition / audio / sentence / translation / sentenceAudio / source /
+    // wordTags / deinflection / image …）。不自造 key：新增要素要先在参考侧存在。
+    const val SLOT_WORD = "word"                     // 单词
+    const val SLOT_READING = "reading"               // 读音
+    const val SLOT_DEFINITION = "definition"         // 释义（HTML）
+    const val SLOT_AUDIO = "audio"                   // 单词音频 [sound:]（TTS）
+    const val SLOT_SENTENCE = "sentence"             // 句子
+    const val SLOT_TRANSLATION = "translation"       // 句子翻译
+    const val SLOT_SENTENCE_AUDIO = "sentenceAudio"  // 句子音频 [sound:]（游戏配对优先，回退 TTS）
+    const val SLOT_SOURCE = "source"                 // 来源
+    const val SLOT_WORD_TAGS = "wordTags"            // 单词标签（查词词典名）
+    const val SLOT_DEINFLECTION = "deinflection"     // 词形还原（还原路径文本）
+    const val SLOT_IMAGE = "image"                   // 图片（游戏截图 <img>）
 
     // ---- 语音源策略 ----
     const val VOICE_AUTO = "auto"   // 游戏配对语音优先，无则 TTS
@@ -46,12 +46,23 @@ object AnkiCardConfig {
     // 不预设任何牌组/模板名：必须由用户从 AnkiDroid 现有内容里选择。
     // 未选择时返回空串，制卡入口据此提示「先选择」，绝不自动创建同名牌组/模板。
 
-    /** 默认字段映射（仅当用户还没保存过映射时使用；保存时会按模板真实字段裁剪）。 */
+    /**
+     * 默认映射：与参考 web game text 一致（`{ word: 'Front', reading: '', definition:
+     * 'Back', sentence: '' }`，见 reference `domain/settings` 的 ankiFieldMap 初值）。
+     * 用户没保存过映射时按它填；模板字段不同时在制卡设置里改。
+     */
     val DEFAULT_FIELD_MAP: Map<String, String> = mapOf(
-        SLOT_WORD to "Word",
-        SLOT_READING to "Reading",
-        SLOT_MEANING to "Meaning",
-        SLOT_SENTENCE to "Sentence",
+        SLOT_WORD to "Front",
+        SLOT_DEFINITION to "Back",
+    )
+
+    /** 旧版本自造 key → 参考要素 key（读取时迁移，避免老配置失效）。 */
+    private val LEGACY_SLOT_KEYS: Map<String, String> = mapOf(
+        "meaning" to SLOT_DEFINITION,
+        "screenshot" to SLOT_IMAGE,
+        "sentence_audio" to SLOT_SENTENCE_AUDIO,
+        "word_audio" to SLOT_AUDIO,
+        "word_tags" to SLOT_WORD_TAGS,
     )
 
     private fun prefs(context: Context) =
@@ -75,7 +86,7 @@ object AnkiCardConfig {
         prefs(context).edit().putString(KEY_MODEL, model.trim()).apply()
     }
 
-    /** 槽位 → Anki 模型字段名；未配置时返回默认映射。 */
+    /** 槽位 → Anki 模型字段名；未配置时返回默认映射。旧 key 读取时自动迁移。 */
     @JvmStatic
     fun fieldMap(context: Context): Map<String, String> {
         val raw = prefs(context).getString(KEY_FIELD_MAP, null) ?: return DEFAULT_FIELD_MAP
@@ -84,9 +95,13 @@ object AnkiCardConfig {
             val obj = org.json.JSONObject(raw)
             val keys = obj.keys()
             while (keys.hasNext()) {
-                val k = keys.next()
-                val v = obj.optString(k, "")
-                if (v.isNotEmpty()) out[k] = v
+                val rawKey = keys.next()
+                val v = obj.optString(rawKey, "")
+                if (v.isEmpty()) continue
+                val k = LEGACY_SLOT_KEYS[rawKey] ?: rawKey
+                // 已废弃的自造要素（page / match_type）不再迁移：它们不在参考要素表里
+                if (rawKey == "page" || rawKey == "match_type") continue
+                out[k] = v
             }
             if (out.isEmpty()) DEFAULT_FIELD_MAP else out
         }.getOrDefault(DEFAULT_FIELD_MAP)

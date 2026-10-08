@@ -1831,26 +1831,22 @@ public class OnsExtractPanel {
                 java.util.Map<String, String> slots = new java.util.LinkedHashMap<>();
                 slots.put(com.core.anki.AnkiCardConfig.SLOT_WORD, term);
                 slots.put(com.core.anki.AnkiCardConfig.SLOT_READING, reading);
-                slots.put(com.core.anki.AnkiCardConfig.SLOT_MEANING, meaning.toString());
+                slots.put(com.core.anki.AnkiCardConfig.SLOT_DEFINITION, meaning.toString());
                 slots.put(com.core.anki.AnkiCardConfig.SLOT_SENTENCE,
                         android.text.Html.escapeHtml(sentence));
-                slots.put(com.core.anki.AnkiCardConfig.SLOT_PAGE,
-                        android.text.Html.escapeHtml(bridge.getPageText()));
                 slots.put(com.core.anki.AnkiCardConfig.SLOT_TRANSLATION,
                         lastTranslation == null ? "" : lastTranslation);
-                // 新槽位：单词标签（查词词典名）+ 来源（游戏显示名）；未映射时内容闲置
+                // 单词标签（查词词典名）+ 来源（游戏显示名）+ 词形还原路径；未映射时内容闲置
                 slots.put(com.core.anki.AnkiCardConfig.SLOT_WORD_TAGS,
                         com.core.ons.OnsDictStore.get().getDictName());
-                // M6 槽位：还原路径 + 命中方式（非还原命中为空串）
                 slots.put(com.core.anki.AnkiCardConfig.SLOT_DEINFLECTION, defPath);
-                slots.put(com.core.anki.AnkiCardConfig.SLOT_MATCH_TYPE, defMatchType);
                 slots.put(com.core.anki.AnkiCardConfig.SLOT_SOURCE, getGameDisplayName());
 
                 File dir = new File(activity.getExternalFilesDir(null), "extract");
                 dir.mkdirs();
 
                 // 截图槽位：制卡时现截（主线程同步等待），失败回退最近一张手动截图
-                String shotField = fieldMap.get(com.core.anki.AnkiCardConfig.SLOT_SCREENSHOT);
+                String shotField = fieldMap.get(com.core.anki.AnkiCardConfig.SLOT_IMAGE);
                 if (shotField != null && !shotField.isEmpty()) {
                     Bitmap shot = captureOnCard ? captureGameFrame(2500) : null;
                     if (shot == null) shot = bridge.getScreenshot();
@@ -1862,7 +1858,7 @@ public class OnsExtractPanel {
                             }
                             String mark = helper.addMedia(png, png.getName(), "image");
                             if (mark != null) {
-                                slots.put(com.core.anki.AnkiCardConfig.SLOT_SCREENSHOT, mark);
+                                slots.put(com.core.anki.AnkiCardConfig.SLOT_IMAGE, mark);
                             }
                         } catch (Throwable t) {
                             Log.w(TAG, "card screenshot import failed", t);
@@ -1899,7 +1895,7 @@ public class OnsExtractPanel {
                 }
 
                 // 单词语音槽位：TTS 生成
-                String wordAudioField = fieldMap.get(com.core.anki.AnkiCardConfig.SLOT_WORD_AUDIO);
+                String wordAudioField = fieldMap.get(com.core.anki.AnkiCardConfig.SLOT_AUDIO);
                 if (wordAudioField != null && !wordAudioField.isEmpty()) {
                     byte[] wav = ttsSynthesizeQuiet(term);
                     if (wav != null) {
@@ -1910,7 +1906,7 @@ public class OnsExtractPanel {
                             }
                             String mark = helper.addMedia(vf, vf.getName(), "audio");
                             if (mark != null) {
-                                slots.put(com.core.anki.AnkiCardConfig.SLOT_WORD_AUDIO, mark);
+                                slots.put(com.core.anki.AnkiCardConfig.SLOT_AUDIO, mark);
                             }
                         } catch (Throwable t) {
                             Log.w(TAG, "card word audio import failed", t);
@@ -3027,14 +3023,14 @@ public class OnsExtractPanel {
     }
 
     /**
-     * AnkiDroid 一键制卡（句卡）：Front=当前句，Back=整页文本 + 截图 + 语音（有则带上）。
+     * AnkiDroid 一键制卡（句卡）：按「字段映射」把 句子/句子翻译/句子音频/图片/来源
+     * 写进对应字段（与词卡同一套参考要素；整页文本不再是要素）。
      * ContentProvider 调用与媒体拷贝较慢，整体放后台线程执行。
      */
     private void sendToAnki() {
         final ExtractFacade bridge = facade;
         final String sentence = bridge.getSentenceText().isEmpty()
                 ? bridge.getPageText() : bridge.getSentenceText();
-        final String page = bridge.getPageText();
         final String voiceName = bridge.getVoiceName();
         if (sentence.isEmpty()) {
             toast(R.string.engine_ons_extract_no_text);
@@ -3070,24 +3066,29 @@ public class OnsExtractPanel {
                     return;
                 }
 
-                StringBuilder back = new StringBuilder();
+                // 句卡也走字段映射（与词卡同一套参考要素）：句子 / 句子翻译 / 句子音频 /
+                // 图片 / 来源；未映射到的内容不写（不再把截图+语音硬塞进第二个字段）
+                java.util.Map<String, String> slots = new java.util.LinkedHashMap<>();
+                slots.put(com.core.anki.AnkiCardConfig.SLOT_SENTENCE,
+                        android.text.Html.escapeHtml(sentence));
+                if (lastTranslation != null && !lastTranslation.isEmpty()) {
+                    slots.put(com.core.anki.AnkiCardConfig.SLOT_TRANSLATION, lastTranslation);
+                }
+                slots.put(com.core.anki.AnkiCardConfig.SLOT_SOURCE, getGameDisplayName());
+
                 File dir = new File(activity.getExternalFilesDir(null), "extract");
                 dir.mkdirs();
-                // 截图（最近一张）→ Back 顶部
+                // 图片（最近一张手动截图）
                 Bitmap shot = bridge.getScreenshot();
-                File shotFile = new File(dir, "anki_" + timestamp() + ".png");
-                boolean hasShot = false;
                 if (shot != null && !shot.isRecycled()) {
+                    File shotFile = new File(dir, "anki_" + timestamp() + ".png");
                     try (FileOutputStream fos = new FileOutputStream(shotFile)) {
                         shot.compress(Bitmap.CompressFormat.PNG, 95, fos);
                     }
                     String mark = helper.addMedia(shotFile, shotFile.getName(), "image");
-                    if (mark != null) {
-                        back.append(mark);
-                        hasShot = true;
-                    }
+                    if (mark != null) slots.put(com.core.anki.AnkiCardConfig.SLOT_IMAGE, mark);
                 }
-                // 语音
+                // 句子音频（配对语音）
                 byte[] voice = bridge.ensureVoiceBytes();
                 if (voice != null) {
                     String base = sanitize(voiceName);
@@ -3098,20 +3099,31 @@ public class OnsExtractPanel {
                     }
                     String mark = helper.addMedia(voiceFile, voiceFile.getName(), "audio");
                     if (mark != null) {
-                        if (hasShot) back.append("<br>");
-                        back.append(mark);
+                        slots.put(com.core.anki.AnkiCardConfig.SLOT_SENTENCE_AUDIO, mark);
                     }
                 }
-                // 整页文本
-                if (!page.isEmpty()) {
-                    back.append("<br><br>").append(android.text.Html.escapeHtml(page));
-                }
 
-                // 句卡按模板字段顺序填：首字段=当前句，次字段=截图+语音+整页，其余留空
+                // 按模板字段序装配：字段 → 映射到它的要素内容
+                java.util.Map<String, String> fieldMap = com.core.anki.AnkiCardConfig.fieldMap(activity);
+                java.util.Map<String, String> fieldToSlot = new java.util.LinkedHashMap<>();
+                for (java.util.Map.Entry<String, String> e : fieldMap.entrySet()) {
+                    if (!fieldToSlot.containsKey(e.getValue())) fieldToSlot.put(e.getValue(), e.getKey());
+                }
                 String[] values = new String[modelFields.length];
-                for (int i = 0; i < values.length; i++) values[i] = "";
-                values[0] = sentence;
-                values[1] = back.toString();
+                java.util.Arrays.fill(values, "");
+                boolean anyFilled = false;
+                for (int i = 0; i < modelFields.length; i++) {
+                    String slot = fieldToSlot.get(modelFields[i]);
+                    if (slot == null) continue;
+                    String content = slots.get(slot);
+                    if (content == null || content.isEmpty()) continue;
+                    values[i] = content;
+                    anyFilled = true;
+                }
+                if (!anyFilled) {
+                    main.post(() -> toast(R.string.engine_ons_anki_need_field_map));
+                    return;
+                }
                 Long noteId = helper.addNote(modelId, deckId, values, null);
                 main.post(() -> toast(noteId != null
                         ? R.string.engine_ons_extract_anki_added

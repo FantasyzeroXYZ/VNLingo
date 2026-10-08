@@ -801,3 +801,21 @@
 4. **模板换了要剔除失效映射**：字段映射保存时只保留「当前模板真实存在的字段」，
    否则换模板后旧字段名会留在配置里、制卡时被静默忽略。
 
+## 实测踩坑（2026-10-08 会话五十五新增：要素名必须照抄参考）
+
+1. **制卡要素 key/标签是「契约」，不能自造**：参考的表在 TrackReader
+   `packages/domain/src/anki/field-mapper.ts` 的 `WORD_FIELDS`（web game text 只是
+   re-export）。正确 key 是 `word/reading/definition/audio/sentence/translation/
+   sentenceAudio/source/wordTags/deinflection/image…`；我们之前自造的
+   `meaning`/`screenshot`/`sentence_audio`/`word_audio`/`word_tags` 以及凭方案文档加的
+   `page`/`match_type` 都不在表里。**加要素前先去参考表里找 key，找不到就不要加。**
+2. **改 key 要给老配置留迁移**：读取 `field_map` 时把旧 key 映射到新 key
+   （meaning→definition、screenshot→image、sentence_audio→sentenceAudio、
+   word_audio→audio、word_tags→wordTags），并丢弃已废弃的 page/match_type；
+   否则用户原来的映射会静默失效。
+3. **默认映射也照参考**：参考 settings 的初值是
+   `{ word: 'Front', reading: '', definition: 'Back', sentence: '' }`——默认只映射
+   word→Front、definition→Back，别自己编一套 "Word/Reading/Meaning/Sentence"。
+4. **同一套要素要贯穿所有制卡入口**：词卡与句卡都按 `field_map` 装配字段；
+   句卡此前把「截图+语音+整页」硬塞进前两个字段，既不跟映射走、也引用了不存在的 page 要素。
+

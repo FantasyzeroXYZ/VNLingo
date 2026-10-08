@@ -223,19 +223,18 @@
     <string name="engine_ons_anki_on">On</string>
     <string name="engine_ons_anki_off">Off</string>
     <string name="engine_ons_anki_slot_none">None</string>
+    <!-- Anki element names: must match the reference WORD_FIELDS labels -->
     <string name="engine_ons_anki_slot_word">Word</string>
     <string name="engine_ons_anki_slot_reading">Reading</string>
-    <string name="engine_ons_anki_slot_meaning">Meaning</string>
+    <string name="engine_ons_anki_slot_definition">Definition</string>
+    <string name="engine_ons_anki_slot_audio">Word audio</string>
     <string name="engine_ons_anki_slot_sentence">Sentence</string>
-    <string name="engine_ons_anki_slot_page">Page text</string>
-    <string name="engine_ons_anki_slot_translation">Translation</string>
-    <string name="engine_ons_anki_slot_screenshot">Screenshot</string>
+    <string name="engine_ons_anki_slot_translation">Sentence translation</string>
     <string name="engine_ons_anki_slot_sentence_audio">Sentence audio</string>
-    <string name="engine_ons_anki_slot_word_audio">Word audio</string>
+    <string name="engine_ons_anki_slot_source">Source</string>
     <string name="engine_ons_anki_slot_word_tags">Word tags</string>
-    <string name="engine_ons_anki_slot_source">Source (game)</string>
-    <string name="engine_ons_anki_slot_deinflection">Deinflection path</string>
-    <string name="engine_ons_anki_slot_match_type">Match type</string>
+    <string name="engine_ons_anki_slot_deinflection">Deinflection</string>
+    <string name="engine_ons_anki_slot_image">Image</string>
     <string name="engine_ons_anki_card_read_failed">Failed to read AnkiDroid data</string>
     <string name="engine_ons_anki_card_keep_current">, keeping current config: %1$s</string>
     <string name="engine_ons_anki_card_value_missing">Configured “%1$s” no longer exists in AnkiDroid — pick another below</string>
@@ -249,6 +248,7 @@
     <string name="engine_ons_anki_manual_empty">Fill in at least one field</string>
     <string name="engine_ons_anki_manual_ok">Card added</string>
     <string name="engine_ons_anki_manual_failed">Failed to add card (check AnkiDroid permission/deck/model)</string>
+    <string name="engine_ons_anki_need_field_map">No element is mapped for this model — configure the field map in Settings → Anki first</string>
     <string name="engine_ons_anki_pick_placeholder">Select…</string>
     <string name="engine_ons_anki_need_config">Pick a deck and model in Settings → Anki first</string>
     <string name="engine_ons_anki_target_missing">Deck or model no longer exists in AnkiDroid (deck %1$s / model %2$s) — pick again</string>

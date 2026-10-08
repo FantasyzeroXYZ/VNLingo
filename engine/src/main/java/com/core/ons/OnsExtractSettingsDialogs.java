@@ -882,30 +882,20 @@ public final class OnsExtractSettingsDialogs {
         box.addView(conflictBox, matchWrap());
         box.addView(fieldsContainer, matchWrap());
 
-        // 内容槽位全集（每行一个下拉框选择要填入的内容）
+        // 内容槽位全集：**与参考 web game text / TrackReader 的要素表一致**
+        // （field-mapper.ts WORD_FIELDS 的 key 与 label，basic 方案里本项目能填的那些）
         final String[] slotOrder = {null,
                 AnkiCardConfig.SLOT_WORD, AnkiCardConfig.SLOT_READING,
-                AnkiCardConfig.SLOT_MEANING, AnkiCardConfig.SLOT_SENTENCE,
-                AnkiCardConfig.SLOT_PAGE, AnkiCardConfig.SLOT_TRANSLATION,
-                AnkiCardConfig.SLOT_SCREENSHOT, AnkiCardConfig.SLOT_SENTENCE_AUDIO,
-                AnkiCardConfig.SLOT_WORD_AUDIO, AnkiCardConfig.SLOT_WORD_TAGS,
-                AnkiCardConfig.SLOT_SOURCE,
-                AnkiCardConfig.SLOT_DEINFLECTION, AnkiCardConfig.SLOT_MATCH_TYPE};
+                AnkiCardConfig.SLOT_DEFINITION, AnkiCardConfig.SLOT_AUDIO,
+                AnkiCardConfig.SLOT_SENTENCE, AnkiCardConfig.SLOT_TRANSLATION,
+                AnkiCardConfig.SLOT_SENTENCE_AUDIO, AnkiCardConfig.SLOT_SOURCE,
+                AnkiCardConfig.SLOT_WORD_TAGS, AnkiCardConfig.SLOT_DEINFLECTION,
+                AnkiCardConfig.SLOT_IMAGE};
         final java.util.List<String> slotLabels = new java.util.ArrayList<>();
         slotLabels.add(activity.getString(R.string.engine_ons_anki_slot_none));
-        slotLabels.add(activity.getString(R.string.engine_ons_anki_slot_word));
-        slotLabels.add(activity.getString(R.string.engine_ons_anki_slot_reading));
-        slotLabels.add(activity.getString(R.string.engine_ons_anki_slot_meaning));
-        slotLabels.add(activity.getString(R.string.engine_ons_anki_slot_sentence));
-        slotLabels.add(activity.getString(R.string.engine_ons_anki_slot_page));
-        slotLabels.add(activity.getString(R.string.engine_ons_anki_slot_translation));
-        slotLabels.add(activity.getString(R.string.engine_ons_anki_slot_screenshot));
-        slotLabels.add(activity.getString(R.string.engine_ons_anki_slot_sentence_audio));
-        slotLabels.add(activity.getString(R.string.engine_ons_anki_slot_word_audio));
-        slotLabels.add(activity.getString(R.string.engine_ons_anki_slot_word_tags));
-        slotLabels.add(activity.getString(R.string.engine_ons_anki_slot_source));
-        slotLabels.add(activity.getString(R.string.engine_ons_anki_slot_deinflection));
-        slotLabels.add(activity.getString(R.string.engine_ons_anki_slot_match_type));
+        for (int i = 1; i < slotOrder.length; i++) {
+            slotLabels.add(slotLabel(activity, slotOrder[i]));
+        }
 
         // 当前映射：**要素（槽位）→ 模型字段**（与 AnkiCardConfig 存储格式一致，
         // 也与本区「要素 → 字段」的方向一致）；null = 未映射
@@ -1303,21 +1293,19 @@ public final class OnsExtractSettingsDialogs {
                 .show();
     }
 
-    /** 要素（槽位）显示名（字段标注用）。 */
+    /** 要素（槽位）显示名：与参考要素表的 label 一致（见 AnkiCardConfig 顶部说明）。 */
     private static String slotLabel(Activity activity, String slot) {
         if (AnkiCardConfig.SLOT_WORD.equals(slot)) return activity.getString(R.string.engine_ons_anki_slot_word);
         if (AnkiCardConfig.SLOT_READING.equals(slot)) return activity.getString(R.string.engine_ons_anki_slot_reading);
-        if (AnkiCardConfig.SLOT_MEANING.equals(slot)) return activity.getString(R.string.engine_ons_anki_slot_meaning);
+        if (AnkiCardConfig.SLOT_DEFINITION.equals(slot)) return activity.getString(R.string.engine_ons_anki_slot_definition);
+        if (AnkiCardConfig.SLOT_AUDIO.equals(slot)) return activity.getString(R.string.engine_ons_anki_slot_audio);
         if (AnkiCardConfig.SLOT_SENTENCE.equals(slot)) return activity.getString(R.string.engine_ons_anki_slot_sentence);
-        if (AnkiCardConfig.SLOT_PAGE.equals(slot)) return activity.getString(R.string.engine_ons_anki_slot_page);
         if (AnkiCardConfig.SLOT_TRANSLATION.equals(slot)) return activity.getString(R.string.engine_ons_anki_slot_translation);
-        if (AnkiCardConfig.SLOT_SCREENSHOT.equals(slot)) return activity.getString(R.string.engine_ons_anki_slot_screenshot);
         if (AnkiCardConfig.SLOT_SENTENCE_AUDIO.equals(slot)) return activity.getString(R.string.engine_ons_anki_slot_sentence_audio);
-        if (AnkiCardConfig.SLOT_WORD_AUDIO.equals(slot)) return activity.getString(R.string.engine_ons_anki_slot_word_audio);
-        if (AnkiCardConfig.SLOT_WORD_TAGS.equals(slot)) return activity.getString(R.string.engine_ons_anki_slot_word_tags);
         if (AnkiCardConfig.SLOT_SOURCE.equals(slot)) return activity.getString(R.string.engine_ons_anki_slot_source);
+        if (AnkiCardConfig.SLOT_WORD_TAGS.equals(slot)) return activity.getString(R.string.engine_ons_anki_slot_word_tags);
         if (AnkiCardConfig.SLOT_DEINFLECTION.equals(slot)) return activity.getString(R.string.engine_ons_anki_slot_deinflection);
-        if (AnkiCardConfig.SLOT_MATCH_TYPE.equals(slot)) return activity.getString(R.string.engine_ons_anki_slot_match_type);
+        if (AnkiCardConfig.SLOT_IMAGE.equals(slot)) return activity.getString(R.string.engine_ons_anki_slot_image);
         return slot;
     }
 
