@@ -154,6 +154,11 @@
     <string name="sync_backup_import_choose">选择文件</string>
     <string name="sync_backup_import_done">备份导入完成</string>
     <string name="gamepad_settings_title">手柄设置</string>
+
+    <string name="panel_lookup_mode">剧情文本框查词方式（手柄）</string>
+    <string name="panel_lookup_mode_confirm">移动到词元后按确认键查词</string>
+    <string name="panel_lookup_mode_auto">移动到词元即查词</string>
+    <string name="panel_lookup_summary">手柄在剧情文本框里选词时的查词时机；两种方式查不到词都只更新面板状态，不弹提示。</string>
     <string name="gamepad_settings_summary">把手柄按键重映射为键盘或其他手柄按键；映射在游戏内即时生效。</string>
     <string name="gamepad_remap_action">映射</string>
     <string name="gamepad_unmapped">未映射</string>

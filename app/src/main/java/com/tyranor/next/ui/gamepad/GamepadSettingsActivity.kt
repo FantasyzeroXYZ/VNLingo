@@ -36,6 +36,7 @@ import androidx.compose.ui.unit.dp
 import com.core.engine.GamepadRemap
 import com.core.engine.PanelActionBindings
 import com.core.engine.VirtualMouseBindings
+import top.yukonga.miuix.kmp.preference.OverlayDropdownPreference
 import com.tyranor.next.R
 import com.tyranor.next.theme.AppComponentCornerRadius
 import com.tyranor.next.theme.MiuixSettingsTheme
@@ -272,6 +273,9 @@ private fun GamepadSettingsScreen(
             VirtualMouseBindings.ACTION_CONFIRM to R.string.vm_action_confirm,
         )
     }
+    var lookupMode by remember {
+        mutableStateOf(com.core.engine.PanelOptions.lookupMode(context))
+    }
     // 面板动作（剧情文本框）：与虚拟鼠标同款捕获式绑定（复刻方案 §3.3）
     val panelActions = remember(refreshKey) {
         listOf(
@@ -416,6 +420,36 @@ private fun GamepadSettingsScreen(
                                 style = MaterialTheme.typography.bodySmall,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                                 modifier = Modifier.padding(top = 4.dp),
+                            )
+                        }
+                    }
+                }
+                item {
+                    // 剧情文本框查词方式：放在面板动作区最前面（用户要求：设置页手柄设置里）
+                    MiuixCard(
+                        modifier = Modifier.fillMaxWidth().glassShadow().glassBorder(),
+                        cornerRadius = AppComponentCornerRadius,
+                    ) {
+                        Column(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp)) {
+                            OverlayDropdownPreference(
+                                title = stringResource(R.string.panel_lookup_mode),
+                                items = listOf(
+                                    stringResource(R.string.panel_lookup_mode_confirm),
+                                    stringResource(R.string.panel_lookup_mode_auto),
+                                ),
+                                selectedIndex =
+                                    if (lookupMode == com.core.engine.PanelOptions.LOOKUP_AUTO) 1 else 0,
+                                onSelectedIndexChange = { i ->
+                                    lookupMode = if (i == 1) com.core.engine.PanelOptions.LOOKUP_AUTO
+                                    else com.core.engine.PanelOptions.LOOKUP_CONFIRM
+                                    com.core.engine.PanelOptions.setLookupMode(context, lookupMode)
+                                },
+                            )
+                            Text(
+                                stringResource(R.string.panel_lookup_summary),
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                modifier = Modifier.padding(start = 16.dp, top = 2.dp, bottom = 6.dp),
                             )
                         }
                     }

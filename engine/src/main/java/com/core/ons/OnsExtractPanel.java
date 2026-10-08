@@ -1310,18 +1310,41 @@ public class OnsExtractPanel {
 
     /** 点选单元：高亮该单元，并以其起点做递减扫描查词。 */
     private void selectUnit(int idx, int start) {
+        selectUnit(idx, start, false);
+    }
+
+    /**
+     * 选中词元并查词。
+     *
+     * @param silentMiss true = 查不到词元时不弹「未查到」提示（手柄选词/确认查词的路径，
+     *                   用户要求手柄查词未命中不要弹窗；面板状态行仍会给轻提示）
+     */
+    private void selectUnit(int idx, int start, boolean silentMiss) {
         if (idx < 0 || idx >= unitRanges.size() || sentenceSpan == null) return;
         selectedToken = idx;
         matchedRange = null;
         matchedText = "";
         applyTokenSelection();
-        scanFrom(start);
+        scanFrom(start, silentMiss);
+    }
+
+    /** 只高亮词元、不查词（手柄「按确认键才查词」模式下的移动）。 */
+    private void highlightUnit(int idx) {
+        if (idx < 0 || idx >= unitRanges.size() || sentenceSpan == null) return;
+        selectedToken = idx;
+        matchedRange = null;
+        matchedText = "";
+        applyTokenSelection();
     }
 
     /** 后台扫描：结果刷新到释义区；代次号丢弃过期结果（快速连按选词）。
      *  扫描循环内也查代次——过期扫描立刻中止，不再空跑几十次词典查询；
      *  全程捕获异常：词典库异常（损坏/满盘）降级为无结果，不杀进程。 */
     private void scanFrom(final int startPos) {
+        scanFrom(startPos, false);
+    }
+
+    private void scanFrom(final int startPos, boolean silentMiss) {
         final int requestId = ++dictRequestId;
         final String text = currentSentence;
         scanExecutor.execute(() -> {
@@ -1341,6 +1364,14 @@ public class OnsExtractPanel {
                     com.core.diag.DiagLog.debug("dict", "miss in " + scanMs + "ms len=" + text.length());
                     // 已加载词典但未命中 ≠ 未导入词典：两句文案分开，避免误判成库为空
                     boolean noDict = !OnsDictStore.get().hasDictionary();
+                    // 手柄选词/确认查词（silentMiss）未命中时不弹「未查到」——
+                    // 用户要求：手柄在文本框里选词查不到词不要弹提示
+                    if (silentMiss && !noDict) {
+                        // 面板状态行给轻提示（不弹 toast）：手柄选词查不到词时只更新状态
+                        com.core.diag.DiagLog.debug("dict", "miss(silent,gamepad) len=" + text.length());
+                        main.post(this::refresh);
+                        return;
+                    }
                     main.post(() -> toast(noDict
                             ? R.string.engine_ons_extract_dict_none
                             : R.string.engine_ons_extract_def_none));
@@ -2556,7 +2587,8 @@ public class OnsExtractPanel {
         if (PanelActionBindings.matches(PanelActionBindings.PANEL_CONFIRM, code)) {
             // webgametxt 词典语义 确认=查词；未选词时回退播放（朗读/重播）
             if (!historyMode && selectedToken >= 0 && selectedToken < unitRanges.size()) {
-                selectUnit(selectedToken, unitRanges.get(selectedToken)[0]);
+                // 手柄确认查词：未命中不弹「未查到」提示（用户要求）
+                selectUnit(selectedToken, unitRanges.get(selectedToken)[0], true);
             } else {
                 playVoice();
             }
@@ -2643,7 +2675,14 @@ public class OnsExtractPanel {
             next = selectedToken + dir;
             if (next < 0 || next >= unitRanges.size()) return; // 已在边界
         }
-        selectUnit(next, unitRanges.get(next)[0]);
+        // 手柄查词方式（手柄设置页「剧情文本框查词」）：
+        // - 按确认键（默认）：移动只换高亮，按确认键才查词；
+        // - 移动到即查词：移动即查，且查不到不弹提示。
+        if (com.core.engine.PanelOptions.isAutoLookup(activity)) {
+            selectUnit(next, unitRanges.get(next)[0], true);
+        } else {
+            highlightUnit(next);
+        }
     }
 
     /** 两步退出（webgametxt B/Esc 语义）：先收释义区，再揭示听力文本/收面板。 */

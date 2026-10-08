@@ -155,6 +155,11 @@
     <string name="sync_backup_import_choose">Choose file</string>
     <string name="sync_backup_import_done">Backup imported</string>
     <string name="gamepad_settings_title">Gamepad</string>
+
+    <string name="panel_lookup_mode">Text-box lookup mode (gamepad)</string>
+    <string name="panel_lookup_mode_confirm">Look up after pressing confirm</string>
+    <string name="panel_lookup_mode_auto">Look up as soon as the token is selected</string>
+    <string name="panel_lookup_summary">When the gamepad looks up a word in the text box. With either mode a miss only updates the panel status line — no popup.</string>
     <string name="gamepad_settings_summary">Remap gamepad buttons to keyboard keys or other gamepad buttons; mappings apply in game immediately.</string>
     <string name="gamepad_remap_action">Remap</string>
     <string name="gamepad_unmapped">Unmapped</string>

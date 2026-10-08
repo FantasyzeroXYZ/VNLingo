@@ -4,6 +4,33 @@
 > `docs/说明/游戏内提取制卡功能方案.md`（提取功能线方案）阅读。
 > 更新时间：2026-10-09
 
+## 2026-10-09 会话（六十四）：手柄查词方式设置 + 未查到不弹提示；虚拟鼠标点击排查
+
+**用户要求三条**：① 手柄在文本框选词查不到词不要弹「未查到」提示；② 新增「移动到即查词 /
+按确认键查词」设置（放设置页的手柄设置里）；③ 虚拟鼠标的点击没效果。
+
+**①② 已完成**：
+
+- 新增 `engine/.../com/core/engine/PanelOptions.kt`（prefs `panel_options`，`MODE_MULTI_PROCESS`）：
+  `LOOKUP_CONFIRM`（默认，与旧行为一致）/ `LOOKUP_AUTO`；
+- `OnsExtractPanel`：`selectUnit(idx, start, silentMiss)` 与 `scanFrom(start, silentMiss)` 增加
+  静默未命中分支（只刷新面板状态行 + `DiagLog.debug("dict","miss(silent,gamepad)")`，不弹 toast；
+  「未导入词典」仍提示）；新增 `highlightUnit(idx)` 只换高亮不查词；
+- 手柄动作路径：`moveTokenSelection` 在「按确认键」模式下只高亮、在「移动即查」模式下高亮+查词
+  （静默）；`PANEL_CONFIRM` 命中时以静默方式查词——即**手柄侧查不到词一律不弹窗**；
+- 设置页（手柄设置 → 面板动作上方）新增下拉「剧情文本框查词方式（手柄）」+ 说明；三语言各 4 条字符串。
+
+**③ 虚拟鼠标点击排查结论**：
+
+- **Artemis（官方内核）点击不可能生效**：日志实测 `injectHostTouch down failed (official kernel?)`
+  + `UnsatisfiedLinkError: injectHostTouch`；代码里的兜底（钩子捕获的 `CArtemisTouch`
+  上合成 OnBegin/OnTouch/OnEnd）也走不通，因为 `artemisTouchState()` 拿不到对象（该内核没有钩子）。
+  出路：换用 **artemis-compat 内核**（导出 `injectHostTouch`，pluginVersion ≥ 32）。
+- **KRKR**：光标移动正常（截图可见光标随 D-pad 移动），合成的 down/up 触摸走
+  `surface.dispatchTouchEvent`；本轮多次尝试点击标题菜单未观察到反应，但**无法确认光标是否正好
+  落在菜单项文字上**（adb 只能逐格推动光标，步进 ~38px，难以精确对位），因此**点击是否可用
+  仍需人工用手柄/鼠标模式实测确认**。
+
 ## 2026-10-09 会话（六十三）：手柄链路真机验收（ONS 通过）+ Artemis 缺口定位
 
 **验收手段突破**：脚本点击驱动游戏极不稳（通知栏/SAF 抢焦点），改用**导出的快捷方式蹦床**

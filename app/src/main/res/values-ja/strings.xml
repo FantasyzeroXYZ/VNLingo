@@ -155,6 +155,11 @@
     <string name="sync_backup_import_choose">ファイルを選択</string>
     <string name="sync_backup_import_done">バックアップを読み込みました</string>
     <string name="gamepad_settings_title">コントローラー</string>
+
+    <string name="panel_lookup_mode">テキスト枠の検索方法（ゲームパッド）</string>
+    <string name="panel_lookup_mode_confirm">単語に移動して決定キーで検索</string>
+    <string name="panel_lookup_mode_auto">単語に移動した時点で検索</string>
+    <string name="panel_lookup_summary">ゲームパッドでテキスト枠の単語を検索するタイミング。どちらも見つからない場合はパネルの状態表示のみ更新し、ポップアップは出しません。</string>
     <string name="gamepad_settings_summary">ゲームパッドのボタンをキーボードや他のゲームパッドボタンにリマップします。ゲーム内ですぐに反映されます。</string>
     <string name="gamepad_remap_action">マッピング</string>
     <string name="gamepad_unmapped">未マッピング</string>
