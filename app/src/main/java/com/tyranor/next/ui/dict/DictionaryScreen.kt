@@ -357,6 +357,42 @@ fun DictionaryScreen(modifier: Modifier = Modifier) {
                     modifier = Modifier.fillMaxWidth().verticalScroll(rememberScrollState()),
                     verticalArrangement = Arrangement.spacedBy(12.dp),
                 ) {
+                    // ---- 已导入词典（主区，置于最前：入弹窗先看词典，再看设置/诊断）----
+                    // 注意：DictRow 自带卡片，这里**不能再套一层卡片**（卡中卡会显得脏乱）
+                    Text(
+                        stringResource(R.string.dict_section_installed, dicts.size),
+                        style = MaterialTheme.typography.titleSmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.padding(horizontal = 4.dp, vertical = 2.dp),
+                    )
+                    if (dicts.isEmpty()) {
+                        Text(
+                            stringResource(EngineR.string.engine_ons_dict_empty),
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 6.dp),
+                        )
+                    } else {
+                        dicts.forEach { dict ->
+                            DictRow(
+                                dict = dict,
+                                onEnabledChanged = { enabled ->
+                                    OnsDictStore.get().setEnabled(context, dict.id, enabled)
+                                    refresh()
+                                },
+                                onSetCurrent = {
+                                    OnsDictStore.get().setCurrent(context, dict.id)
+                                    refresh()
+                                },
+                                onDelete = { deleteTarget = dict },
+                                onScopeChanged = { scope ->
+                                    OnsDictStore.get().setDictScope(context, dict.id, scope)
+                                    refresh()
+                                },
+                            )
+                        }
+                    }
+                    // ---- 导入词典 ----
                     MiuixCard(
                         modifier = Modifier.fillMaxWidth().glassShadow().glassBorder(),
                         cornerRadius = AppComponentCornerRadius,
@@ -372,14 +408,6 @@ fun DictionaryScreen(modifier: Modifier = Modifier) {
                                 onClick = { if (!importing) importPicker.launch(arrayOf("*/*")) },
                             )
                         }
-                    }
-                    if (dicts.isEmpty()) {
-                        Text(
-                            stringResource(EngineR.string.engine_ons_dict_empty),
-                            style = MaterialTheme.typography.bodyMedium,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            modifier = Modifier.fillMaxWidth().padding(vertical = 8.dp),
-                        )
                     }
                     // ---- M4 查词设置（查询语言 / 读音查询 / 汉字优先）----
                     MiuixCard(
@@ -477,7 +505,8 @@ fun DictionaryScreen(modifier: Modifier = Modifier) {
                                                 // 查询测试要先 init（幂等，装载一次）
                                                 com.core.ons.OnsDeinflector.init(context)
                                                 formatLookupTest(OnsDictStore.get()
-                                                    .lookupDetailed(q, null, true, true, trace))
+                                                    .lookupDetailed(q, null, dictHanPriority,
+                                                        true, true, trace))
                                             }
                                             testResult = text
                                             testRunning = false
@@ -541,24 +570,6 @@ fun DictionaryScreen(modifier: Modifier = Modifier) {
                                 )
                             }
                         }
-                    }
-                    dicts.forEach { dict ->
-                        DictRow(
-                            dict = dict,
-                            onEnabledChanged = { enabled ->
-                                OnsDictStore.get().setEnabled(context, dict.id, enabled)
-                                refresh()
-                            },
-                            onSetCurrent = {
-                                OnsDictStore.get().setCurrent(context, dict.id)
-                                refresh()
-                            },
-                            onDelete = { deleteTarget = dict },
-                            onScopeChanged = { scope ->
-                                OnsDictStore.get().setDictScope(context, dict.id, scope)
-                                refresh()
-                            },
-                        )
                     }
                 }
             },
@@ -863,12 +874,22 @@ private val langChips = listOf(
 )
 
 /**
- * 词条语言启发式分类：
+ * 词条语言分类：**优先读词典 scope**（M4/G8 标注），未标注（universal）时退回文字脚本启发式。
+ *
+ * - scope=ja → 日本語；scope=zh → 中文；scope=en → 罗马字
+ * - scope=ko/vi 与 universal：无法用现有三个筛选桶表达 → 退回启发式
+ *
+ * 启发式兜底规则：
  * - 含假名（词条或读音）→ 日本語
  * - 词条纯 ASCII → 罗马字/英文（Yomichan 词典无此类，多为测试别名）
  * - 其余 CJK 词条 → 中文（中文词典/汉化词条）
  */
 private fun langOf(group: OnsDictStore.Group): LangFilter {
+    when (group.scope) {
+        "ja" -> return LangFilter.JA
+        "zh" -> return LangFilter.ZH
+        "en" -> return LangFilter.ROMAJI
+    }
     val term = group.term
     // 词条纯 ASCII：罗马字别名（日语词的 QWERTY 查询入口）——即使读音含假名也归罗马字
     if (term.none { it.code > 0x7F }) return LangFilter.ROMAJI

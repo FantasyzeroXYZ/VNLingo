@@ -4,6 +4,35 @@
 > `docs/说明/游戏内提取制卡功能方案.md`（提取功能线方案）阅读。
 > 更新时间：2026-10-08
 
+## 2026-10-08 会话（五十一）：方案逐条复查补漏 + 布局修复
+
+用户指出「不全，布局乱」，于是按方案 §3/§5/§6 **逐条**复查，补了原先被当成「遗留」的四项：
+
+1. **§3.5 工具函数移植**：新增 `JapaneseUtil`（`isCodePointKanji/Kana/Japanese`、
+   `isStringEntirelyKana`、`convertHiraganaToKatakana`、`convertKatakanaToHiragana`、
+   `convertHalfWidthKanaToFullWidth`、`getKanaMoraCount`），与参考 `japanese-util.ts`
+   打包导出**逐例对比 66/66 一致**（过程中发现我按常识多加了半角カナ/片假名拡張范围，
+   与参考差 3 个码点 → 改回严格对齐，另开 `isCodePointKanaExtended` 供语言分派用）。
+2. **§5「中文模式全角/NFKC 变体可命中」**：参考会丢弃 `score=0` 自匹配，zh 又无 transforms，
+   变体到不了查词层 → 在查询层补 ⑥ 变体兜底（term + reading 各查一次），
+   `lookupDetailed` 与面板扫描都接上。
+3. **§3.4 词典页 chips 读 scope**：`Group` 新增 `scope`（查询时 LEFT JOIN `dicts` 取回），
+   chips 优先读 scope，universal 退回脚本启发式。
+4. **§6 文档同步**：README 功能总览、`docs/guide/游戏内提取制卡功能方案.md` 词条、MEMORY
+   语言分派踩坑都已更新。
+
+**顺带修掉的真 bug**：旧预处理把半角浊点判成 `\uFF8E`（应为 `\uFF9E`），
+`ﾂﾂﾞｸ` 永远还原不出 `つづく`；现改由 `JapaneseUtil` 承担（顺带删掉重复实现）。
+
+**新增/复跑 harness**：`ProbeLookup`（真实词典库 31MB/66545 条）**14/14 PASS**——
+term / reading（つづく→続く）/ 规则还原（食べちゃった→食べる score=2）/
+变体兜底（ﾂﾂﾞｸ→つづく→続く）/ 全角英数变体 / scope 过滤（universal 恒可见、scope=ja 在 ko 下不可见）；
+`ProbeJpu` **66/66 一致**；`ProbeDeinflect` 复测 **15/15 一致**。
+
+**布局修复**：词典管理弹窗改为「已导入词典（N，纯文本小标题）→ 词典卡 → 导入词典 →
+查词设置 → 查询测试 → 词形还原语言包」，去掉卡中卡（`DictRow` 自身是卡片），
+真机截图确认（`.tmp/v7_layout3.png` / `v7_layout4.png`）。
+
 ## 2026-10-08 会话（五十）：词汇处理移植 V6（面板/制卡对接）+ 方案收尾
 
 - **链路打通**：`CandidateMatch.deinflectionPath` 新增 → `ScanHit` 带

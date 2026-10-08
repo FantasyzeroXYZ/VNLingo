@@ -40,6 +40,11 @@ public final class OnsDictStore {
         public String term = "";
         public String reading = "";
         public final List<String> glosses = new ArrayList<>();
+        /**
+         * 来源词典的语言范围（M4/G8）：universal / ja / zh / ko / en / vi。
+         * 词典页语言筛选优先读它，未标注（universal）时退回文字脚本启发式。
+         */
+        public String scope = SCOPE_UNIVERSAL;
     }
 
     /** 词典元信息（管理列表行）。 */
@@ -110,6 +115,33 @@ public final class OnsDictStore {
     /** 最近一次建索引耗时（ms；-1 = 本次进程尚未建过）。 */
     public static long getReadingIndexBuildMs() {
         return readingIndexBuildMs;
+    }
+
+    /**
+     * 指定库文件打开（harness 诊断入口）：与 {@link #db(Context)} 同样的初始化
+     * （tune/migrate/计数/kv），但不依赖 Context——真机 app_process 探针可直接对
+     * 拷贝出来的词典库验证完整查词链（term/reading/查表/还原/变体/范围过滤）。
+     */
+    public synchronized void initAt(String path) {
+        if (db != null) return;
+        db = SQLiteDatabase.openOrCreateDatabase(new java.io.File(path), null);
+        tune(db);
+        migrate(db);
+        Cursor c = db.rawQuery("SELECT COUNT(*) FROM entries", null);
+        if (c.moveToFirst()) entryCount = c.getInt(0);
+        c.close();
+        c = db.rawQuery("SELECT value FROM kv WHERE name='dict_name'", null);
+        if (c.moveToFirst()) dictName = c.getString(0);
+        c.close();
+        c = db.rawQuery("SELECT value FROM kv WHERE name='current_dict'", null);
+        if (c.moveToFirst()) {
+            try {
+                currentDictId = Long.parseLong(c.getString(0));
+            } catch (NumberFormatException ignored) {
+            }
+        }
+        c.close();
+        Log.i(TAG, "db opened at " + path + ": entries=" + entryCount);
     }
 
     private synchronized SQLiteDatabase db(Context context) {
@@ -761,12 +793,21 @@ public final class OnsDictStore {
      */
     public DetailedMatch lookupDetailed(String query, String languageHint, boolean deinflect,
                                         boolean reading, boolean trace) {
+        return lookupDetailed(query, languageHint, "ja", deinflect, reading, trace);
+    }
+
+    /**
+     * 同 {@link #lookupDetailed(String, String, boolean, boolean, boolean)}，
+     * 但「汉字优先」可指定（ja / zh，供词典页查询测试读设置）。
+     */
+    public DetailedMatch lookupDetailed(String query, String languageHint, String hanPriority,
+                                        boolean deinflect, boolean reading, boolean trace) {
         DetailedMatch out = new DetailedMatch();
         if (query == null) return out;
         String q = query.trim();
         out.query = q;
         if (q.isEmpty()) return out;
-        out.language = deinflectLanguage(q, languageHint);
+        out.language = deinflectLanguage(q, languageHint, hanPriority);
         final boolean ja = "ja".equals(out.language);
         try {
             for (int len = q.length(); len >= 1; len--) {
@@ -833,6 +874,37 @@ public final class OnsDictStore {
                         }
                     }
                 }
+                // ⑥ 预处理变体字面命中（兜底）：中文/越南语规则表为空，「全角→半角」「NFKC」
+                // 这类规范化变体不会成为还原候选（参考丢弃 score=0 自匹配），但计划验收要求
+                // 「中文模式下全角英数与 NFKC 变体可命中」。放在最后：只在前面全落空时生效，
+                // 不改变既有命中顺序（日语行为不变）。
+                java.util.List<String> variants = OnsDeinflector.preprocessVariants(prefix, out.language);
+                if (trace && !variants.isEmpty()) {
+                    out.trace.add(prefix + " 变体→" + variants.size());
+                }
+                for (String variant : variants) {
+                    groups = searchTermExact(variant, 12);
+                    if (trace) {
+                        out.trace.add(prefix + " 变体→" + variant
+                                + (groups.isEmpty() ? "-" : groups.size() + "组"));
+                    }
+                    if (!groups.isEmpty()) {
+                        fill(out, variant, "variant", "preprocess", 0, groups);
+                        return out;
+                    }
+                    // 变体同样值得按读音查一次（如 ﾂﾂﾞｸ → つづく → 続く）
+                    if (reading && ja) {
+                        groups = searchReadingExact(variant, 12);
+                        if (trace) {
+                            out.trace.add(prefix + " 变体读音→" + variant
+                                    + (groups.isEmpty() ? "-" : groups.size() + "组"));
+                        }
+                        if (!groups.isEmpty()) {
+                            fill(out, variant, "variant-reading", "preprocess", 0, groups);
+                            return out;
+                        }
+                    }
+                }
             }
         } catch (Throwable t) {
             Log.w(TAG, "lookupDetailed failed for " + q, t);
@@ -850,20 +922,18 @@ public final class OnsDictStore {
         out.groups.addAll(groups);
     }
 
-    /** 还原语言判定（M4 落地前的最小实现）：显式语言 → 采用；否则按脚本分派。 */
+    /** 还原语言判定：显式语言 → 采用；否则按脚本分派（与 OnsDeinflector.detectLanguage 同源）。 */
     private static String deinflectLanguage(String query, String languageHint) {
+        return deinflectLanguage(query, languageHint, "ja");
+    }
+
+    /** 同上，汉字归属可指定（「汉字优先」设置：ja / zh）。 */
+    private static String deinflectLanguage(String query, String languageHint, String hanPriority) {
         if (languageHint != null && !languageHint.isEmpty() && !"auto".equals(languageHint)) {
             return languageHint;
         }
-        for (int i = 0; i < query.length(); i++) {
-            int cp = query.codePointAt(i);
-            if ((cp >= 0x3041 && cp <= 0x30FF) || (cp >= 0x31F0 && cp <= 0x31FF)
-                    || (cp >= 0x4E00 && cp <= 0x9FFF) || (cp >= 0x3400 && cp <= 0x4DBF)) {
-                return "ja";
-            }
-            if ((cp >= 0xAC00 && cp <= 0xD7AF) || (cp >= 0x1100 && cp <= 0x11FF)) return "ko";
-        }
-        return "en";
+        String han = "zh".equals(hanPriority) ? "zh" : "ja";
+        return OnsDeinflector.detectLanguage(query, han);
     }
 
     /** 查词：对 query 取最长有命中前缀，返回该层的释义组（最多 maxGroups 组）。
@@ -1127,9 +1197,11 @@ public final class OnsDictStore {
         Cursor c = null;
         try {
             c = database.rawQuery(
-                    "SELECT term, reading, gloss, pop FROM entries WHERE dict_id IN ("
-                            + scopeFilter + ") AND " + column + " IN (" + valueFilter + ") "
-                            + "ORDER BY pop DESC LIMIT ?",
+                    "SELECT e.term, e.reading, e.gloss, e.pop, COALESCE(d.scope, '"
+                            + SCOPE_UNIVERSAL + "') FROM entries e"
+                            + " LEFT JOIN dicts d ON d.id = e.dict_id WHERE e.dict_id IN ("
+                            + scopeFilter + ") AND e." + column + " IN (" + valueFilter + ") "
+                            + "ORDER BY e.pop DESC LIMIT ?",
                     args);
             while (c.moveToNext()) {
                 String t = c.getString(0);
@@ -1140,6 +1212,7 @@ public final class OnsDictStore {
                     groups = new ArrayList<>();
                     out.put(key, groups);
                 }
+                String rowScope = c.getString(4);
                 Group g = null;
                 for (Group existing : groups) {
                     if (existing.term.equals(t) && existing.reading.equals(r)) {
@@ -1152,6 +1225,7 @@ public final class OnsDictStore {
                     g = new Group();
                     g.term = t;
                     g.reading = r;
+                    g.scope = rowScope == null || rowScope.isEmpty() ? SCOPE_UNIVERSAL : rowScope;
                     groups.add(g);
                 }
                 String gloss = c.getString(2);

@@ -287,10 +287,13 @@
       三 locale 文案；`scanByWordTwoPhase` 改 `deinflectDetailed` 保留路径；
       DiagLog 命中行加 `match=`/`path=`。真机实测
       `hit: 見て groups=1 match=deinflect-term path=v1` + 悬浮窗标题截图
-- [ ] 词汇处理遗留：词典页结果语言 chips 仍是脚本启发式，未按 `dicts.scope` 过滤结果
-      （需给 `OnsDictStore.Group` 带 dict_id）
+- [x] 词汇处理收尾补漏（会话五十一，按方案逐条复查）：`JapaneseUtil` 六函数
+      （vs 参考 66/66 一致）、查询层 ⑥ 预处理变体兜底（中文全角/NFKC 可命中）、
+      词典页 chips 优先读 `dicts.scope`、README/guide/MEMORY 文档同步；
+      顺带修掉半角浊点 `\uFF8E`→`\uFF9E` 的真 bug（半角假名此前永远还原不出假名形）
 - [ ] 词汇处理遗留：真实语言包（simplemma 导出的 de 等）端到端实测——本轮只用
       合成包验证了 store/导入器语义
+- [ ] 词汇处理遗留：词典导入时按 index.json 自动标注 scope（当前需用户手选）
 - [ ] 词汇处理增强（方案未要求）：中文全角/NFKC 变体目前只进预处理、不进候选，
       若要让「ＡＢＣ→ABC」真正命中，需在查询侧把预处理变体当字面 term 试查
 - [ ] 真机人工验收：词典页查询测试用**日文**用例（adb 无法注入日文输入）

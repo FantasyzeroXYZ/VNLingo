@@ -18,6 +18,9 @@ VNLingo 基于 **Tyranor Next**（多引擎 Galgame 聚合启动器）衍生，�
 
 - **提取面板（剧情文本框）**：当前句栏、配对语音 ♪、翻译行、历史回放、听力模式、暗色圆钮风格
 - **查词典**：Yomichan zip / MDX jsonl 导入，多词典管理，最长前缀 + 词形还原
+- **词形还原**：五语言规则表（ja 439 / en 40 / ko 124 条，与 TrackReader/Yomitan 规则逐字段一致）+
+  可导入的查表还原语言包；查询语言（自动/日本語/中文/한국어/English/Tiếng Việt）、读音查询、
+  汉字优先三项可全局设置并每游戏覆盖；词典可标注语言范围（scope），未标注一律视为通用
 - **翻译多源**：OpenAI 兼容 API、ML Kit 离线翻译、Google/Bing 免费端点、DeepL、百度翻译、Gemini、Claude（后四者与免费端点参考 MoeTranslate/overlay-translator 移植），内置翻译测试
 - **TTS 朗读**：系统 TextToSpeech 与 MultiTTS HTTP 合成双路径，自动朗读、语速调节
 - **AnkiDroid 制卡**：词卡/句卡一键入库（vendored 官方 API）

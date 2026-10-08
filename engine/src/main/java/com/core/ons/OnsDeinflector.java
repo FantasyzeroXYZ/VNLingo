@@ -315,6 +315,30 @@ public final class OnsDeinflector {
         return true;
     }
 
+    /**
+     * 该查询在该语言下的**预处理变体**（不含原文本身）。
+     *
+     * <p>用途：中文/越南语规则表为空，`deinflectDetailed` 会丢弃 score=0 的自匹配
+     * （对齐参考 `r.term === r.rawSource && r.score === 0` 的跳过逻辑），于是
+     * 「ＡＢＣ → ABC」「繁体 → 简体」这类规范化变体永远到不了查词层。计划验收要求
+     * 「中文模式下全角英数与 NFKC 变体可命中」，因此在查询层补一次**字面变体查表**：
+     * 只在前面的 term/reading/查表/规则还原都没命中时兜底，不影响既有命中顺序。
+     *
+     * @return 变体列表（去重、去原文；无变体时为空表）
+     */
+    public static List<String> preprocessVariants(String query, String languageHint) {
+        List<String> out = new ArrayList<>();
+        if (query == null || query.isEmpty()) return out;
+        LangRules lang = languageHint == null ? null : sLangs.get(languageHint);
+        if (lang == null) lang = selectLang(query);
+        if (lang == null) return out;
+        for (String variant : preprocess(query, lang)) {
+            if (variant == null || variant.isEmpty() || variant.equals(query)) continue;
+            if (!out.contains(variant)) out.add(variant);
+        }
+        return out;
+    }
+
     /** 语言分派（默认汉字归 ja）：假名→ja、谚文→ko、汉字→ja、其余→en。 */
     private static LangRules selectLang(String s) {
         return sLangs.get(detectLanguage(s, "ja"));
@@ -335,16 +359,11 @@ public final class OnsDeinflector {
         if (s == null) return "en";
         for (int i = 0; i < s.length(); i++) {
             int cp = s.codePointAt(i);
-            if ((cp >= 0x3041 && cp <= 0x30FF) || (cp >= 0x31F0 && cp <= 0x31FF)
-                    || (cp >= 0xFF66 && cp <= 0xFF9F)) {
-                return "ja";
-            }
+            if (JapaneseUtil.isCodePointKanaExtended(cp)) return "ja";
             if ((cp >= 0xAC00 && cp <= 0xD7AF) || (cp >= 0x1100 && cp <= 0x11FF)) {
                 return "ko";
             }
-            if ((cp >= 0x4E00 && cp <= 0x9FFF) || (cp >= 0x3400 && cp <= 0x4DBF)) {
-                return han;
-            }
+            if (JapaneseUtil.isCodePointKanji(cp)) return han;
         }
         return "en";
     }
@@ -446,11 +465,13 @@ public final class OnsDeinflector {
             case "結合文字の正規化":
                 return normalizeCombiningCharacters(text);
             case "半角→全角変換":
-                return convertHalfWidthKanaToFullWidth(text);
+                // 委托 JapaneseUtil（M5 移植）：本地旧实现把半角浊点判成 \uFF8E，
+                // 真正的「ﾞ」是 \uFF9E，导致 ﾂﾞ 这类永远合不成 ヅ（已修）
+                return JapaneseUtil.convertHalfWidthKanaToFullWidth(text);
             case "全角英数→半角英数":
                 return convertFullWidthAlphanumericToNormal(text);
             case "カタカナ→ひらがな":
-                return convertKatakanaToHiragana(text);
+                return JapaneseUtil.convertKatakanaToHiragana(text);
             case "強調音の畳み込み":
                 return collapseEmphaticSequences(text);
             case "繁体→简体":
@@ -486,36 +507,6 @@ public final class OnsDeinflector {
         return result.toString();
     }
 
-    private static final String HW = "ｧｨｩｪｫｬｭｮｯｰｱｲｳｴｵｶｷｸｹｺｻｼｽｾｿﾀﾁﾂﾃﾄﾅﾆﾇﾈﾉﾊﾋﾌﾍﾎﾏﾐﾑﾒﾓﾔﾕﾖﾗﾘﾙﾚﾛﾜｦﾝ";
-    private static final String FW = "ァィゥェォャュョッーアイウエオカキクケコサシスセソタチツテトナニヌネノハヒフヘホマミムメモヤユヨラリルレロワヲン";
-
-    private static String convertHalfWidthKanaToFullWidth(String text) {
-        StringBuilder result = new StringBuilder();
-        for (int i = 0; i < text.length(); i++) {
-            char ch = text.charAt(i);
-            Character next = i + 1 < text.length() ? Character.valueOf(text.charAt(i + 1)) : null;
-
-            // 濁点／半濁点処理（ﾞ +1 / ﾟ +2，仅可浊音段有效）
-            if (next != null && (next == '\uFF8E' || next == '\uFF9F')) {
-                int idx = HW.indexOf(ch);
-                if (idx >= 0) {
-                    char base = FW.charAt(idx);
-                    int baseCp = base;
-                    int offset = next == '\uFF8E' ? 1 : 2;
-                    if ((baseCp >= 0x30AB && baseCp <= 0x30C8)
-                            || (baseCp >= 0x30CF && baseCp <= 0x30DB)) {
-                        result.append((char) (baseCp + offset));
-                        i++;
-                        continue;
-                    }
-                }
-            }
-            int idx = HW.indexOf(ch);
-            result.append(idx >= 0 ? String.valueOf(FW.charAt(idx)) : String.valueOf(ch));
-        }
-        return result.toString();
-    }
-
     private static String convertFullWidthAlphanumericToNormal(String text) {
         StringBuilder result = new StringBuilder();
         for (int i = 0; i < text.length(); i++) {
@@ -526,61 +517,6 @@ public final class OnsDeinflector {
             else result.append(c);
         }
         return result.toString();
-    }
-
-    private static char getProlongedHiragana(char prevChar) {
-        switch (prevChar) {
-            case 'あ': case 'か': case 'さ': case 'た': case 'な':
-            case 'は': case 'ま': case 'や': case 'ら': case 'わ':
-                return 'あ';
-            case 'い': case 'き': case 'し': case 'ち': case 'に':
-            case 'ひ': case 'み': case 'り':
-                return 'い';
-            case 'う': case 'く': case 'す': case 'つ': case 'ぬ':
-            case 'ふ': case 'む': case 'ゆ': case 'る':
-                return 'う';
-            case 'え': case 'け': case 'せ': case 'て': case 'ね':
-            case 'へ': case 'め': case 'れ':
-                return 'え';
-            case 'お': case 'こ': case 'そ': case 'と': case 'の':
-            case 'ほ': case 'も': case 'よ': case 'ろ': case 'を':
-                return 'お';
-            default:
-                return prevChar;
-        }
-    }
-
-    /** 片仮名 → 平仮名（長音符按前字母音跟随；半角カナ先转全角）。 */
-    private static String convertKatakanaToHiragana(String text) {
-        StringBuilder result = new StringBuilder();
-        final int offset = 0x3041 - 0x30A1;
-        for (int i = 0; i < text.length(); i++) {
-            int cp = text.codePointAt(i);
-            if (cp == 0x30FC && result.length() > 0) {
-                // 長音符 → 前の文字の母音に合わせて平仮名化
-                result.append(getProlongedHiragana(result.charAt(result.length() - 1)));
-            }
-            if (cp >= 0x30A1 && cp <= 0x30F6) {
-                result.appendCodePoint(cp + offset);
-            } else if (cp >= 0xFF66 && cp <= 0xFF9F) {
-                // 半角カナ→全角カナ→平仮名
-                String full = halfWidthToFullWidthSingle(String.valueOf(text.charAt(i)));
-                if (!full.isEmpty() && full.charAt(0) >= 0x30A1 && full.charAt(0) <= 0x30F6) {
-                    result.append((char) (full.charAt(0) + offset));
-                } else {
-                    result.append(full);
-                }
-            } else {
-                result.appendCodePoint(cp);
-            }
-            if (Character.isHighSurrogate(text.charAt(i))) i++;
-        }
-        return result.toString();
-    }
-
-    private static String halfWidthToFullWidthSingle(String ch) {
-        int idx = HW.indexOf(ch);
-        return idx >= 0 ? String.valueOf(FW.charAt(idx)) : ch;
     }
 
     /** 促音・長音符の強調畳み込み。 */

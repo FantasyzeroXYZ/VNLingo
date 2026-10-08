@@ -1495,6 +1495,33 @@ public class OnsExtractPanel {
                     }
                 }
             }
+            // ⑥ 预处理变体字面命中（兜底）：中文全角/NFKC、半角カナ ﾂﾞ 这类规范化变体走这里
+            try {
+                java.util.List<String> variants = OnsDeinflector.preprocessVariants(cand, lang);
+                if (!variants.isEmpty()) {
+                    java.util.Map<String, List<OnsDictStore.Group>> variantHits =
+                            store.batchTermLookup(variants, 5);
+                    for (String variant : variants) {
+                        g = variantHits.get(variant);
+                        if (g != null && !g.isEmpty()) {
+                            return new CandidateMatch(cand, g, variant, "variant", "preprocess");
+                        }
+                    }
+                    if (tryReading) {
+                        java.util.Map<String, List<OnsDictStore.Group>> variantReadingHits =
+                                store.batchReadingLookup(variants, 5);
+                        for (String variant : variants) {
+                            g = variantReadingHits.get(variant);
+                            if (g != null && !g.isEmpty()) {
+                                return new CandidateMatch(cand, g, variant,
+                                        "variant-reading", "preprocess");
+                            }
+                        }
+                    }
+                }
+            } catch (Throwable t) {
+                android.util.Log.w("OnsExtractPanel", "variant lookup failed cand=" + cand, t);
+            }
         }
         return null;
     }

@@ -40,6 +40,7 @@
     <string name="dict_reading_summary">オフにすると見出し語のみで検索します（日本語のみ有効）</string>
     <string name="dict_scope_row">言語範囲：%1$s</string>
     <string name="dict_scope_universal">すべて</string>
+    <string name="dict_section_installed">導入済み辞書（%1$d）</string>
     <string name="dict_packs">語形復元パック</string>
     <string name="dict_pack_import">パックをインポート（zip / json）</string>
     <string name="dict_pack_imported">%1$s パックをインポート：%2$d 件</string>
