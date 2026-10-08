@@ -921,6 +921,15 @@
    旧版本残留（`cacheDir/ons_extract_history`、`extract/anki_*`）。
 4. **历史回放的语音不再落盘**：走「档案按名补读（`readVoiceBytesByName`）→ TTS 朗读」，
    不要为了回放方便把语音缓存到磁盘（用户明确要求音频不保留）。
+5. **Kotlin `object` 的方法给 Java 调用必须加 `@JvmStatic`**（`PanelActionBindings` 首版漏了
+   `matches/codes`，Java 侧报「无法从静态上下文引用非静态方法」；`const val` 常量本身没问题）。
+6. **Artemis 的按键本来完全到不了面板**：NativeActivity 直读输入，按键只到持焦窗口。
+   要让面板收到键，必须给面板窗包一层键捕获外壳并**在面板展开时把该窗设为可聚焦**
+   （去掉 `FLAG_NOT_FOCUSABLE`），光标窗同时让出焦点，`setKeepNativeFocused(true)` 保渲染；
+   收起时全部还原。调用 `setKeepNativeFocused` 要 try/catch（官方内核可能没有该符号）。
+7. **脚本化真机验证的边界**：`input tap` 会被 MIUI 通知栏下拉、SAF（DocumentsUI）选择器抢走焦点，
+   且 SAF 选择器的「保存」按钮**不接受注入点击**；游戏启动也常因焦点问题失手。凡涉及
+   「选择器保存 / 长按 / 手柄实体键」的验收，要么如实标注未完成，要么请人工确认，不要反复重试烧时间。
 5. **「存档目录 = 游戏根」的引擎必须用白名单，不能只排资源包**（2026-10-09 修复）：
    Artemis 游戏根里除了本体的 `root.pfs/movie/system`，还有**我们自己写进去的**
    `screenshots/`、`extract/`、`artemis_extract/voice/`（提取面板与内核），

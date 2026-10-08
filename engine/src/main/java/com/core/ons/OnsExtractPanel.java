@@ -32,6 +32,7 @@ import android.widget.TextView;
 import android.widget.Toast;
 
 import com.core.engine.R;
+import com.core.engine.PanelActionBindings;
 
 import java.io.File;
 import java.io.FileOutputStream;
@@ -210,6 +211,10 @@ public class OnsExtractPanel {
         // 音频不再保留：清掉旧版本遗留的语音缓存目录（历史回放改走档案按名补读 / TTS）
         GameMediaCleanup.purgeLegacyAudioCache(activity);
         GameMediaCleanup.purgeStaleCardMedia(activity);
+        // 面板动作绑定表快照（呼出/选词/查词/制卡/翻译…；设置页在 app 进程写，
+        // 这里在引擎进程刷新，见 PanelActionBindings）
+        com.core.engine.PanelActionBindings.refresh(activity);
+        com.core.engine.VirtualMouseBindings.refresh(activity);
         OnsDeinflector.init(activity);  // 词形还原全量规则（assets/deinflect_*.json）
         com.core.ons.deinflect.DeinflectPackStore.get().init(activity);  // M2 语言包
         // M4 查询语言设置：查询语言/是否查读音随启动 extra 下发（全局 + 每游戏覆盖
@@ -287,6 +292,11 @@ public class OnsExtractPanel {
     /** 面板根视图（WindowOverlayHost 可见性联动用）。 */
     public android.view.View panelView() {
         return panel;
+    }
+
+    /** 面板是否处于展开态（宿主焦点切换/输入独占判定用）。 */
+    public boolean isExpanded() {
+        return expanded;
     }
 
     /**
@@ -895,7 +905,7 @@ public class OnsExtractPanel {
     }
 
     /** 历史 → 独立悬浮窗：组装展示行（#序号 + 正文 + ♪语音名）并开/关。 */
-    private void toggleHistoryOverlay() {
+    public void toggleHistoryOverlay() {
         if (OnsHistoryOverlay.showing()) {
             OnsHistoryOverlay.hide();
             return;
@@ -2462,15 +2472,21 @@ public class OnsExtractPanel {
     // ------------------------------------------------------------------
 
     /**
-     * 面板按键路由，宿主 dispatchKeyEvent 在虚拟鼠标之前调用。
-     * 面板收起时只认 RB（呼出面板），其余透传给虚拟鼠标与游戏；
-     * 面板展开时消费全部按键（手柄不再注入游戏），返回 true 即已消费。
+     * 面板按键路由，宿主 dispatchKeyEvent 在虚拟鼠标**之前**调用。
+     *
+     * 语义动作表（{@code PanelActionBindings}，对齐参考 webgametxt 的 dict-gamepad）：
+     * - 面板收起：**只认呼出键**（默认 RB）的 DOWN 边沿，其它键一律返回 false 透传，
+     *   且绝不改动其它键的按下/边沿状态（参考明确踩坑：在这里同步会吞掉游戏的边沿检测，
+     *   表现为「退出面板后按 A 不再推进游戏」）；
+     * - 面板展开：先吃掉非 DOWN 相位与长按重复，再查表分发；未命中任何动作的键也返回
+     *   true（面板打开时手柄信号只进面板，不透传游戏）；音量键保持放行。
      */
     public boolean handleKey(KeyEvent event) {
         if (event == null) return false;
         int code = event.getKeyCode();
         if (!expanded) {
-            if (code == KeyEvent.KEYCODE_BUTTON_R1 && event.getAction() == KeyEvent.ACTION_DOWN) {
+            if (PanelActionBindings.matches(PanelActionBindings.PANEL_TOGGLE, code)
+                    && event.getAction() == KeyEvent.ACTION_DOWN) {
                 togglePanel();
                 return true;
             }
@@ -2478,65 +2494,115 @@ public class OnsExtractPanel {
         }
         // 面板开着：吞掉非动作相位，防止长按重复/抬起透传游戏
         if (event.getAction() != KeyEvent.ACTION_DOWN) return true;
-        switch (code) {
-            case KeyEvent.KEYCODE_DPAD_UP:
-                scrollFocused(-1);
-                return true;
-            case KeyEvent.KEYCODE_DPAD_DOWN:
-                scrollFocused(1);
-                return true;
-            case KeyEvent.KEYCODE_DPAD_LEFT:
-                moveTokenSelection(-1);
-                return true;
-            case KeyEvent.KEYCODE_DPAD_RIGHT:
-                moveTokenSelection(1);
-                return true;
-            case KeyEvent.KEYCODE_BUTTON_A:
-                // webgametxt 词典语义 A=确认查词；未选词时回退播放（朗读/重播）
-                if (!historyMode && selectedToken >= 0 && selectedToken < unitRanges.size()) {
-                    selectUnit(selectedToken, unitRanges.get(selectedToken)[0]);
-                } else {
-                    playVoice();
-                }
-                return true;
-            case KeyEvent.KEYCODE_SPACE:
-                playVoice();
-                return true;
-            case KeyEvent.KEYCODE_BUTTON_B:
-            case KeyEvent.KEYCODE_BACK:
-            case KeyEvent.KEYCODE_ESCAPE:
-                exitStep();
-                return true;
-            case KeyEvent.KEYCODE_BUTTON_X:
-            case KeyEvent.KEYCODE_T:
-                translateCurrent();
-                return true;
-            case KeyEvent.KEYCODE_C:
-                copyText();
-                return true;
-            case KeyEvent.KEYCODE_BUTTON_Y:
-                // 有查词结果制词卡，否则句卡
-                if (defGroups != null && !defGroups.isEmpty()) makeWordCard();
-                else sendToAnki();
-                return true;
-            case KeyEvent.KEYCODE_BUTTON_START:
-                sendToAnki();
-                return true;
-            case KeyEvent.KEYCODE_BUTTON_R1:
-                scrollFocused(event.isLongPress() ? -1 : 1);
-                return true;
-            case KeyEvent.KEYCODE_BUTTON_L1:
-                scrollFocused(-1);
-                return true;
-            case KeyEvent.KEYCODE_VOLUME_UP:
-            case KeyEvent.KEYCODE_VOLUME_DOWN:
-            case KeyEvent.KEYCODE_VOLUME_MUTE:
-            case KeyEvent.KEYCODE_MUTE:
-                return false; // 系统音量键放行，面板展开期间仍可调音量
-            default:
-                return true; // webgametxt：面板打开时其余按键全拦，不透传游戏
+
+        // ── 系统音量键：面板展开期间仍放行（既有约定） ──────────────────
+        if (code == KeyEvent.KEYCODE_VOLUME_UP || code == KeyEvent.KEYCODE_VOLUME_DOWN
+                || code == KeyEvent.KEYCODE_VOLUME_MUTE || code == KeyEvent.KEYCODE_MUTE) {
+            return false;
         }
+
+        // ── 动作表分发（默认绑定与旧硬编码 switch 逐键一致） ────────────
+        // 命中动作记一条日志（真机验收「面板消费了哪些键」的取证入口）
+        String action = panelActionOf(code, event.isLongPress());
+        if (action != null) {
+            android.util.Log.i(TAG, "panel action " + action + " keyCode=" + code);
+        }
+        if (PanelActionBindings.matches(PanelActionBindings.PANEL_NAV_UP, code)) {
+            scrollFocused(-1);
+            return true;
+        }
+        if (PanelActionBindings.matches(PanelActionBindings.PANEL_NAV_DOWN, code)) {
+            scrollFocused(1);
+            return true;
+        }
+        if (PanelActionBindings.matches(PanelActionBindings.PANEL_TOKEN_PREV, code)) {
+            moveTokenSelection(-1);
+            return true;
+        }
+        if (PanelActionBindings.matches(PanelActionBindings.PANEL_TOKEN_NEXT, code)) {
+            moveTokenSelection(1);
+            return true;
+        }
+        if (PanelActionBindings.matches(PanelActionBindings.PANEL_CONFIRM, code)) {
+            // webgametxt 词典语义 确认=查词；未选词时回退播放（朗读/重播）
+            if (!historyMode && selectedToken >= 0 && selectedToken < unitRanges.size()) {
+                selectUnit(selectedToken, unitRanges.get(selectedToken)[0]);
+            } else {
+                playVoice();
+            }
+            return true;
+        }
+        if (PanelActionBindings.matches(PanelActionBindings.PANEL_PLAY, code)) {
+            playVoice();
+            return true;
+        }
+        if (PanelActionBindings.matches(PanelActionBindings.PANEL_EXIT, code)) {
+            exitStep();
+            return true;
+        }
+        if (PanelActionBindings.matches(PanelActionBindings.PANEL_TRANSLATE, code)) {
+            translateCurrent();
+            return true;
+        }
+        if (PanelActionBindings.matches(PanelActionBindings.PANEL_COPY, code)) {
+            copyText();
+            return true;
+        }
+        if (PanelActionBindings.matches(PanelActionBindings.PANEL_CARD, code)) {
+            // 有查词结果制词卡，否则句卡
+            if (defGroups != null && !defGroups.isEmpty()) makeWordCard();
+            else sendToAnki();
+            return true;
+        }
+        if (PanelActionBindings.matches(PanelActionBindings.PANEL_SENTENCE_CARD, code)) {
+            sendToAnki();
+            return true;
+        }
+        if (PanelActionBindings.matches(PanelActionBindings.PANEL_SCROLL_UP, code)) {
+            scrollFocused(-1);
+            return true;
+        }
+        if (PanelActionBindings.matches(PanelActionBindings.PANEL_SCROLL_DOWN, code)) {
+            // 对齐旧行为：RB 长按向上滚（短按向下）
+            scrollFocused(event.isLongPress() ? -1 : 1);
+            return true;
+        }
+        if (PanelActionBindings.matches(PanelActionBindings.PANEL_HISTORY, code)) {
+            toggleHistoryOverlay();
+            return true;
+        }
+        return true; // webgametxt：面板打开时其余按键全拦，不透传游戏
     }
+
+    /**
+     * 面板展开时是否吞掉摇杆/轴事件（宿主 dispatchGenericMotionEvent 调用）。
+     * 面板打开期间摇杆不得驱动游戏、也不驱动虚拟鼠标光标；收起时返回 false 透传。
+     */
+    public boolean handleMotion(android.view.MotionEvent event) {
+        return expanded;
+    }
+
+    /** 命中的面板动作名（仅用于验收日志；未命中返回 null）。 */
+    private static String panelActionOf(int code, boolean longPress) {
+        if (PanelActionBindings.matches(PanelActionBindings.PANEL_NAV_UP, code)) return "nav_up";
+        if (PanelActionBindings.matches(PanelActionBindings.PANEL_NAV_DOWN, code)) return "nav_down";
+        if (PanelActionBindings.matches(PanelActionBindings.PANEL_TOKEN_PREV, code)) return "token_prev";
+        if (PanelActionBindings.matches(PanelActionBindings.PANEL_TOKEN_NEXT, code)) return "token_next";
+        if (PanelActionBindings.matches(PanelActionBindings.PANEL_CONFIRM, code)) return "confirm";
+        if (PanelActionBindings.matches(PanelActionBindings.PANEL_PLAY, code)) return "play";
+        if (PanelActionBindings.matches(PanelActionBindings.PANEL_EXIT, code)) return "exit";
+        if (PanelActionBindings.matches(PanelActionBindings.PANEL_TRANSLATE, code)) return "translate";
+        if (PanelActionBindings.matches(PanelActionBindings.PANEL_COPY, code)) return "copy";
+        if (PanelActionBindings.matches(PanelActionBindings.PANEL_CARD, code)) return "card";
+        if (PanelActionBindings.matches(PanelActionBindings.PANEL_SENTENCE_CARD, code)) return "sentence_card";
+        if (PanelActionBindings.matches(PanelActionBindings.PANEL_SCROLL_UP, code)) return "scroll_up";
+        if (PanelActionBindings.matches(PanelActionBindings.PANEL_SCROLL_DOWN, code)) {
+            return longPress ? "scroll_up(longpress)" : "scroll_down";
+        }
+        if (PanelActionBindings.matches(PanelActionBindings.PANEL_HISTORY, code)) return "history";
+        return null;
+    }
+
 
     private void moveTokenSelection(int dir) {
         if (historyMode || unitRanges.isEmpty()) return;

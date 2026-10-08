@@ -4,6 +4,46 @@
 > `docs/说明/游戏内提取制卡功能方案.md`（提取功能线方案）阅读。
 > 更新时间：2026-10-09
 
+## 2026-10-09 会话（六十二）：执行《剧情文本框手柄链路复刻方案》P1–P4
+
+用户要求：按 `docs/dev/剧情文本框手柄链路复刻方案.md` 执行（参考 webgametxt 的四段链路）。
+
+**P1 顺序修正 + 呼出键动作化**
+- Artemis `dispatchKeyEvent` / `routeMouseKey` 改为**面板优先**（此前 Artemis 的按键**从不进面板**，
+  与 KRKR/ONS 不一致）；
+- 呼出键由硬编码 `KEYCODE_BUTTON_R1` 改为 `PanelActionBindings.PANEL_TOGGLE`（默认仍是 RB）；
+- 关闭态只查呼出键即 `return false`，不触碰其它键的边沿状态（本实现无 prev 表，天然满足参考
+  明确记录的踩坑）。
+
+**P2 面板动作表 + 查表分发**
+- 新增 `engine/.../com/core/engine/PanelActionBindings.kt`：15 个动作（呼出/选词/上下/确认/翻译/
+  词卡/句卡/滚动/退出/复制/播放/历史），prefs `panel_action_bindings` → `action_<id>` StringSet，
+  `MODE_MULTI_PROCESS`，快照式（与 `VirtualMouseBindings` 完全同款，含 bindings/add/remove/reset）；
+- `OnsExtractPanel.handleKey` 由 `switch(keyCode)` 改为查表分发；默认绑定与旧行为逐键一致，
+  音量键仍放行；命中动作打一条 `panel action …` 日志便于真机取证；
+- 面板构造时 `refresh` 两张绑定表；`isExpanded()` / `toggleHistoryOverlay()` 公开给宿主。
+
+**P3 焦点独占（引擎侧完成）**
+- KRKR / ONS / Artemis 三个宿主的 `dispatchGenericMotionEvent` 前置 `panel.handleMotion(event)`：
+  面板展开时摇杆与轴事件全吞（不驱动游戏、不驱动虚拟光标）；
+- Artemis（NativeActivity 直读输入）用方案 §3.2 手段 B：面板窗外包一层键捕获外壳
+  `panelKeyCatcher`（`dispatchKeyEvent → routePanelKey`），**面板展开时去掉窗的
+  `FLAG_NOT_FOCUSABLE` 让其持焦**（按键于是进 Java 面板），收起时恢复；虚拟鼠标光标窗在面板
+  展开时让出焦点；`setKeepNativeFocused(expanded || virtualMouseMode)` 保渲染不停。
+
+**P4 设置页「面板动作」区**
+- `GamepadSettingsActivity` 增加与虚拟鼠标同款的捕获式绑定区（15 行、重新绑定、× 移除、
+  恢复默认），抽出共用 `BindingActionRow`；三语言各新增 17 条字符串。
+
+**未完成（如实记录）**：P5（手段 C 兜底）按需；**P6 真机验收未完成**——手上没有实体手柄，
+无法产生真实手柄事件，且脚本化 `input tap` 驱动「启动游戏 / 打开设置页」反复失手（本轮多次被
+通知栏与 SAF 选择器抢焦点）。已做到：编译通过（`:app:assembleDebug` SUCCESS）、三个宿主的
+按键与轴事件路径全部接上、动作表与旧行为逐键一致。验收步骤与失败信号已写入方案文档
+（`adb logcat | grep "panel action"`）。
+
+**有意行为差异**（来自方案 §3.3 默认表）：`PANEL_CONFIRM` 默认纳入 `ENTER` / `DPAD_CENTER`
+（旧实现吞掉且不做事）；`PANEL_HISTORY` 新增动作、默认不绑键。
+
 ## 2026-10-09 会话（六十一）：Artemis 存档导出把截图/语音打进 ZIP —— 根因与修复
 
 用户反馈：条目的「存档管理 → 导出 ZIP」里似乎带了音频和图片文件夹。

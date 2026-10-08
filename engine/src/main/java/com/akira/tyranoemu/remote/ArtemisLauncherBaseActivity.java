@@ -116,6 +116,7 @@ public abstract class ArtemisLauncherBaseActivity extends com.ies_net.artemis.Ar
                 extractPanel.setSideButtonsWindowMode(true);
                 android.view.View panelView = extractPanel.installDetached(
                         this::toggleVirtualMouseMode, this::isVirtualMouseMode);
+                ArtemisLauncherBaseActivity.this.extractPanel = extractPanel;
 
                 android.view.WindowManager.LayoutParams plp = new android.view.WindowManager.LayoutParams(
                         extractPanel.preferredWindowWidthPx(),
@@ -125,16 +126,32 @@ public abstract class ArtemisLauncherBaseActivity extends com.ies_net.artemis.Ar
                         android.graphics.PixelFormat.TRANSLUCENT);
                 plp.gravity = android.view.Gravity.BOTTOM | android.view.Gravity.CENTER_HORIZONTAL;
                 plp.y = navBarBottomInset();
-                getWindowManager().addView(panelView, plp);
-                extractPanelView = panelView;
+                // 键捕获外壳：NativeActivity 直读输入，按键到不了 Java（实测 D-pad/A）；
+                // 面板展开时把面板窗设为可聚焦（applyPanelKeyFocus），按键即进本壳的
+                // dispatchKeyEvent → 面板动作表（复刻方案 §3.2 手段 B，与虚拟鼠标
+                // 光标窗的既有做法同构）。
+                panelKeyCatcher = new android.widget.FrameLayout(this) {
+                    @Override
+                    public boolean dispatchKeyEvent(android.view.KeyEvent event) {
+                        return routePanelKey(event);
+                    }
+                };
+                panelKeyCatcher.addView(panelView, new android.widget.FrameLayout.LayoutParams(
+                        android.view.ViewGroup.LayoutParams.MATCH_PARENT,
+                        android.view.ViewGroup.LayoutParams.WRAP_CONTENT));
+                panelWindowLp = plp;
+                getWindowManager().addView(panelKeyCatcher, plp);
+                extractPanelView = panelKeyCatcher;
                 // 面板开合后强制窗口重量测：GONE 态塌缩为 0×0，VISIBLE 不会自动
-                // 恢复尺寸（布局回调不触发）——不接线面板展开后永远不可见
+                // 恢复尺寸（布局回调不触发）——不接线面板展开后永远不可见。
+                // 同时做焦点切换：展开=面板窗可聚焦（按键进面板），收起=还给游戏/光标窗。
                 extractPanel.setPanelVisibilityHook(() -> {
                     try {
-                        getWindowManager().updateViewLayout(panelView, plp);
+                        getWindowManager().updateViewLayout(panelKeyCatcher, plp);
                     } catch (Throwable t) {
                         Log.w("YukiArtemis", "panel relayout failed", t);
                     }
+                    applyPanelKeyFocus();
                 });
                 Log.i("YukiArtemis", "extract panel installed (artemis, detached window)");
             } catch (Throwable t) {
@@ -205,6 +222,56 @@ public abstract class ArtemisLauncherBaseActivity extends com.ies_net.artemis.Ar
 
     private android.widget.FrameLayout mouseKeyCatcher;
     private android.view.WindowManager.LayoutParams cursorWindowLp;
+    /** 提取面板实例（按键/轴事件路由与焦点切换用）。 */
+    private com.core.ons.OnsExtractPanel extractPanel;
+    /** 面板键捕获外壳与其窗口参数（面板展开时切为可聚焦）。 */
+    private android.widget.FrameLayout panelKeyCatcher;
+    private android.view.WindowManager.LayoutParams panelWindowLp;
+
+    /**
+     * 面板窗按键路由（面板展开时该窗可聚焦）：重映射 →「面板动作表」；
+     * 未消费的键再交游戏映射链，保证面板收起瞬间不会吞掉游戏按键。
+     */
+    private boolean routePanelKey(android.view.KeyEvent event) {
+        KeyEvent mapped = com.core.engine.GamepadRemap.apply(event);
+        if (extractPanel != null && mapped != null && extractPanel.handleKey(mapped)) return true;
+        try {
+            super.dispatchKeyEvent(mapped == null ? event : mapped);
+        } catch (Throwable t) {
+            Log.w("YukiArtemis", "panel key forward failed", t);
+        }
+        return true;
+    }
+
+    /**
+     * 面板开合时的输入焦点切换（复刻方案 §3.2 手段 B）：
+     * - 展开：面板窗去掉 FLAG_NOT_FOCUSABLE（按键进 {@link #routePanelKey}），
+     *   光标窗让出焦点，native 保持「失焦仍渲染」；
+     * - 收起：面板窗恢复 NOT_FOCUSABLE，焦点按虚拟鼠标模式还给光标窗或游戏。
+     */
+    private void applyPanelKeyFocus() {
+        if (panelKeyCatcher == null || panelWindowLp == null) return;
+        boolean expanded = extractPanel != null && extractPanel.isExpanded();
+        try {
+            if (expanded) {
+                panelWindowLp.flags &= ~android.view.WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE;
+                panelKeyCatcher.setFocusable(true);
+                panelKeyCatcher.setFocusableInTouchMode(true);
+                panelKeyCatcher.requestFocus();
+            } else {
+                panelWindowLp.flags |= android.view.WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE;
+            }
+            getWindowManager().updateViewLayout(panelKeyCatcher, panelWindowLp);
+        } catch (Throwable t) {
+            Log.w("YukiArtemis", "panel focus flags failed", t);
+        }
+        applyMouseWindowFocusFlags();
+        try {
+            com.ies_net.artemis.ArtemisActivity.setKeepNativeFocused(expanded || virtualMouseMode);
+        } catch (Throwable t) {
+            Log.w("YukiArtemis", "setKeepNativeFocused failed", t);
+        }
+    }
 
     /**
      * 光标窗口按键路由（窗口可聚焦时）：重映射 → 虚拟鼠标（D-pad/摇杆/A），
@@ -222,11 +289,13 @@ public abstract class ArtemisLauncherBaseActivity extends com.ies_net.artemis.Ar
         return true; // 鼠标模式下按键不外溢
     }
 
-    /** 鼠标模式 = 光标窗口可聚焦（接管按键）；触摸模式 = NOT_FOCUSABLE 还给游戏。 */
+    /** 鼠标模式 = 光标窗口可聚焦（接管按键）；触摸模式 = NOT_FOCUSABLE 还给游戏。
+     *  面板展开时面板窗优先持焦（输入独占），光标窗让出。 */
     private void applyMouseWindowFocusFlags() {
         if (mouseKeyCatcher == null || cursorWindowLp == null) return;
+        boolean panelExpanded = extractPanel != null && extractPanel.isExpanded();
         try {
-            if (virtualMouseMode) {
+            if (virtualMouseMode && !panelExpanded) {
                 cursorWindowLp.flags &= ~android.view.WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE;
                 mouseKeyCatcher.setFocusable(true);
                 mouseKeyCatcher.setFocusableInTouchMode(true);
@@ -401,10 +470,13 @@ public abstract class ArtemisLauncherBaseActivity extends com.ies_net.artemis.Ar
 
     @Override
     public boolean dispatchKeyEvent(KeyEvent event) {
+        // 顺序（与 KRKR/ONS 一致，见复刻方案 §3.4）：**面板优先**——面板展开时按键
+        // 只进面板、不透传游戏，也不驱动虚拟鼠标光标；面板收起时面板只认呼出键。
+        KeyEvent mapped = com.core.engine.GamepadRemap.apply(event);
+        if (extractPanel != null && mapped != null && extractPanel.handleKey(mapped)) return true;
         // 虚拟鼠标模式：D-pad 移动光标、A 键点击（消费后不再走 EmulateKeyEvent
         // 游戏键映射）；其余按键交父类既有映射链路（重映射也在其内再做一次）
         if (virtualMouseMode && virtualMouse != null) {
-            KeyEvent mapped = com.core.engine.GamepadRemap.apply(event);
             if (mapped != null && virtualMouse.handleKey(mapped)) return true;
         }
         return super.dispatchKeyEvent(event);
@@ -412,6 +484,8 @@ public abstract class ArtemisLauncherBaseActivity extends com.ies_net.artemis.Ar
 
     @Override
     public boolean dispatchGenericMotionEvent(android.view.MotionEvent event) {
+        // 面板展开：摇杆/轴事件全吞，既不驱动游戏也不驱动虚拟光标（复刻方案 §3.2 手段 A）
+        if (extractPanel != null && extractPanel.handleMotion(event)) return true;
         // 左摇杆移动虚拟光标（若内核/框架把摇杆事件预派发到 Java 侧则生效；
         // 未预派发时摇杆事件不会到达此处，D-pad 仍可用）
         if (virtualMouseMode && virtualMouse != null && virtualMouse.handleMotion(event)) {

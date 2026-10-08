@@ -169,6 +169,25 @@
     <string name="vm_action_left">左移</string>
     <string name="vm_action_right">右移</string>
     <string name="vm_action_confirm">确认（点击）</string>
+
+    <!-- 剧情文本框「面板动作」绑定（复刻方案 §3.3；与虚拟鼠标绑定同款捕获式设置） -->
+    <string name="panel_bindings_title">面板动作（剧情文本框）</string>
+    <string name="panel_bindings_summary">面板打开时这些键只作用于面板，不会传进游戏；「呼出/收起」只在面板收起时生效。手柄按键与键盘按键均可绑定。</string>
+    <string name="panel_action_toggle">呼出/收起面板</string>
+    <string name="panel_action_token_prev">选词：上一个</string>
+    <string name="panel_action_token_next">选词：下一个</string>
+    <string name="panel_action_nav_up">内容上移</string>
+    <string name="panel_action_nav_down">内容下移</string>
+    <string name="panel_action_confirm">确认查词（未选词时播放）</string>
+    <string name="panel_action_translate">翻译整句</string>
+    <string name="panel_action_card">制卡（有查词结果=词卡）</string>
+    <string name="panel_action_sentence_card">制卡（句卡）</string>
+    <string name="panel_action_scroll_up">释义上滚</string>
+    <string name="panel_action_scroll_down">释义下滚</string>
+    <string name="panel_action_exit">退出（两步：先收释义）</string>
+    <string name="panel_action_copy">复制当前句</string>
+    <string name="panel_action_play">播放/重播语音</string>
+    <string name="panel_action_history">历史悬浮窗</string>
     <string name="vm_default_suffix">（默认）</string>
     <string name="vm_reset_default">恢复默认</string>
     <string name="gamepad_cleared">已清除映射</string>

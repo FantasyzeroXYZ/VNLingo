@@ -617,6 +617,8 @@ public class ONScripter extends SDLActivity {
 
     @Override
     public boolean dispatchGenericMotionEvent(MotionEvent event) {
+        // 面板展开：摇杆/轴事件全吞（既不驱动游戏也不驱动虚拟光标，见复刻方案 §3.2 手段 A）
+        if (extractPanel != null && extractPanel.handleMotion(event)) return true;
         // 手柄左摇杆移动虚拟光标（面板展开时也可用；音量类事件交还系统）
         if (virtualMouseMode && virtualMouse != null && virtualMouse.handleMotion(event)) return true;
         return super.dispatchGenericMotionEvent(event);

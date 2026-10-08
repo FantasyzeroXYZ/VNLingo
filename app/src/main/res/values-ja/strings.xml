@@ -170,6 +170,25 @@
     <string name="vm_action_left">左へ</string>
     <string name="vm_action_right">右へ</string>
     <string name="vm_action_confirm">決定（クリック）</string>
+
+    <!-- 剧情文本框「面板动作」绑定（复刻方案 §3.3；与虚拟鼠标绑定同款捕获式设置） -->
+    <string name="panel_bindings_title">パネル操作（テキスト枠）</string>
+    <string name="panel_bindings_summary">パネル表示中、これらのキーはパネルだけに作用しゲームには渡りません。「開く/閉じる」はパネルが閉じているときのみ有効です。ゲームパッドとキーボードのどちらも割り当てられます。</string>
+    <string name="panel_action_toggle">パネルを開く/閉じる</string>
+    <string name="panel_action_token_prev">単語選択：前へ</string>
+    <string name="panel_action_token_next">単語選択：次へ</string>
+    <string name="panel_action_nav_up">内容を上へ</string>
+    <string name="panel_action_nav_down">内容を下へ</string>
+    <string name="panel_action_confirm">検索を確定（未選択時は再生）</string>
+    <string name="panel_action_translate">文全体を翻訳</string>
+    <string name="panel_action_card">カード作成（検索済みなら単語カード）</string>
+    <string name="panel_action_sentence_card">カード作成（文カード）</string>
+    <string name="panel_action_scroll_up">訳語を上へスクロール</string>
+    <string name="panel_action_scroll_down">訳語を下へスクロール</string>
+    <string name="panel_action_exit">終了（2段階）</string>
+    <string name="panel_action_copy">現在の文をコピー</string>
+    <string name="panel_action_play">音声を再生/再再生</string>
+    <string name="panel_action_history">履歴オーバーレイ</string>
     <string name="vm_default_suffix">（既定）</string>
     <string name="vm_reset_default">既定に戻す</string>
     <string name="gamepad_cleared">マッピングを削除しました</string>

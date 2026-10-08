@@ -893,6 +893,9 @@ public abstract class KirikiroidLauncherBaseActivity extends KR2Activity {
 
     @Override
     public boolean dispatchGenericMotionEvent(android.view.MotionEvent event) {
+        // 面板展开：摇杆/轴事件全吞（既不驱动游戏也不驱动虚拟光标，见复刻方案 §3.2 手段 A）
+        com.core.ons.OnsExtractPanel panel = extractPanel;
+        if (panel != null && panel.handleMotion(event)) return true;
         // 左摇杆连续移动虚拟光标（手柄类摇杆事件）
         if (virtualMouseMode && virtualMouse != null && virtualMouse.handleMotion(event)) {
             return true;
