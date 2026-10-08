@@ -773,3 +773,17 @@
    `adb shell` 做换行转换，得到的 SQLite 文件 `database disk image is malformed`；
    换 `adb exec-out` 后 66545 条词条完整可读。**数据库/图片一律 exec-out**。
 
+## 实测踩坑（2026-10-08 会话五十三新增：直接制卡入口与制卡验证）
+
+1. **`adb shell input keyevent 111`（ESC）会取消 AlertDialog**：用它「收起软键盘」时把
+   弹窗一起关掉了，后面的点击落到底层页面上，于是「看起来点了制卡其实没点」。
+   要收键盘就用 `input keyevent 4`（同样是 back，但 AlertDialog 也会取消）——
+   **正确做法是不要收键盘**：AlertDialog 的按钮在键盘上方仍可点，直接点按钮即可。
+2. **制卡成功的验证要看 AnkiDroid 侧，不要只看 toast**：toast 只闪 ~2s（`screencap`
+   常抓不到）。可靠证据＝打开 AnkiDroid → 左侧抽屉「卡片浏览器」→ 搜索关键字 →
+   点开「卡片信息」，可看到 Sort Field / Deck / **Note Type** / Created 时间；
+   或用抽屉里的牌组列表看 New 计数变化。
+3. **测试制卡会污染用户牌组，测完要删**：浏览器里长按首行进入多选 → 勾选其余行 →
+   ⋮ → 「删除笔记」；删除后牌组标题会显示「共有 N 张卡片」。本轮顺手清理了会话五十
+   在游戏面板上误点产生的一张词卡。
+

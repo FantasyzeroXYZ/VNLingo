@@ -44,6 +44,7 @@ import androidx.compose.ui.unit.dp
 import com.core.engine.R as EngineR
 import com.core.ons.OnsDictStore
 import com.tyranor.next.R
+import com.tyranor.next.core.i18n.AppLocaleController
 import com.tyranor.next.core.settings.EngineSettingsStore
 import com.tyranor.next.theme.AppComponentCornerRadius
 import com.tyranor.next.theme.MiuixSettingsTheme
@@ -223,6 +224,15 @@ fun DictionaryScreen(modifier: Modifier = Modifier) {
                 AppTopBar(
                     title = stringResource(R.string.nav_dict),
                     trailing = {
+                        // 直接制卡：按当前配置的模板列出字段，手输/粘贴内容即可入库
+                        TopBarIcon(
+                            painterResource(EngineR.drawable.ic_card),
+                            stringResource(EngineR.string.engine_ons_anki_manual_card),
+                            MaterialTheme.colorScheme.primary,
+                        ) {
+                            val act = AppLocaleController.findActivity(context) ?: return@TopBarIcon
+                            com.core.ons.OnsExtractSettingsDialogs.showManualCardDialog(act)
+                        }
                         TopBarIcon(
                             painterResource(R.drawable.ic_engine_manage),
                             stringResource(R.string.dict_manager_content_description),

@@ -4,6 +4,27 @@
 > `docs/说明/游戏内提取制卡功能方案.md`（提取功能线方案）阅读。
 > 更新时间：2026-10-08
 
+## 2026-10-08 会话（五十三）：词典页右上角「直接制卡」
+
+用户要求：导航词典页右上角加一个直接输入制卡的入口，点开显示设置好的模板字段，
+手输/粘贴内容就能制卡。
+
+- **入口**：`DictionaryScreen` 顶部栏 `trailing` 增加 `TopBarIcon`（图标用 engine 的
+  `ic_card`，在「词典管理」左侧）；点击 → `OnsExtractSettingsDialogs.showManualCardDialog()`。
+- **弹窗**（engine，`直接制卡`）：读当前配置的牌组/模板 → `findModelId` +
+  `getModelFieldNames` 取**真实模板字段**逐个渲染输入框（多行，可长按粘贴）；
+  字段名后标注它接的要素（如 `Word（← 单词）`），未映射字段不标注；
+  顶部显示目标「牌组 X · 模板 Y」；底部提示写入说明。
+- **制卡**：走与游戏内词卡同一条链路——`getOrCreateDeck(deck)` + `addNote(modelId, deckId,
+  按模型字段顺序的 values, null)`（后台线程 + 主线程 toast）；空表单拒绝并提示；
+  AnkiDroid 未装/未授权/模板缺失各有明确提示。
+- **验证**（真机 alioth）：点入口 → 弹窗列出 TyranorNext Word 的 6 个真实字段
+  （Word/Reading/Meaning/Sentence/Image/Audio，前四个带要素标注）→ 填 `VNLingo-third-try`
+  → 点「直接制卡」→ toast「已制卡」；随后在 AnkiDroid 卡片浏览器确认该笔记存在
+  （Sort Field=VNLingo-third-try、Deck=TyranorNext、Note Type=TyranorNext Word、
+  Created 21:08）。**测试卡已删除**，TyranorNext 回到 0 张。
+- 三 locale 文案：直接制卡 / 目标 / 字段标注 / 提示 / 空表单 / 成功 / 失败。
+
 ## 2026-10-08 会话（五十二）：制卡设置改下拉框（S1：字段映射「要素 → 模型字段」）
 
 用户要求：制卡设置项不要点行循环，改成下拉选择；牌组/模型只能从 AnkiDroid 里有的内容选，

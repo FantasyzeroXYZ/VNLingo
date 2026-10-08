@@ -245,6 +245,13 @@
     <string name="engine_ons_anki_card_fields_cached">オフライン：前回のフィールド一覧を使用</string>
     <string name="engine_ons_anki_card_field_conflict">複数の要素が同じフィールドを指しています：%1$s</string>
     <string name="engine_ons_anki_card_field_conflict_fix">占有を解除</string>
+    <string name="engine_ons_anki_manual_card">カード作成</string>
+    <string name="engine_ons_anki_manual_target">出力先：デッキ %1$s · モデル %2$s</string>
+    <string name="engine_ons_anki_manual_field_mapped">（← %1$s）</string>
+    <string name="engine_ons_anki_manual_hint">現在のモデルの各フィールドを入力し（長押しで複数行を貼り付け可）、「カード作成」で AnkiDroid に書き込みます。</string>
+    <string name="engine_ons_anki_manual_empty">少なくとも 1 つのフィールドを入力してください</string>
+    <string name="engine_ons_anki_manual_ok">カードを作成しました</string>
+    <string name="engine_ons_anki_manual_failed">カード作成に失敗（AnkiDroid の権限/デッキ/モデルを確認）</string>
     <string name="engine_ons_tts_title">TTS 設定</string>
     <string name="engine_ons_tts_engine">TTS エンジン</string>
     <string name="engine_ons_tts_engine_multi">MultiTTS</string>

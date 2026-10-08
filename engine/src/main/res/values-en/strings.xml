@@ -242,6 +242,13 @@
     <string name="engine_ons_anki_card_fields_cached">Offline: reusing the last known field list</string>
     <string name="engine_ons_anki_card_field_conflict">Multiple elements point to the same field: %1$s</string>
     <string name="engine_ons_anki_card_field_conflict_fix">Release</string>
+    <string name="engine_ons_anki_manual_card">New card</string>
+    <string name="engine_ons_anki_manual_target">Target: deck %1$s · model %2$s</string>
+    <string name="engine_ons_anki_manual_field_mapped">(← %1$s)</string>
+    <string name="engine_ons_anki_manual_hint">Fill in each field of the current model (long-press to paste multi-line text), then tap “New card” to write it into AnkiDroid.</string>
+    <string name="engine_ons_anki_manual_empty">Fill in at least one field</string>
+    <string name="engine_ons_anki_manual_ok">Card added</string>
+    <string name="engine_ons_anki_manual_failed">Failed to add card (check AnkiDroid permission/deck/model)</string>
     <string name="engine_ons_tts_title">TTS settings</string>
     <string name="engine_ons_tts_engine">TTS engine</string>
     <string name="engine_ons_tts_engine_multi">MultiTTS</string>

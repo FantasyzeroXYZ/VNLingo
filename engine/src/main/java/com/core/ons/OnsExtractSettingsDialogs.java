@@ -1139,6 +1139,167 @@ public final class OnsExtractSettingsDialogs {
         return noteText(activity, text);
     }
 
+    /**
+     * 直接制卡（词典页右上角入口）：按**当前配置的模板**列出真实字段，逐字段手输/粘贴内容，
+     * 点「制卡」直接写入 AnkiDroid 的当前牌组。走的是与游戏内词卡同一条
+     * {@link AnkiDroidHelper#addNote} 链路，因此字段顺序、牌组/模板语义完全一致。
+     */
+    public static void showManualCardDialog(Activity activity) {
+        final String deckName = AnkiCardConfig.deck(activity);
+        final String modelName = AnkiCardConfig.model(activity);
+        final AnkiDroidHelper helper = new AnkiDroidHelper(activity);
+        try {
+            if (!helper.isAnkiDroidInstalled()) {
+                toast(activity, R.string.engine_ons_extract_anki_not_installed);
+                return;
+            }
+            if (!helper.hasPermission()) {
+                helper.requestPermission(activity);
+                toast(activity, R.string.engine_ons_extract_anki_need_permission);
+                return;
+            }
+        } catch (Throwable t) {
+            toast(activity, R.string.engine_ons_extract_anki_not_installed);
+            return;
+        }
+        final Long modelId;
+        try {
+            modelId = helper.findModelId(modelName);
+        } catch (Throwable t) {
+            toast(activity, R.string.engine_ons_anki_card_read_failed);
+            return;
+        }
+        if (modelId == null) {
+            Toast.makeText(activity, activity.getString(
+                    R.string.engine_ons_extract_anki_model_missing, modelName),
+                    Toast.LENGTH_SHORT).show();
+            return;
+        }
+        final String[] fields;
+        try {
+            fields = helper.getModelFieldNames(modelId);
+        } catch (Throwable t) {
+            toast(activity, R.string.engine_ons_anki_card_field_read_failed);
+            return;
+        }
+        if (fields == null || fields.length == 0) {
+            toast(activity, R.string.engine_ons_anki_card_field_read_failed);
+            return;
+        }
+
+        // 字段 → 要素反查（在字段名后面标注它接到哪个要素，便于对照模板）
+        java.util.Map<String, String> fieldToSlot = new java.util.HashMap<>();
+        for (java.util.Map.Entry<String, String> e : AnkiCardConfig.fieldMap(activity).entrySet()) {
+            if (e.getValue() != null && !e.getValue().isEmpty() && !fieldToSlot.containsKey(e.getValue())) {
+                fieldToSlot.put(e.getValue(), e.getKey());
+            }
+        }
+
+        LinearLayout box = new LinearLayout(activity);
+        box.setOrientation(LinearLayout.VERTICAL);
+        int pad = dp(activity, 16);
+        box.setPadding(pad, dp(activity, 8), pad, 0);
+
+        TextView target = new TextView(activity);
+        target.setText(activity.getString(R.string.engine_ons_anki_manual_target, deckName, modelName));
+        target.setTextColor(TEXT_DIM);
+        target.setTextSize(11);
+        box.addView(target, matchWrap());
+
+        final java.util.List<EditText> inputs = new java.util.ArrayList<>();
+        for (String field : fields) {
+            String slot = fieldToSlot.get(field);
+            LinearLayout row = new LinearLayout(activity);
+            row.setOrientation(LinearLayout.VERTICAL);
+            row.setPadding(0, dp(activity, 8), 0, 0);
+            TextView label = new TextView(activity);
+            label.setText(slot == null ? field
+                    : field + activity.getString(R.string.engine_ons_anki_manual_field_mapped,
+                    slotLabel(activity, slot)));
+            label.setTextColor(TEXT_DIM);
+            label.setTextSize(11);
+            row.addView(label, matchWrap());
+            EditText input = new EditText(activity);
+            input.setHint(field);
+            input.setTextSize(13);
+            input.setMinLines(1);
+            input.setMaxLines(6);
+            input.setInputType(android.text.InputType.TYPE_CLASS_TEXT
+                    | android.text.InputType.TYPE_TEXT_FLAG_MULTI_LINE);
+            row.addView(input, matchWrap());
+            inputs.add(input);
+            box.addView(row, matchWrap());
+        }
+
+        TextView hint = new TextView(activity);
+        hint.setText(R.string.engine_ons_anki_manual_hint);
+        hint.setTextColor(TEXT_DIM);
+        hint.setTextSize(11);
+        hint.setPadding(0, dp(activity, 10), 0, 0);
+        box.addView(hint, matchWrap());
+
+        ScrollView scroller = new ScrollView(activity);
+        scroller.addView(box);
+        new android.app.AlertDialog.Builder(activity)
+                .setTitle(R.string.engine_ons_anki_manual_card)
+                .setView(scroller)
+                .setPositiveButton(R.string.engine_ons_anki_manual_card, (d, w) -> {
+                    final String[] values = new String[fields.length];
+                    boolean any = false;
+                    for (int i = 0; i < fields.length; i++) {
+                        String v = inputs.get(i).getText() == null
+                                ? "" : inputs.get(i).getText().toString().trim();
+                        values[i] = v;
+                        if (!v.isEmpty()) any = true;
+                    }
+                    if (!any) {
+                        toast(activity, R.string.engine_ons_anki_manual_empty);
+                        return;
+                    }
+                    new Thread(() -> {
+                        Long deckId = null;
+                        Long noteId = null;
+                        try {
+                            deckId = helper.getOrCreateDeck(deckName);
+                            if (deckId != null) {
+                                noteId = helper.addNote(modelId, deckId, values, null);
+                            }
+                        } catch (Throwable t) {
+                            android.util.Log.w("OnsExtractSettings", "manual card failed", t);
+                        }
+                        final boolean ok = noteId != null;
+                        new android.os.Handler(android.os.Looper.getMainLooper()).post(() ->
+                                toast(activity, ok
+                                        ? R.string.engine_ons_anki_manual_ok
+                                        : R.string.engine_ons_anki_manual_failed));
+                    }).start();
+                })
+                .setNegativeButton(android.R.string.cancel, null)
+                .show();
+    }
+
+    /** 要素（槽位）显示名（字段标注用）。 */
+    private static String slotLabel(Activity activity, String slot) {
+        if (AnkiCardConfig.SLOT_WORD.equals(slot)) return activity.getString(R.string.engine_ons_anki_slot_word);
+        if (AnkiCardConfig.SLOT_READING.equals(slot)) return activity.getString(R.string.engine_ons_anki_slot_reading);
+        if (AnkiCardConfig.SLOT_MEANING.equals(slot)) return activity.getString(R.string.engine_ons_anki_slot_meaning);
+        if (AnkiCardConfig.SLOT_SENTENCE.equals(slot)) return activity.getString(R.string.engine_ons_anki_slot_sentence);
+        if (AnkiCardConfig.SLOT_PAGE.equals(slot)) return activity.getString(R.string.engine_ons_anki_slot_page);
+        if (AnkiCardConfig.SLOT_TRANSLATION.equals(slot)) return activity.getString(R.string.engine_ons_anki_slot_translation);
+        if (AnkiCardConfig.SLOT_SCREENSHOT.equals(slot)) return activity.getString(R.string.engine_ons_anki_slot_screenshot);
+        if (AnkiCardConfig.SLOT_SENTENCE_AUDIO.equals(slot)) return activity.getString(R.string.engine_ons_anki_slot_sentence_audio);
+        if (AnkiCardConfig.SLOT_WORD_AUDIO.equals(slot)) return activity.getString(R.string.engine_ons_anki_slot_word_audio);
+        if (AnkiCardConfig.SLOT_WORD_TAGS.equals(slot)) return activity.getString(R.string.engine_ons_anki_slot_word_tags);
+        if (AnkiCardConfig.SLOT_SOURCE.equals(slot)) return activity.getString(R.string.engine_ons_anki_slot_source);
+        if (AnkiCardConfig.SLOT_DEINFLECTION.equals(slot)) return activity.getString(R.string.engine_ons_anki_slot_deinflection);
+        if (AnkiCardConfig.SLOT_MATCH_TYPE.equals(slot)) return activity.getString(R.string.engine_ons_anki_slot_match_type);
+        return slot;
+    }
+
+    private static void toast(Activity activity, int res) {
+        Toast.makeText(activity, res, Toast.LENGTH_SHORT).show();
+    }
+
     /** 「选择」文字按钮（历史遗留：翻译设置等处仍用）。 */
     private static TextView pickButton(Activity activity, int labelRes, Runnable onClick) {        TextView btn = new TextView(activity);
         btn.setText(labelRes);

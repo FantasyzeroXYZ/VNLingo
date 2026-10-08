@@ -244,6 +244,13 @@
     <string name="engine_ons_anki_card_fields_cached">离线：沿用上次读取的字段列表</string>
     <string name="engine_ons_anki_card_field_conflict">多个要素指向同一字段：%1$s</string>
     <string name="engine_ons_anki_card_field_conflict_fix">解除占用</string>
+    <string name="engine_ons_anki_manual_card">直接制卡</string>
+    <string name="engine_ons_anki_manual_target">目标：牌组 %1$s · 模板 %2$s</string>
+    <string name="engine_ons_anki_manual_field_mapped">（← %1$s）</string>
+    <string name="engine_ons_anki_manual_hint">按当前模板逐字段填写（可长按输入框粘贴多行内容），点「直接制卡」写入 AnkiDroid。</string>
+    <string name="engine_ons_anki_manual_empty">至少填写一个字段</string>
+    <string name="engine_ons_anki_manual_ok">已制卡</string>
+    <string name="engine_ons_anki_manual_failed">制卡失败（检查 AnkiDroid 权限/牌组/模板）</string>
     <string name="engine_ons_tts_title">TTS 设置</string>
     <string name="engine_ons_tts_engine">TTS 引擎</string>
     <string name="engine_ons_tts_engine_multi">MultiTTS</string>
