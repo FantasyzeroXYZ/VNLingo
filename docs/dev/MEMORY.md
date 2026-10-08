@@ -943,6 +943,10 @@
 10. **注入手柄事件用 `adb shell input gamepad keyevent <code>`**（`input` 支持
    dpad/keyboard/mouse/gamepad/joystick… 源前缀）；排查「手柄键到底进了谁」时，键盘源与手柄源
    各发一次对比，能区分「事件没到」与「到了但没人处理」。
+   **别记错 keyCode**：`KEYCODE_BUTTON_L1/R1/L2/R2 = 102/103/104/105`，`A/B/X/Y = 96/97/99/100`，
+   `START = 108`；我一度用 132 当 R2 测了半天没反应。
+11. **面板功能键的放置顺序**：像「开关虚拟鼠标」这种**面板收起时也要能用**的快捷键，必须在
+   `handleKey` 里**先于 `if (!expanded)` 判断**处理；放进展开态分支里会导致「不开面板切不了」。
 5. **「存档目录 = 游戏根」的引擎必须用白名单，不能只排资源包**（2026-10-09 修复）：
    Artemis 游戏根里除了本体的 `root.pfs/movie/system`，还有**我们自己写进去的**
    `screenshots/`、`extract/`、`artemis_extract/voice/`（提取面板与内核），

@@ -256,6 +256,8 @@ public class OnsExtractPanel {
      */
     public LinearLayout installDetached(Runnable onMouseModeToggle,
                                         java.util.function.Supplier<Boolean> mouseMode) {
+        this.mouseModeToggle = onMouseModeToggle;
+        this.mouseModeSupplier = mouseMode;
         sideButtons = OnsSideButtons.installAsWindow(activity, this::togglePanel,
                 this::captureScreenshot, this::showSettingsDialog,
                 onMouseModeToggle, mouseMode);
@@ -268,6 +270,8 @@ public class OnsExtractPanel {
     /** 在宿主覆盖层内安装右缘按键组（文本框开关/截图/设置/音量/点击模式/主页）与剧情文本框面板。 */
     public void install(android.view.ViewGroup overlay,
                         Runnable onMouseModeToggle, java.util.function.Supplier<Boolean> mouseMode) {
+        this.mouseModeToggle = onMouseModeToggle;
+        this.mouseModeSupplier = mouseMode;
         if (sideButtonsWindowMode) {
             sideButtons = OnsSideButtons.installAsWindow(activity, this::togglePanel,
                     this::captureScreenshot, this::showSettingsDialog,
@@ -309,6 +313,10 @@ public class OnsExtractPanel {
     }
 
     private Runnable panelVisibilityHook;
+
+    /** 宿主提供的点击模式（虚拟鼠标）开关与状态查询（快捷键用）。 */
+    private Runnable mouseModeToggle;
+    private java.util.function.Supplier<Boolean> mouseModeSupplier;
 
     public void release() {
         facade.setListener(null);
@@ -2545,6 +2553,13 @@ public class OnsExtractPanel {
     public boolean handleKey(KeyEvent event) {
         if (event == null) return false;
         int code = event.getKeyCode();
+        // 虚拟鼠标开关（点击模式）快捷键：面板收起/展开都生效——它本来就是
+        // 「不开面板也要能切」的快捷操作（用户要求快速开关虚拟鼠标）
+        if (event.getAction() == KeyEvent.ACTION_DOWN
+                && PanelActionBindings.matches(PanelActionBindings.PANEL_MOUSE_TOGGLE, code)) {
+            toggleMouseModeFromKey();
+            return true;
+        }
         if (!expanded) {
             if (PanelActionBindings.matches(PanelActionBindings.PANEL_TOGGLE, code)
                     && event.getAction() == KeyEvent.ACTION_DOWN) {
@@ -2636,6 +2651,24 @@ public class OnsExtractPanel {
         return true; // webgametxt：面板打开时其余按键全拦，不透传游戏
     }
 
+    /** 快速开关虚拟鼠标（点击模式）：调宿主开关并提示新状态。 */
+    private void toggleMouseModeFromKey() {
+        Runnable toggle = mouseModeToggle;
+        if (toggle == null) {
+            toast(R.string.engine_ons_extract_action_failed);
+            return;
+        }
+        try {
+            toggle.run();
+        } catch (Throwable t) {
+            Log.w(TAG, "mouse mode toggle failed", t);
+            return;
+        }
+        boolean on = mouseModeSupplier != null && Boolean.TRUE.equals(mouseModeSupplier.get());
+        Log.i(TAG, "panel action mouse_toggle → " + (on ? "virtual mouse ON" : "virtual mouse OFF"));
+        toast(on ? R.string.engine_ons_extract_mouse_on : R.string.engine_ons_extract_mouse_off);
+    }
+
     /**
      * 面板展开时是否吞掉摇杆/轴事件（宿主 dispatchGenericMotionEvent 调用）。
      * 面板打开期间摇杆不得驱动游戏、也不驱动虚拟鼠标光标；收起时返回 false 透传。
@@ -2662,6 +2695,7 @@ public class OnsExtractPanel {
             return longPress ? "scroll_up(longpress)" : "scroll_down";
         }
         if (PanelActionBindings.matches(PanelActionBindings.PANEL_HISTORY, code)) return "history";
+        if (PanelActionBindings.matches(PanelActionBindings.PANEL_MOUSE_TOGGLE, code)) return "mouse_toggle";
         return null;
     }
 

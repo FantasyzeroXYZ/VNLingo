@@ -280,6 +280,7 @@ private fun GamepadSettingsScreen(
     val panelActions = remember(refreshKey) {
         listOf(
             PanelActionBindings.PANEL_TOGGLE to R.string.panel_action_toggle,
+            PanelActionBindings.PANEL_MOUSE_TOGGLE to R.string.panel_action_mouse_toggle,
             PanelActionBindings.PANEL_TOKEN_PREV to R.string.panel_action_token_prev,
             PanelActionBindings.PANEL_TOKEN_NEXT to R.string.panel_action_token_next,
             PanelActionBindings.PANEL_NAV_UP to R.string.panel_action_nav_up,

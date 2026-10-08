@@ -50,6 +50,9 @@
     <string name="engine_ons_extract_play">播放</string>
     <string name="engine_ons_extract_save_voice">存语音</string>
     <string name="engine_ons_extract_screenshot">截图</string>
+
+    <string name="engine_ons_extract_mouse_on">虚拟鼠标：已开启（方向键移动光标，确认键点击）</string>
+    <string name="engine_ons_extract_mouse_off">虚拟鼠标：已关闭（回到触摸模式）</string>
     <string name="engine_ons_extract_screenshot_saved">已截图 %1$s</string>
     <string name="engine_ons_extract_opacity">透明度</string>
     <string name="engine_ons_extract_no_voice">（无配对语音）</string>

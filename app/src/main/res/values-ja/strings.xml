@@ -180,6 +180,7 @@
     <string name="panel_bindings_title">パネル操作（テキスト枠）</string>
     <string name="panel_bindings_summary">パネル表示中、これらのキーはパネルだけに作用しゲームには渡りません。「開く/閉じる」はパネルが閉じているときのみ有効です。ゲームパッドとキーボードのどちらも割り当てられます。</string>
     <string name="panel_action_toggle">パネルを開く/閉じる</string>
+    <string name="panel_action_mouse_toggle">仮想マウスを切り替え</string>
     <string name="panel_action_token_prev">単語選択：前へ</string>
     <string name="panel_action_token_next">単語選択：次へ</string>
     <string name="panel_action_nav_up">内容を上へ</string>

@@ -50,6 +50,9 @@
     <string name="engine_ons_extract_play">Play</string>
     <string name="engine_ons_extract_save_voice">Save voice</string>
     <string name="engine_ons_extract_screenshot">Screenshot</string>
+
+    <string name="engine_ons_extract_mouse_on">Virtual mouse: ON (D-pad moves, confirm clicks)</string>
+    <string name="engine_ons_extract_mouse_off">Virtual mouse: OFF (back to touch mode)</string>
     <string name="engine_ons_extract_screenshot_saved">Saved %1$s</string>
     <string name="engine_ons_extract_opacity">Opacity</string>
     <string name="engine_ons_extract_no_voice">(no paired voice)</string>

@@ -180,6 +180,7 @@
     <string name="panel_bindings_title">Panel actions (text box)</string>
     <string name="panel_bindings_summary">While the panel is open these keys act only on the panel and never reach the game; “toggle” works only while the panel is closed. Gamepad and keyboard keys can both be bound.</string>
     <string name="panel_action_toggle">Open/close panel</string>
+    <string name="panel_action_mouse_toggle">Toggle virtual mouse</string>
     <string name="panel_action_token_prev">Select previous token</string>
     <string name="panel_action_token_next">Select next token</string>
     <string name="panel_action_nav_up">Scroll content up</string>

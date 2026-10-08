@@ -34,10 +34,13 @@ object PanelActionBindings {
     const val PANEL_COPY = 12
     const val PANEL_PLAY = 13
     const val PANEL_HISTORY = 14
+    /** 快速开关虚拟鼠标（点击模式：虚拟鼠标 ↔ 触摸）。面板收起/展开都生效。 */
+    const val PANEL_MOUSE_TOGGLE = 15
 
     /** 全部动作（顺序 = 设置页展示顺序）。 */
     val ALL = intArrayOf(
         PANEL_TOGGLE,
+        PANEL_MOUSE_TOGGLE,
         PANEL_TOKEN_PREV, PANEL_TOKEN_NEXT, PANEL_NAV_UP, PANEL_NAV_DOWN,
         PANEL_CONFIRM, PANEL_TRANSLATE, PANEL_CARD, PANEL_SENTENCE_CARD,
         PANEL_SCROLL_UP, PANEL_SCROLL_DOWN, PANEL_EXIT, PANEL_COPY, PANEL_PLAY,
@@ -61,6 +64,8 @@ object PanelActionBindings {
         KeyEvent.KEYCODE_BUTTON_B, KeyEvent.KEYCODE_BACK, KeyEvent.KEYCODE_ESCAPE)
     val DEFAULT_COPY = intArrayOf(KeyEvent.KEYCODE_C)
     val DEFAULT_PLAY = intArrayOf(KeyEvent.KEYCODE_SPACE)
+    /** 虚拟鼠标开关默认绑 R2（多数手柄空闲；可改绑）。 */
+    val DEFAULT_MOUSE_TOGGLE = intArrayOf(KeyEvent.KEYCODE_BUTTON_R2)
 
     /** 面板动作是否用户自定义过（无 = 当前生效的是默认绑定）。 */
     private const val PREFS = "panel_action_bindings"
@@ -83,6 +88,7 @@ object PanelActionBindings {
         PANEL_EXIT -> DEFAULT_EXIT
         PANEL_COPY -> DEFAULT_COPY
         PANEL_PLAY -> DEFAULT_PLAY
+        PANEL_MOUSE_TOGGLE -> DEFAULT_MOUSE_TOGGLE
         // 历史悬浮窗默认不绑键（参考实现里也没有对应手柄键）
         else -> IntArray(0)
     }
@@ -106,6 +112,7 @@ object PanelActionBindings {
         PANEL_EXIT -> "exit"
         PANEL_COPY -> "copy"
         PANEL_PLAY -> "play"
+        PANEL_MOUSE_TOGGLE -> "mouse_toggle"
         else -> "history"
     }
 

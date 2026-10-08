@@ -179,6 +179,7 @@
     <string name="panel_bindings_title">面板动作（剧情文本框）</string>
     <string name="panel_bindings_summary">面板打开时这些键只作用于面板，不会传进游戏；「呼出/收起」只在面板收起时生效。手柄按键与键盘按键均可绑定。</string>
     <string name="panel_action_toggle">呼出/收起面板</string>
+    <string name="panel_action_mouse_toggle">切换虚拟鼠标（点击模式）</string>
     <string name="panel_action_token_prev">选词：上一个</string>
     <string name="panel_action_token_next">选词：下一个</string>
     <string name="panel_action_nav_up">内容上移</string>

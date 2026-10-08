@@ -4,6 +4,24 @@
 > `docs/说明/游戏内提取制卡功能方案.md`（提取功能线方案）阅读。
 > 更新时间：2026-10-09
 
+## 2026-10-09 会话（六十五）：虚拟鼠标开关快捷键（手柄）
+
+用户要求：给手柄加一个快捷键，方便快速开关虚拟鼠标（点击模式）。
+
+- `PanelActionBindings` 新增第 16 个动作 `PANEL_MOUSE_TOGGLE`（默认绑 **R2 / KEYCODE_BUTTON_R2=105**，
+  可在手柄设置里改绑；`actionKey` = `mouse_toggle`）；
+- `OnsExtractPanel` 保存宿主传入的 `onMouseModeToggle` / `mouseMode`（`install` 与 `installDetached`
+  两条路径都存），并在 `handleKey` **最前面**处理该动作——**面板收起/展开都生效**
+  （这本来就是「不开面板也要能切」的快捷操作）；切换后按新状态弹提示
+  （`engine_ons_extract_mouse_on/off`）并记日志；
+- 手柄设置页「面板动作」列表自动多出「切换虚拟鼠标（点击模式）」一行（三语言字符串）。
+
+**真机验证（KRKR，面板展开与收起两种状态）**：
+`panel action mouse_toggle → virtual mouse ON` → 再按 → `→ virtual mouse OFF`；
+面板收起时按同样按键也命中（日志同上）——即快捷键在两种状态下都可用。
+
+注：Artemis 因按键不经 Java（见会话六十四），该快捷键在那里同样不可用，需内核支持。
+
 ## 2026-10-09 会话（六十四）：手柄查词方式设置 + 未查到不弹提示；虚拟鼠标点击排查
 
 **用户要求三条**：① 手柄在文本框选词查不到词不要弹「未查到」提示；② 新增「移动到即查词 /
