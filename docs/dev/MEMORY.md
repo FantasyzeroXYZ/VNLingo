@@ -431,3 +431,29 @@
    `im.size` 再换算，方向搞错全部点击落空（本轮反复踩）。
 6. **JNI 存活对象的内存转储用 memcpy 直拷**（调用期内对象有效）；
    process_vm_readv 自读在页边界会静默截断（返回已读字节数）。
+
+## 实测踩坑（2026-10-08 会话二新增：面板窗口宿主与 ONS 侧键）
+
+1. **窗口承载宿主的面板宽度强转会吞掉整个展开链路**：applyPanelWidth 把
+   WindowManager.LayoutParams 强转 FrameLayout.LayoutParams → ClassCastException，
+   异常发生在 togglePanel 的 refresh() 之前 → 面板展开后永远空白「待机」。
+   修复双保险：refresh 提前到 apply* 之前 + apply 加 try/catch；
+   宽度应用按宿主模式分流（WindowManager.LayoutParams → panelVisibilityHook
+   updateViewLayout；FrameLayout → setLayoutParams）。诊断特征：面板工具条
+   可见但状态永远「待机」、正文永远空。
+2. **ONS overlay 模式右缘按键组在 alioth 上整体不可触**（可见但点不动）：
+   uiautomator dump 显示侧键 bounds 全 [0,0][0,0]（左栏 EngineLeftButtons
+   正常）；dumpsys window windows 拿到侧键窗（独立窗口化后）真实 frame
+   x=2284-2394——此前按缩略图估的 2261 根本没进窗口。**自动化点侧键前先
+   dumpsys 拿窗口 frame，别信缩略图估算**。已把 ONS 整体切独立窗口承载
+   （对齐 Artemis），真机面板/点词/词典卡全通。
+3. **MIUI 隐藏导航条也占触摸区**：fullscreen 下 NavigationBar0 不可见但
+   右缘 ~210px 仍归它管（mNavigationBarPosition=2=右），贴缘窗口用
+   insets.right=0 的锚点会落进劫持区。短边 cutout（SHORT_EDGES）下窗口
+   content=[80,0][2400,1080]（左 80px 挖孔区）。
+4. **Artemis CommandVoice 通道已就位**：CArtemis::CommandVoice(CScriptBlock&,bool)
+   与 CommandPrint 同签名，块参数树取疑似语音文件名（音频扩展名/含路径），
+   首 8 调用记录键值对（logcat "CommandVoice arg"）——Girl's Blossom 序章
+   无语音行未实测，跨游戏验证时先看这批日志核键名。
+5. **说话人/正文 native 配对**：400ms 窗 + 短行(≤48B) 判说话人，合并单次上行；
+   420ms 兜底线程 flush 独立行。分条上行会让 facade 历史多出说话人碎片条目。

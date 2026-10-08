@@ -120,7 +120,8 @@
 - [ ] 推送欠账：feat/extract-suite b9de2c6（Artemis 官方内核 CommandPrint
       提取）本地已提交，2026-10-08 GitHub 直连不可达未推；网络恢复后
       `git push origin feat/extract-suite`
-- [ ] Artemis 官方内核语音配对：AudioChannels::Play 无 GOT 槽（导出不导入），
-      需 dlsym + inline hook 播放路径取语音名，走 facade pendingVoice 通道
+- [ ] Artemis 官方内核语音配对实测：CommandVoice 钩子已就位（块参数树取
+      语音文件名 + 首 8 调用键值日志），Girl's Blossom 序章无语音行未触发；
+      到有语音的章节看 "CommandVoice arg" 日志核键名，必要时按实际键名收窄
 - [ ] 官方内核提取的跨游戏验证：CommandPrint 通道仅 Girl's Blossom Project
       实测；其它官方 revision 内核（V2-V6）块布局/树偏移可能不同，需实测微调
