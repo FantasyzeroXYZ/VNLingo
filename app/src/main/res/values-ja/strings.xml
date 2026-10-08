@@ -40,6 +40,16 @@
     <string name="dict_reading_summary">オフにすると見出し語のみで検索します（日本語のみ有効）</string>
     <string name="dict_scope_row">言語範囲：%1$s</string>
     <string name="dict_scope_universal">すべて</string>
+    <string name="dict_packs">語形復元パック</string>
+    <string name="dict_pack_import">パックをインポート（zip / json）</string>
+    <string name="dict_pack_imported">%1$s パックをインポート：%2$d 件</string>
+    <string name="dict_pack_import_failed">パックのインポートに失敗（形式または言語が不正）</string>
+    <string name="dict_pack_kind_rules">ルール</string>
+    <string name="dict_pack_kind_table">変換表</string>
+    <string name="dict_pack_entries">%1$d 件</string>
+    <string name="dict_pack_uninstall">アンインストール</string>
+    <string name="dict_pack_restore">復元</string>
+    <string name="dict_pack_uninstalled">アンインストール済み</string>
     <string name="dict_search_idle">現在の辞書：%1$s（%2$d 条）。単語を入力して検索します。</string>
     <string name="dict_search_no_dict">辞書がありません。右上の「辞書管理」からインポートしてください。</string>
     <string name="dict_manager_content_description">辞書管理</string>

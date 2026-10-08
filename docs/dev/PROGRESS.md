@@ -4,6 +4,29 @@
 > `docs/说明/游戏内提取制卡功能方案.md`（提取功能线方案）阅读。
 > 更新时间：2026-10-08
 
+## 2026-10-08 会话（四十九）：词汇处理移植 V5（语言包 + 查表还原 M2）
+
+- **双型包模型**（对齐参考 `packs/types.ts`）：`rules`（ja/en/ko，规则在 assets，
+  可启停、可卸载=打标记、可恢复）+ `table`（用户导入的反查表，可启停/删除）。
+- **新增 `engine/.../ons/deinflect/`**：`DeinflectPackStore`（独立 SQLite
+  `deinflect_packs.db`：`pack_meta` + `pack_entries`；列表/启停/卸载恢复/删除/
+  覆盖式事务导入/单查/**批量查**；`initAt(path)` 供无 Context 的 harness 验证）、
+  `DeinflectPackImporter`（zip `lemma_pack_v1.json`+`index.json` / 裸 JSON 三种形态 /
+  JSONL；清洗非法项、lemma 去重、空 inflected 丢弃）。
+- **候选顺序接入 ③**：查表还原**先于**规则还原——`lookupDetailed` 在 reading 之后、
+  规则还原之前查表并标记 `table-deinflect`；面板 `tryMatchCandidate` 用
+  `lookupTableLemmasBatch` + 同一次 batch term 查询，`CandidateMatch` 增 `matchType`。
+- **失败语义**：语言包未安装/停用/未命中一律 null/空表，整段 try/catch，绝不影响查词；
+  导入是覆盖式单事务（失败不留残库，带进度回调）。
+- **UI**：词典管理弹窗新增「词形还原语言包」区（导入 + 三内置包启停/卸载/恢复 +
+  table 包条数/启停/删除）；**顺带修掉引入的布局问题**——弹窗内容原本不可滚动，
+  新卡片会把词典行挤出可视区（改 `verticalScroll`，词典列表 LazyColumn→forEach，
+  避免同轴嵌套滚动崩溃）。
+- **验证**：真机 `ProbePack` harness **33/33 PASS**（默认启用/导入覆盖/命中与未命中/
+  批量/停用/删除/内置卸载恢复/导入器 JSON·JSONL·zip）；UI 截图验证三包渲染与
+  卸载→「已卸载」+恢复→启用；`deinflect_packs.db` 已生成。
+- **未完成**：V6（面板展示 matchType/还原路径、制卡 `deinflection` 要素填充）。
+
 ## 2026-10-08 会话（四十八）：词汇处理移植 V3（查询语言设置 M4）
 
 - **设置层**：`EngineSettingsStore` 新增 `dict_query_lang` / `dict_reading` /

@@ -17,6 +17,8 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
@@ -88,6 +90,12 @@ fun DictionaryScreen(modifier: Modifier = Modifier) {
     var testResult by remember { mutableStateOf("") }
     var testRunning by remember { mutableStateOf(false) }
     var testTrace by remember { mutableStateOf(false) }
+    // M2 语言包：内置 rules 型（ja/en/ko，可卸载/恢复）+ 导入的 table 型（可启停/删除）
+    var packs by remember { mutableStateOf<List<com.core.ons.deinflect.DeinflectPackStore.PackInfo>>(emptyList()) }
+    var packImporting by remember { mutableStateOf(false) }
+    var packProgress by remember { mutableStateOf("") }
+    val packImportedFmt = stringResource(R.string.dict_pack_imported)
+    val packImportFailedMsg = stringResource(R.string.dict_pack_import_failed)
     // M4 查词设置（全局默认；每游戏覆盖在游戏设置页）
     var dictQueryLang by remember { mutableStateOf(EngineSettingsStore.getDictQueryLang(context)) }
     var dictReading by remember { mutableStateOf(EngineSettingsStore.isDictReading(context)) }
@@ -143,7 +151,43 @@ fun DictionaryScreen(modifier: Modifier = Modifier) {
         }
     }
 
-    // 防抖搜索：走 IO 线程；query 变化自动取消上一轮。
+    // M2 语言包导入（zip 的 index.json+lemma_pack_v1.json，或裸 JSON/JSONL）
+    val packPicker = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
+        if (uri != null) {
+            packImporting = true
+            packProgress = ""
+            scope.launch {
+                val result = runCatching {
+                    withContext(Dispatchers.IO) {
+                        val parsed = com.core.ons.deinflect.DeinflectPackImporter.parse(context, uri)
+                        val store = com.core.ons.deinflect.DeinflectPackStore.get()
+                        store.init(context)
+                        val n = store.importTablePack(
+                            parsed.lang, parsed.title, parsed.version, parsed.entries,
+                        ) { packProgress = it }
+                        if (n <= 0) throw IllegalStateException("导入写入 0 条")
+                        n to parsed.lang
+                    }
+                }
+                packImporting = false
+                packs = com.core.ons.deinflect.DeinflectPackStore.get().listPacks()
+                result.onSuccess { (n, lang) ->
+                    Toast.makeText(context, String.format(packImportedFmt, lang, n), Toast.LENGTH_SHORT).show()
+                }.onFailure { e ->
+                    if (e is CancellationException) throw e
+                    Toast.makeText(context, packImportFailedMsg, Toast.LENGTH_LONG).show()
+                }
+            }
+        }
+    }
+
+    LaunchedEffect(showManager) {
+        if (showManager) {
+            com.core.ons.deinflect.DeinflectPackStore.get().init(context)
+            packs = com.core.ons.deinflect.DeinflectPackStore.get().listPacks()
+        }
+    }
+
     // TrackReader searchTermWithDeinflect 语义：①精确 term ②词形还原→term；
     // 都未命中再退 searchByPrefix 式前缀浏览（词典浏览体验保留）
     LaunchedEffect(query, dictsVersion) {
@@ -307,7 +351,12 @@ fun DictionaryScreen(modifier: Modifier = Modifier) {
                 )
             },
             text = {
-                Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                // 弹窗内容整体可滚动：固定卡片（导入/查词设置/查询测试/语言包）+ 词典列表
+                // 已超过弹窗高度，不能滚动的话下面的卡片会被裁掉
+                Column(
+                    modifier = Modifier.fillMaxWidth().verticalScroll(rememberScrollState()),
+                    verticalArrangement = Arrangement.spacedBy(12.dp),
+                ) {
                     MiuixCard(
                         modifier = Modifier.fillMaxWidth().glassShadow().glassBorder(),
                         cornerRadius = AppComponentCornerRadius,
@@ -453,25 +502,63 @@ fun DictionaryScreen(modifier: Modifier = Modifier) {
                             }
                         }
                     }
-                    LazyColumn(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                        items(dicts, key = { it.id }) { dict ->
-                            DictRow(
-                                dict = dict,
-                                onEnabledChanged = { enabled ->
-                                    OnsDictStore.get().setEnabled(context, dict.id, enabled)
-                                    refresh()
-                                },
-                                onSetCurrent = {
-                                    OnsDictStore.get().setCurrent(context, dict.id)
-                                    refresh()
-                                },
-                                onDelete = { deleteTarget = dict },
-                                onScopeChanged = { scope ->
-                                    OnsDictStore.get().setDictScope(context, dict.id, scope)
-                                    refresh()
-                                },
+                    // ---- M2 词形还原语言包（rules 内置可卸载/恢复；table 导入可启停/删除）----
+                    MiuixCard(
+                        modifier = Modifier.fillMaxWidth().glassShadow().glassBorder(),
+                        cornerRadius = AppComponentCornerRadius,
+                    ) {
+                        Column(Modifier.padding(vertical = 4.dp)) {
+                            Text(
+                                stringResource(R.string.dict_packs),
+                                style = MaterialTheme.typography.titleSmall,
+                                color = MaterialTheme.colorScheme.onSurface,
+                                modifier = Modifier.padding(horizontal = 16.dp, vertical = 6.dp),
                             )
+                            ArrowPreference(
+                                title = stringResource(R.string.dict_pack_import),
+                                summary = if (packImporting) packProgress.ifEmpty { null } else null,
+                                onClick = { if (!packImporting) packPicker.launch(arrayOf("*/*")) },
+                            )
+                            packs.forEach { pack ->
+                                PackRow(
+                                    pack = pack,
+                                    onEnabled = { enabled ->
+                                        com.core.ons.deinflect.DeinflectPackStore.get()
+                                            .setPackEnabled(pack.lang, enabled)
+                                        packs = com.core.ons.deinflect.DeinflectPackStore.get().listPacks()
+                                    },
+                                    onRemove = {
+                                        val store = com.core.ons.deinflect.DeinflectPackStore.get()
+                                        if ("rules".equals(pack.kind)) store.uninstallBuiltinPack(pack.lang)
+                                        else store.removePack(pack.lang)
+                                        packs = store.listPacks()
+                                    },
+                                    onRestore = {
+                                        val store = com.core.ons.deinflect.DeinflectPackStore.get()
+                                        store.restoreBuiltinPack(pack.lang)
+                                        packs = store.listPacks()
+                                    },
+                                )
+                            }
                         }
+                    }
+                    dicts.forEach { dict ->
+                        DictRow(
+                            dict = dict,
+                            onEnabledChanged = { enabled ->
+                                OnsDictStore.get().setEnabled(context, dict.id, enabled)
+                                refresh()
+                            },
+                            onSetCurrent = {
+                                OnsDictStore.get().setCurrent(context, dict.id)
+                                refresh()
+                            },
+                            onDelete = { deleteTarget = dict },
+                            onScopeChanged = { scope ->
+                                OnsDictStore.get().setDictScope(context, dict.id, scope)
+                                refresh()
+                            },
+                        )
                     }
                 }
             },
@@ -667,6 +754,57 @@ private fun CycleRow(title: String, value: String, onNext: () -> Unit) {
     ) {
         Text(title, style = MaterialTheme.typography.bodyLarge, modifier = Modifier.weight(1f))
         TextButton(onClick = onNext) { Text("$value ▾") }
+    }
+}
+
+/** M2 语言包行：名称 + 类型/条数 + 启停 + 卸载·恢复（rules）/ 删除（table）。 */
+@Composable
+private fun PackRow(
+    pack: com.core.ons.deinflect.DeinflectPackStore.PackInfo,
+    onEnabled: (Boolean) -> Unit,
+    onRemove: () -> Unit,
+    onRestore: () -> Unit,
+) {
+    val isRules = "rules".equals(pack.kind)
+    Row(
+        verticalAlignment = Alignment.CenterVertically,
+        modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 6.dp),
+    ) {
+        Column(Modifier.weight(1f)) {
+            Text(
+                if (pack.name.isNotEmpty()) pack.name else pack.lang,
+                style = MaterialTheme.typography.bodyLarge,
+            )
+            Text(
+                buildString {
+                    append(pack.lang)
+                    append(" · ")
+                    append(if (isRules) stringResource(R.string.dict_pack_kind_rules)
+                    else stringResource(R.string.dict_pack_kind_table))
+                    if (!isRules && pack.entryCount > 0) {
+                        append(" · ")
+                        append(stringResource(R.string.dict_pack_entries, pack.entryCount))
+                    }
+                    if (!pack.installed) {
+                        append(" · ")
+                        append(stringResource(R.string.dict_pack_uninstalled))
+                    }
+                },
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
+        if (isRules && !pack.installed) {
+            TextButton(onClick = onRestore) { Text(stringResource(R.string.dict_pack_restore)) }
+        } else {
+            Switch(checked = pack.enabled, onCheckedChange = onEnabled)
+            TextButton(onClick = onRemove) {
+                Text(
+                    stringResource(if (isRules) R.string.dict_pack_uninstall else R.string.common_delete),
+                    color = MaterialTheme.colorScheme.error,
+                )
+            }
+        }
     }
 }
 

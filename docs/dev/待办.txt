@@ -275,10 +275,17 @@
       参考对照 15/15 复测仍 0 差异
 - [ ] 词汇处理移植 V3 遗留：词典页结果语言 chips 仍是脚本启发式，未按 `dicts.scope`
       过滤结果（需给 `OnsDictStore.Group` 带 dict_id 才能按词典范围筛）
-- [ ] 词汇处理移植 V5：M2 语言包（`pack_meta`/`pack_entries` 表、导入事务、
-      启停/卸载/恢复）+ 查表还原接入候选顺序 ③（标记 `table-deinflect`）
-- [ ] 词汇处理移植 V6：面板/制卡对接（`OnsExtractPanel.tryMatchCandidate` 改用
-      `lookupDetailed`、`deinflection` 要素填充、候选按 score 排序展示）
+- [x] 词汇处理移植 V5（M2 语言包 + 查表还原，会话四十九）：`DeinflectPackStore`
+      （`deinflect_packs.db`：pack_meta + pack_entries、启停/卸载恢复/删除/
+      覆盖式事务导入/单查+批量查）+ `DeinflectPackImporter`（zip / 裸 JSON 三形态 /
+      JSONL）；候选顺序 ③ 查表先于规则还原（标记 `table-deinflect`）；
+      词典管理弹窗「词形还原语言包」区（导入 + 三内置包 + table 包管理）。
+      真机 harness **33/33 PASS**；UI 卸载→已卸载+恢复 已验证
+- [ ] 词汇处理移植 V6：面板/制卡对接（面板展示 matchType 与还原路径、制卡
+      `deinflection` 要素填充、候选列表按 score 排序展示）——`CandidateMatch.matchType`
+      已在 V5 就位，剩展示与要素接线
+- [ ] 词汇处理遗留：词典页结果语言 chips 仍是脚本启发式，未按 `dicts.scope` 过滤结果
+      （需给 `OnsDictStore.Group` 带 dict_id）
 - [ ] 词汇处理增强（方案未要求）：中文全角/NFKC 变体目前只进预处理、不进候选，
       若要让「ＡＢＣ→ABC」真正命中，需在查询侧把预处理变体当字面 term 试查
 - [ ] 真机人工验收：词典页查询测试用**日文**用例（adb 无法注入日文输入）

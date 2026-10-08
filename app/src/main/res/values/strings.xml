@@ -40,6 +40,16 @@
     <string name="dict_reading_summary">关闭后只按词形查（仅日语有效）</string>
     <string name="dict_scope_row">语言范围：%1$s</string>
     <string name="dict_scope_universal">全部</string>
+    <string name="dict_packs">词形还原语言包</string>
+    <string name="dict_pack_import">导入语言包（zip / json）</string>
+    <string name="dict_pack_imported">%1$s 语言包已导入：%2$d 条</string>
+    <string name="dict_pack_import_failed">语言包导入失败（格式或语言不合法）</string>
+    <string name="dict_pack_kind_rules">规则包</string>
+    <string name="dict_pack_kind_table">查表包</string>
+    <string name="dict_pack_entries">%1$d 条</string>
+    <string name="dict_pack_uninstall">卸载</string>
+    <string name="dict_pack_restore">恢复</string>
+    <string name="dict_pack_uninstalled">已卸载</string>
     <string name="dict_search_idle">当前词典：%1$s（%2$d 条），输入单词开始查询</string>
     <string name="dict_search_no_dict">暂无词典，点右上角「词典管理」导入</string>
     <string name="dict_manager_content_description">词典管理</string>

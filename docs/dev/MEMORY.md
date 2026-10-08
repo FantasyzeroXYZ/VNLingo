@@ -723,3 +723,26 @@
    sha 判断「这一帧没动」）。稳妥做法：一条命令里先 `input keyevent 224` +
    `input swipe 540 2000 540 700 200` 唤醒解锁，再点，再截图。
 
+## 实测踩坑（2026-10-08 会话四十九新增：语言包 M2 与弹窗布局）
+
+1. **弹窗内容一多就会被裁掉，且不会自动可滚动**：`AppAlertDialog` 的 `text` 槽里如果
+   只放一个普通 `Column`，超出高度后**下面的内容直接不可见也无法滚动**（本轮把语言包
+   卡片插到词典列表上方后就复现了）。修法：给该 `Column` 加
+   `Modifier.verticalScroll(rememberScrollState())`，并把同轴嵌套的 `LazyColumn`
+   改成 `forEach`——**同方向嵌套滚动组件会直接抛异常**（infinite max height）。
+2. **可测试性钩子要提前留**：`DeinflectPackStore` 一开始只有 `init(Context)`，
+   harness 没法在 app_process 里造 Context；补一个 `initAt(path)`（内部就是
+   `SQLiteDatabase.openOrCreateDatabase(File)`）后，语言包语义就能在真机上跑
+   33 条断言。**凡是「纯数据 + SQLite」的引擎组件都值得留这种入口**。
+3. **importTablePack 不做去重**：参考实现的去重发生在 parse/build 阶段
+   （`build-language-pack.mts` 与 `parse.ts`），store 只负责写。别在 store 里
+   自作主张去重/清洗，否则与参考语义分叉、断言会对不上（本轮先按参考写，测试
+   期望值改成 `[gehen, gehen]` 才对）。
+4. **导入器的形态要按「能不能 parse 成单个 JSON」分流**：JSONL 的第一行往往是
+   `{"lang":..}`，若用 `text.startsWith("{")` 就断定是单对象，`new JSONObject(整段)`
+   会抛异常并**整份导入失败**；正确做法是 try 单对象 → 失败再逐行解析，且逐行容错
+   （单行非法跳过）。
+5. **每个断言组都要能独立失败**：harness 里一次未捕获异常会把后面所有用例跳过
+   （本轮 p2 用例写错就导致后面 6 条直接没跑，只看到 "Killed"）。分组 try/catch +
+   末尾打印 `PASS=n FAIL=n`，才能一眼看出「跑完了没有」。
+

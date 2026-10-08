@@ -204,6 +204,7 @@ public class OnsExtractPanel {
         // 词典库提前打开（导入/查词共用；后台线程 search 不依赖 context）
         OnsDictStore.get().init(activity);
         OnsDeinflector.init(activity);  // 词形还原全量规则（assets/deinflect_*.json）
+        com.core.ons.deinflect.DeinflectPackStore.get().init(activity);  // M2 语言包
         // M4 查询语言设置：查询语言/是否查读音随启动 extra 下发（全局 + 每游戏覆盖
         // 已在 app 侧 resolver 合并）；汉字归属只读全局设置（多进程 prefs）。
         android.content.Intent intent = activity.getIntent();
@@ -1335,19 +1336,28 @@ public class OnsExtractPanel {
     }
 
     // ---- 通用候选匹配器（TrackReader tryMatchCandidate 对齐）----
-    //  ① 精确 term → ② 精确 reading（仅含假名候选）→ ③ 词形还原→term
-    //  → ④ 词形还原→reading。matchedText = 候选全文（高亮面），命中词条形
-    //  走 deinflectedTerm/卡片标题。递减由扫描循环驱动，此处不做前缀缩短。
+    //  ① 精确 term → ② 精确 reading（日语）→ ③ 查表还原（M2 语言包，先于规则）
+    //  → ④ 规则还原→term → ⑤ 规则还原→reading。matchedText = 候选全文（高亮面），
+    //  命中词条形走 deinflectedTerm/卡片标题。递减由扫描循环驱动，此处不做前缀缩短。
 
     private static final class CandidateMatch {
         final String matchedText;
         final List<OnsDictStore.Group> groups;
         final String deinflectedTerm;   // 还原原形（非还原命中为 null）
+        /** M6：命中方式（term/reading/table-deinflect/deinflect-term/deinflect-reading）。 */
+        final String matchType;
 
         CandidateMatch(String matchedText, List<OnsDictStore.Group> groups, String deinflectedTerm) {
+            this(matchedText, groups, deinflectedTerm,
+                    deinflectedTerm == null ? "term" : "deinflect-term");
+        }
+
+        CandidateMatch(String matchedText, List<OnsDictStore.Group> groups,
+                       String deinflectedTerm, String matchType) {
             this.matchedText = matchedText;
             this.groups = groups;
             this.deinflectedTerm = deinflectedTerm;
+            this.matchType = matchType;
         }
     }
 
@@ -1382,7 +1392,7 @@ public class OnsExtractPanel {
         }
         // B3：原形 + 全部还原形合并成一次 IN 查询（term 列、reading 列各一次），
         // 替代原来的逐候选逐形串行查询（每次都有游标/JNI 往返）。
-        // 命中优先级保持原语义：①term(cand) ②reading(cand) ③term(root) ④reading(root)
+        // 命中优先级保持原语义：①term(cand) ②reading(cand) ③查表还原 ④term(root) ⑤reading(root)
         OnsDictStore store = OnsDictStore.get();
         java.util.Map<String, List<OnsDictStore.Group>> termHits = store.batchTermLookup(keys, 5);
         List<OnsDictStore.Group> g = termHits.get(cand);
@@ -1393,6 +1403,28 @@ public class OnsExtractPanel {
             readingHits = store.batchReadingLookup(keys, 5);
             g = readingHits.get(cand);
             if (g != null && !g.isEmpty()) return new CandidateMatch(cand, g, null);
+        }
+        // ③ 查表还原（M2 语言包）：优先于规则还原；未安装/停用/未命中即跳过
+        if (deinflect) {
+            try {
+                java.util.Map<String, List<String>> tableLemmas =
+                        com.core.ons.deinflect.DeinflectPackStore.get()
+                                .lookupTableLemmasBatch(lang, keys);
+                List<String> candLemmas = tableLemmas.get(cand);
+                if (candLemmas != null && !candLemmas.isEmpty()) {
+                    java.util.Map<String, List<OnsDictStore.Group>> lemmaHits =
+                            store.batchTermLookup(candLemmas, 5);
+                    for (String lemma : candLemmas) {
+                        if (lemma.equals(cand)) continue;
+                        g = lemmaHits.get(lemma);
+                        if (g != null && !g.isEmpty()) {
+                            return new CandidateMatch(cand, g, lemma, "table-deinflect");
+                        }
+                    }
+                }
+            } catch (Throwable t) {
+                android.util.Log.w("OnsExtractPanel", "table deinflect failed cand=" + cand, t);
+            }
         }
         if (deinflect) {
             for (int i = 1; i < keys.size(); i++) {

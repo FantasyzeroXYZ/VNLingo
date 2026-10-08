@@ -788,6 +788,29 @@ public final class OnsDictStore {
                     }
                 }
                 if (!deinflect) continue;
+                // ③ 查表还原（语言包反查表）——优先于规则还原（对齐参考 tryMatchCandidate）
+                try {
+                    java.util.List<String> tableLemmas =
+                            com.core.ons.deinflect.DeinflectPackStore.get()
+                                    .lookupTableLemmas(out.language, prefix);
+                    if (tableLemmas != null && !tableLemmas.isEmpty()) {
+                        if (trace) out.trace.add(prefix + " table→" + tableLemmas.size() + " 候选");
+                        for (String lemma : tableLemmas) {
+                            if (lemma == null || lemma.equals(prefix)) continue;
+                            groups = searchTermExact(lemma, 12);
+                            if (trace) {
+                                out.trace.add(prefix + " table→" + lemma
+                                        + (groups.isEmpty() ? "-" : groups.size() + "组"));
+                            }
+                            if (!groups.isEmpty()) {
+                                fill(out, lemma, "table-deinflect", "table", 0, groups);
+                                return out;
+                            }
+                        }
+                    }
+                } catch (Throwable t) {
+                    Log.w(TAG, "table deinflect failed for " + prefix, t);
+                }
                 // ④/⑤ 规则还原（按 score 升序试查；候选一并记录供诊断）
                 List<OnsDeinflector.Result> candidates = OnsDeinflector.deinflectDetailed(prefix, out.language);
                 if (len == q.length()) out.candidates.addAll(candidates);
