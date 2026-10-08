@@ -4,6 +4,26 @@
 > `docs/说明/游戏内提取制卡功能方案.md`（提取功能线方案）阅读。
 > 更新时间：2026-10-08
 
+## 2026-10-08 会话（五十六）：翻译/Anki/TTS 设置改独立页（不再悬浮弹窗）
+
+用户要求：设置页的「翻译设置 / Anki 设置 / TTS 设置」入口点击后进入**独立页**，
+与「引擎」等其它入口一致，不要弹悬浮窗。
+
+做法（复用既有内容，避免重写一套 UI）：
+
+- `OnsExtractSettingsDialogs` 把三个弹窗的**内容构建**与**保存动作**拆出来：
+  `buildTranslatePage / buildAnkiCardPage / buildTtsPage` 返回 `Page{content, titleRes, save, hasSave}`；
+  原 `showXxx()` 改为「用同一份内容弹窗」，游戏内/面板入口行为不变。
+- 新增 `EngineSettingsPageActivity`（engine 模块 + manifest 注册）：顶栏「‹ 返回 / 标题 / 保存」
+  + 内容滚动区，保存后 toast 并结束；翻译设置这类点了就生效的页**不显示保存按钮**
+  （`hasSave=false`）。状态栏/导航栏与其它页一致地设成浅色。
+- 设置页三个入口改为 `startActivityWithPageTransition(EngineSettingsPageActivity.createIntent(kind))`。
+
+**真机验证**：三个入口分别打开独立页——翻译（翻译引擎 / 引擎配置 / 翻译测试，无保存按钮）、
+TTS（语速/音高/音量/发音人/MultiTTS 服务器/引擎/HTTP 模板/自动朗读/句读/循环/试听）、
+制卡设置（牌组/模板下拉「请选择…」、语音源下拉、自动截图开关、要素→模型字段映射）；
+点制卡设置的「保存」写入配置并返回上一页。
+
 ## 2026-10-08 会话（五十五）：制卡要素名对齐参考（不再自造）
 
 用户指出：字段映射的内容不要乱加，对照 web game text 有的映射名称即可。

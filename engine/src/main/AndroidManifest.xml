@@ -18,6 +18,13 @@
 
     <application>
 
+        <!-- 设置页各入口的独立设置页宿主（翻译 / Anki / TTS），替代原悬浮弹窗 -->
+        <activity
+            android:name="com.core.ons.EngineSettingsPageActivity"
+            android:exported="false"
+            android:label="@string/engine_ons_settings_page_title"
+            android:configChanges="keyboardHidden|orientation|screenSize|screenLayout|smallestScreenSize|uiMode|density|fontScale|locale|layoutDirection" />
+
         <!-- Kirikiri（kr/krkr2）引擎宿主，独立进程隔离 SDL2 原生符号 -->
         <activity
             android:name="com.akira.tyranoemu.remote.Kirikiroid139"

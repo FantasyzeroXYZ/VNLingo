@@ -819,3 +819,17 @@
 4. **同一套要素要贯穿所有制卡入口**：词卡与句卡都按 `field_map` 装配字段；
    句卡此前把「截图+语音+整页」硬塞进前两个字段，既不跟映射走、也引用了不存在的 page 要素。
 
+## 实测踩坑（2026-10-08 会话五十六新增：设置页改独立页）
+
+1. **`getWindow().getInsetsController()` 不能在 `setContentView` 之前调**：decor view 还没建，
+   `PhoneWindow.getInsetsController()` 直接 NPE 把 Activity 崩掉（本轮踩了一次，logcat 里
+   是 `NullPointerException ... DecorView.getWindowInsetsController() on a null object reference`）。
+   状态栏/导航栏着色统一放到 `setContentView` 之后，并 try/catch 兜底。
+2. **弹窗改独立页不要重写 UI**：把弹窗的「内容构建」与「保存动作」拆成
+   `buildXxxPage(...)` 返回 `{content, titleRes, save}`，弹窗与独立页共用同一份实现——
+   行为完全一致、改动面最小；「点了就生效」的页（翻译设置）用 `hasSave=false` 隐藏保存按钮，
+   避免出现一个按了没反应的按钮。
+3. **设置页入口形态与其它入口保持一致**：引擎/云同步/MCP 等本来都是独立 Activity，
+   翻译/Anki/TTS 之前是悬浮弹窗，风格割裂；新增 Activity 后要与之一致地设置
+   浅色状态栏与导航栏底色。
+

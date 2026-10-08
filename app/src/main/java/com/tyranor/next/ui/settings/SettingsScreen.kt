@@ -347,15 +347,14 @@ fun SettingsScreen(modifier: Modifier = Modifier) {
                                 onClick = { startActivityWithPageTransition(ctx, EngineManageActivity.createIntent(ctx)) },
                             )
                             // 提取功能线配置（原游戏内面板设置分区，产品调整移到应用设置）
+                            // 统一走独立设置页（与「引擎」入口一致），不再弹悬浮窗
                             ArrowPreference(
                                 title = stringResource(R.string.settings_extract_translate),
                                 summary = stringResource(com.core.engine.R.string.engine_ons_settings_section_translate),
                                 startAction = { SettingsItemIcon(R.drawable.ic_settings) },
                                 onClick = {
-                                    // 设置页 context 被 AppLocaleController 包装过，须经 findActivity 解出 Activity
-                                    com.core.ons.OnsExtractSettingsDialogs.showTranslateSettings(
-                                        com.tyranor.next.core.i18n.AppLocaleController.findActivity(ctx) ?: return@ArrowPreference,
-                                    )
+                                    startActivityWithPageTransition(ctx, com.core.ons.EngineSettingsPageActivity
+                                        .createIntent(ctx, com.core.ons.EngineSettingsPageActivity.KIND_TRANSLATE))
                                 },
                             )
                             ArrowPreference(
@@ -363,9 +362,8 @@ fun SettingsScreen(modifier: Modifier = Modifier) {
                                 summary = stringResource(com.core.engine.R.string.engine_ons_anki_card_title),
                                 startAction = { SettingsItemIcon(R.drawable.ic_settings) },
                                 onClick = {
-                                    com.core.ons.OnsExtractSettingsDialogs.showAnkiCardSettings(
-                                        com.tyranor.next.core.i18n.AppLocaleController.findActivity(ctx) ?: return@ArrowPreference,
-                                    )
+                                    startActivityWithPageTransition(ctx, com.core.ons.EngineSettingsPageActivity
+                                        .createIntent(ctx, com.core.ons.EngineSettingsPageActivity.KIND_ANKI))
                                 },
                             )
                             ArrowPreference(
@@ -373,9 +371,8 @@ fun SettingsScreen(modifier: Modifier = Modifier) {
                                 summary = stringResource(com.core.engine.R.string.engine_ons_tts_title),
                                 startAction = { SettingsItemIcon(R.drawable.ic_settings) },
                                 onClick = {
-                                    com.core.ons.OnsExtractSettingsDialogs.showTtsSettings(
-                                        com.tyranor.next.core.i18n.AppLocaleController.findActivity(ctx) ?: return@ArrowPreference,
-                                    )
+                                    startActivityWithPageTransition(ctx, com.core.ons.EngineSettingsPageActivity
+                                        .createIntent(ctx, com.core.ons.EngineSettingsPageActivity.KIND_TTS))
                                 },
                             )
                             ArrowPreference(

@@ -225,6 +225,8 @@
     <string name="engine_ons_anki_voice_off">オフ</string>
     <string name="engine_ons_anki_on">オン</string>
     <string name="engine_ons_anki_off">オフ</string>
+    <string name="engine_ons_settings_page_save">保存</string>
+    <string name="engine_ons_settings_page_title">設定</string>
     <string name="engine_ons_anki_slot_none">なし</string>
     <string name="engine_ons_anki_slot_word">単語</string>
     <string name="engine_ons_anki_slot_reading">読み</string>

@@ -43,8 +43,29 @@ public final class OnsExtractSettingsDialogs {
     private OnsExtractSettingsDialogs() {
     }
 
-    /** 翻译设置主弹窗：引擎切换（API / 本地）+ 配置入口 + 翻译测试。 */
-    public static void showTranslateSettings(Activity activity) {
+    /**
+     * 设置「页」内容：独立页（{@code EngineSettingsPageActivity}）与弹窗共用同一套构建逻辑。
+     *
+     * <p>独立页只负责套一层顶栏（返回 + 标题 + 保存）并滚动显示 {@link #content}，
+     * 点保存时执行 {@link #save}；翻译设置这类「点了就生效」的页 save 为空动作。
+     */
+    public static final class Page {
+        public final android.view.View content;
+        public final int titleRes;
+        public final Runnable save;
+        /** 是否需要在独立页顶栏显示「保存」（点了就生效的页没有保存语义）。 */
+        public final boolean hasSave;
+
+        Page(android.view.View content, int titleRes, Runnable save) {
+            this.content = content;
+            this.titleRes = titleRes;
+            this.save = save == null ? () -> { } : save;
+            this.hasSave = save != null;
+        }
+    }
+
+    /** 翻译设置（独立页内容）：引擎切换（API / 本地）+ 配置入口 + 翻译测试。 */
+    public static Page buildTranslatePage(Activity activity) {
         LinearLayout box = new LinearLayout(activity);
         box.setOrientation(LinearLayout.VERTICAL);
         int pad = dp(activity, 16);
@@ -99,9 +120,15 @@ public final class OnsExtractSettingsDialogs {
 
         ScrollView scroller = new ScrollView(activity);
         scroller.addView(box);
+        return new Page(scroller, R.string.engine_ons_settings_section_translate, null);
+    }
+
+    /** 翻译设置主弹窗（游戏内仍用弹窗；设置页走独立页）。 */
+    public static void showTranslateSettings(Activity activity) {
+        Page page = buildTranslatePage(activity);
         new android.app.AlertDialog.Builder(activity)
-                .setTitle(R.string.engine_ons_settings_section_translate)
-                .setView(scroller)
+                .setTitle(page.titleRes)
+                .setView(page.content)
                 .setPositiveButton(android.R.string.ok, null)
                 .show();
     }
@@ -668,7 +695,7 @@ public final class OnsExtractSettingsDialogs {
      * 运行时不再自动创建模板（制卡导出契约对齐 video_learn_tool）：模板缺失在
      * 制卡时明确报错引导到本页选择。
      */
-    public static void showAnkiCardSettings(Activity activity) {
+    public static Page buildAnkiCardPage(Activity activity) {
         LinearLayout box = new LinearLayout(activity);
         box.setOrientation(LinearLayout.VERTICAL);
         int pad = dp(activity, 16);
@@ -1037,44 +1064,51 @@ public final class OnsExtractSettingsDialogs {
 
         ScrollView scroller = new ScrollView(activity);
         scroller.addView(box);
+        Runnable save = () -> {
+            // 牌组/模板：只接受「AnkiDroid 里确实存在」的值；选「请选择」= 清空配置；
+            // 数据源读取失败时保持原配置不动（不写脏值）
+            if (deckNames.isEmpty()) {
+                // 读不到 AnkiDroid 数据：不改动已保存的牌组/模板
+            } else if (deckState.get() == null || deckState.get().isEmpty()) {
+                AnkiCardConfig.setDeck(activity, "");
+            } else if (indexOfString(deckNames, deckState.get()) >= 0) {
+                AnkiCardConfig.setDeck(activity, deckState.get());
+            }
+            if (modelNames.isEmpty()) {
+                // 同上
+            } else if (modelState.get() == null || modelState.get().isEmpty()) {
+                AnkiCardConfig.setModel(activity, "");
+            } else if (indexOfString(modelNames, modelState.get()) >= 0) {
+                AnkiCardConfig.setModel(activity, modelState.get());
+            }
+            AnkiCardConfig.setCaptureOnCard(activity, captureState[0]);
+            AnkiCardConfig.setVoiceSource(activity, voiceState[0]);
+            java.util.Map<String, String> map = new java.util.LinkedHashMap<>();
+            java.util.List<String> liveFields = modelNames.isEmpty()
+                    ? new java.util.ArrayList<>() : modelFieldsOf(activity, modelState.get());
+            for (java.util.Map.Entry<String, String> e : fieldBySlot.entrySet()) {
+                if (e.getValue() == null || e.getValue().isEmpty()) continue;
+                // 只保留当前模板真实存在的字段（模板换了以后旧字段不应残留）
+                if (!liveFields.isEmpty() && !liveFields.contains(e.getValue())) continue;
+                map.put(e.getKey(), e.getValue());
+            }
+            AnkiCardConfig.setFieldMap(activity, map);
+            com.core.anki.AnkiCardSchemes.setActiveName(activity, "");
+            activeScheme.set("");
+            syncScheme.run();
+            Toast.makeText(activity, R.string.engine_ons_settings_saved,
+                    Toast.LENGTH_SHORT).show();
+        };
+        return new Page(scroller, R.string.engine_ons_anki_card_title, save);
+    }
+
+    /** 制卡设置弹窗（游戏内/面板入口用；设置页走独立页）。 */
+    public static void showAnkiCardSettings(Activity activity) {
+        Page page = buildAnkiCardPage(activity);
         new android.app.AlertDialog.Builder(activity)
-                .setTitle(R.string.engine_ons_anki_card_title)
-                .setView(scroller)
-                .setPositiveButton(android.R.string.ok, (d, w) -> {
-                    // 牌组/模板：只接受「AnkiDroid 里确实存在」的值；选「请选择」= 清空配置；
-                    // 数据源读取失败时保持原配置不动（不写脏值）
-                    if (deckNames.isEmpty()) {
-                        // 读不到 AnkiDroid 数据：不改动已保存的牌组/模板
-                    } else if (deckState.get() == null || deckState.get().isEmpty()) {
-                        AnkiCardConfig.setDeck(activity, "");
-                    } else if (indexOfString(deckNames, deckState.get()) >= 0) {
-                        AnkiCardConfig.setDeck(activity, deckState.get());
-                    }
-                    if (modelNames.isEmpty()) {
-                        // 同上
-                    } else if (modelState.get() == null || modelState.get().isEmpty()) {
-                        AnkiCardConfig.setModel(activity, "");
-                    } else if (indexOfString(modelNames, modelState.get()) >= 0) {
-                        AnkiCardConfig.setModel(activity, modelState.get());
-                    }
-                    AnkiCardConfig.setCaptureOnCard(activity, captureState[0]);
-                    AnkiCardConfig.setVoiceSource(activity, voiceState[0]);
-                    java.util.Map<String, String> map = new java.util.LinkedHashMap<>();
-                    java.util.List<String> liveFields = modelNames.isEmpty()
-                            ? new java.util.ArrayList<>() : modelFieldsOf(activity, modelState.get());
-                    for (java.util.Map.Entry<String, String> e : fieldBySlot.entrySet()) {
-                        if (e.getValue() == null || e.getValue().isEmpty()) continue;
-                        // 只保留当前模板真实存在的字段（模板换了以后旧字段不应残留）
-                        if (!liveFields.isEmpty() && !liveFields.contains(e.getValue())) continue;
-                        map.put(e.getKey(), e.getValue());
-                    }
-                    AnkiCardConfig.setFieldMap(activity, map);
-                    com.core.anki.AnkiCardSchemes.setActiveName(activity, "");
-                    activeScheme.set("");
-                    syncScheme.run();
-                    Toast.makeText(activity, R.string.engine_ons_settings_saved,
-                            Toast.LENGTH_SHORT).show();
-                })
+                .setTitle(page.titleRes)
+                .setView(page.content)
+                .setPositiveButton(android.R.string.ok, (d, w) -> page.save.run())
                 .setNegativeButton(android.R.string.cancel, null)
                 .show();
     }
@@ -1345,9 +1379,9 @@ public final class OnsExtractSettingsDialogs {
         return (current + 1) % values.length;
     }
 
-    /** TTS 设置全量版（TrackReader TTS 设置对齐）：引擎 / 语速 / 音高 / 音量 /
-     *  发音人 / MultiTTS 服务器 / HTTP 模板 / 试听。 */
-    public static void showTtsSettings(Activity activity) {
+    /** TTS 设置（独立页内容）：引擎 / 语速 / 音高 / 音量 / 发音人 / MultiTTS 服务器 /
+     *  HTTP 模板 / 试听。 */
+    public static Page buildTtsPage(Activity activity) {
         LinearLayout box = new LinearLayout(activity);
         box.setOrientation(LinearLayout.VERTICAL);
         int pad = dp(activity, 16);
@@ -1630,20 +1664,27 @@ public final class OnsExtractSettingsDialogs {
 
         ScrollView scroller = new ScrollView(activity);
         scroller.addView(box);
+        Runnable save = () -> {
+            OnsTtsEngines.setEngine(activity, engineState[0]);
+            String tpl = httpField.getText() == null ? "" : httpField.getText().toString().trim();
+            if (tpl.isEmpty()) tpl = OnsTtsEngines.DEFAULT_HTTP_TEMPLATE;
+            OnsTtsEngines.setHttpTemplate(activity, tpl);
+            if (OnsTtsEngines.ENGINE_HTTP.equals(engineState[0])
+                    && !OnsTtsEngines.isHttpTemplateValid(tpl)) {
+                Toast.makeText(activity, R.string.engine_ons_tts_http_template_invalid,
+                        Toast.LENGTH_LONG).show();
+            }
+        };
+        return new Page(scroller, R.string.engine_ons_tts_title, save);
+    }
+
+    /** TTS 设置弹窗（游戏内/面板入口用；设置页走独立页）。 */
+    public static void showTtsSettings(Activity activity) {
+        Page page = buildTtsPage(activity);
         new android.app.AlertDialog.Builder(activity)
-                .setTitle(R.string.engine_ons_tts_title)
-                .setView(scroller)
-                .setPositiveButton(android.R.string.ok, (d, w) -> {
-                    OnsTtsEngines.setEngine(activity, engineState[0]);
-                    String tpl = httpField.getText() == null ? "" : httpField.getText().toString().trim();
-                    if (tpl.isEmpty()) tpl = OnsTtsEngines.DEFAULT_HTTP_TEMPLATE;
-                    OnsTtsEngines.setHttpTemplate(activity, tpl);
-                    if (OnsTtsEngines.ENGINE_HTTP.equals(engineState[0])
-                            && !OnsTtsEngines.isHttpTemplateValid(tpl)) {
-                        Toast.makeText(activity, R.string.engine_ons_tts_http_template_invalid,
-                                Toast.LENGTH_LONG).show();
-                    }
-                })
+                .setTitle(page.titleRes)
+                .setView(page.content)
+                .setPositiveButton(android.R.string.ok, (d, w) -> page.save.run())
                 .setNegativeButton(android.R.string.cancel, null)
                 .show();
     }

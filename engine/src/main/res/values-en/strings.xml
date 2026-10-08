@@ -222,6 +222,8 @@
     <string name="engine_ons_anki_voice_off">Off</string>
     <string name="engine_ons_anki_on">On</string>
     <string name="engine_ons_anki_off">Off</string>
+    <string name="engine_ons_settings_page_save">Save</string>
+    <string name="engine_ons_settings_page_title">Settings</string>
     <string name="engine_ons_anki_slot_none">None</string>
     <!-- Anki element names: must match the reference WORD_FIELDS labels -->
     <string name="engine_ons_anki_slot_word">Word</string>
