@@ -930,6 +930,13 @@
 7. **脚本化真机验证的边界**：`input tap` 会被 MIUI 通知栏下拉、SAF（DocumentsUI）选择器抢走焦点，
    且 SAF 选择器的「保存」按钮**不接受注入点击**；游戏启动也常因焦点问题失手。凡涉及
    「选择器保存 / 长按 / 手柄实体键」的验收，要么如实标注未完成，要么请人工确认，不要反复重试烧时间。
+8. **起游戏做真机验证不要靠点击**：用导出的快捷方式蹦床直接起——
+   `adb shell am start -n com.tyranor.next/com.tyranor.next.ui.game.GameShortcutActivity --es extra_shortcut_id game_<sha256(游戏uri)>`
+   （`GameShortcutManager.shortcutId` = `"game_" + sha256(uri)`；uri 用 `adb exec-out run-as … cat databases/game_library.db` 拉库后查）。
+   这条路径稳、可复现，是后续所有游戏内验收的首选入口。
+9. **Artemis 的输入是 NativeActivity 直读**：面板**收起**时按键完全到不了 Java（「手柄呼出面板」
+   在 Artemis 上不成立，除非让键捕获窗常驻持焦并转发未消费键——属于影响全体玩家的改动，需先与
+   用户确认）。给 Artemis 做按键相关功能时，先确认「面板当时是否已经开着」。
 5. **「存档目录 = 游戏根」的引擎必须用白名单，不能只排资源包**（2026-10-09 修复）：
    Artemis 游戏根里除了本体的 `root.pfs/movie/system`，还有**我们自己写进去的**
    `screenshots/`、`extract/`、`artemis_extract/voice/`（提取面板与内核），

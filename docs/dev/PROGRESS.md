@@ -4,6 +4,34 @@
 > `docs/说明/游戏内提取制卡功能方案.md`（提取功能线方案）阅读。
 > 更新时间：2026-10-09
 
+## 2026-10-09 会话（六十三）：手柄链路真机验收（ONS 通过）+ Artemis 缺口定位
+
+**验收手段突破**：脚本点击驱动游戏极不稳（通知栏/SAF 抢焦点），改用**导出的快捷方式蹦床**
+直接起游戏：
+```
+adb shell am start -n com.tyranor.next/com.tyranor.next.ui.game.GameShortcutActivity \
+  --es extra_shortcut_id game_<sha256(游戏 uri)>
+```
+（`shortcut_id` = `"game_" + sha256(uri)`，见 `GameShortcutManager.shortcutId`；uri 从
+`databases/game_library.db` 取。这样完全绕过 UI 点击。）
+
+**ONS（ESG-13556）验收结果**：
+
+| 项 | 证据 |
+|---|---|
+| 呼出 | `input keyevent 103`（RB，绑定表默认值）→ 面板打开 |
+| 动作分发 | logcat 逐条对齐：`token_next(22)`、`token_prev(21)`、`confirm(96)`、`nav_down(20)`、`card(100)`、`exit(4)` |
+| 焦点独占 | 面板展开时连发 3 次未绑定键 F1(131)，前后截图 `Get-FileHash` **完全相等** → 面板吞键、游戏零推进 |
+| 退出 | BACK → `exit` → 面板关闭、游戏恢复 |
+
+**Artemis 缺口（需用户决策）**：面板收起时 RB 到不了 Java（NativeActivity 直读输入、焦点在
+native），「手柄呼出」在 Artemis 上不成立（面板窗展开后才可聚焦 → 先有鸡还是先有蛋）。
+两条路：① 常驻键捕获窗（全按键改走游戏映射链转发，影响所有 Artemis 玩家，虚拟鼠标模式已验证
+可行）；② 保持现状（Artemis 用触摸开面板，开后面板快捷键可用）。**未拍板前不改**。
+
+**未验证**：KRKR（与 ONS 同宿主代码路径，未单独跑）；摇杆/轴事件（adb 无法注入，宿主侧
+`handleMotion` 已前置消费）。
+
 ## 2026-10-09 会话（六十二）：执行《剧情文本框手柄链路复刻方案》P1–P4
 
 用户要求：按 `docs/dev/剧情文本框手柄链路复刻方案.md` 执行（参考 webgametxt 的四段链路）。
