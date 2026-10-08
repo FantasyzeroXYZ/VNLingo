@@ -103,6 +103,11 @@
         <activity
             android:name=".ui.settings.AppSettingsActivity"
             android:exported="false" />
+        <!-- 引擎侧设置独立页（翻译 / 制卡 / TTS）：与其它二级设置页同一套 AppScreenActivity 壳 -->
+        <activity
+            android:name=".ui.settings.EngineSettingsPageActivity"
+            android:configChanges="orientation|screenSize|screenLayout|smallestScreenSize|keyboardHidden|uiMode"
+            android:exported="false" />
         <activity
             android:name=".ui.cover.CoverScraperSettingsActivity"
             android:exported="false" />

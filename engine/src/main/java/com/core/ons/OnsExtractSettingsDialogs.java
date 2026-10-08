@@ -168,6 +168,79 @@ public final class OnsExtractSettingsDialogs {
     }
 
     /** 按引擎打开对应配置弹窗（免费源提示后返回）。 */
+    /** 引擎配置弹窗（独立页的「引擎配置」行调用）。 */
+    public static void showEngineConfigDialog(Activity activity, String engine) {
+        openEngineConfig(activity, engine);
+    }
+
+    /** 方案管理弹窗（独立页的「方案」行调用）。 */
+    public static void showSchemeManagerDialog(Activity activity, Runnable onChanged) {
+        showSchemeManager(activity,
+                new java.util.concurrent.atomic.AtomicReference<>(
+                        com.core.anki.AnkiCardSchemes.activeName(activity)),
+                onChanged);
+    }
+
+    /** 发音人选择弹窗（独立页的「发音人」行调用）。 */
+    public static void showVoicePickerDialog(Activity activity, String engine, Runnable onChanged) {
+        showVoicePicker(activity, engine, onChanged);
+    }
+
+    /**
+     * TTS 试听（独立页「试听」行与弹窗共用）：系统引擎直呼 TextToSpeech，
+     * HTTP / MultiTTS 走合成后本地播放。
+     */
+    public static void runTtsTest(Activity activity, String testText) {
+        final String engine = OnsTtsEngines.engine(activity);
+        if (OnsTtsEngines.ENGINE_SYSTEM.equals(engine)) {
+            try {
+                android.speech.tts.TextToSpeech tts = new android.speech.tts.TextToSpeech(
+                        activity, status -> { });
+                tts.setLanguage(java.util.Locale.CHINA);
+                tts.setSpeechRate(OnsTtsEngines.rate(activity) / 50f);
+                tts.setPitch(Math.max(0.5f, Math.min(2f, OnsTtsEngines.pitch(activity) / 50f)));
+                String vn = OnsTtsEngines.voice(activity);
+                if (!vn.isEmpty() && tts.getVoices() != null) {
+                    for (android.speech.tts.Voice vo : tts.getVoices()) {
+                        if (vo != null && vn.equals(vo.getName())) { tts.setVoice(vo); break; }
+                    }
+                }
+                tts.speak(testText, android.speech.tts.TextToSpeech.QUEUE_FLUSH, null, "tts_test");
+            } catch (Throwable t) {
+                Toast.makeText(activity, String.valueOf(t.getMessage()), Toast.LENGTH_SHORT).show();
+            }
+            return;
+        }
+        new Thread(() -> {
+            byte[] audio;
+            if (OnsTtsEngines.ENGINE_HTTP.equals(engine)) {
+                audio = OnsTtsEngines.httpSynthesize(activity, testText);
+            } else {
+                audio = MultiTtsClient.synthesizeOn(testText,
+                        OnsTtsEngines.voice(activity),
+                        OnsTtsEngines.rate(activity),
+                        OnsTtsEngines.volume(activity),
+                        OnsTtsEngines.pitch(activity),
+                        OnsTtsEngines.multiHost(activity));
+            }
+            if (audio == null || audio.length == 0) return;
+            try {
+                File out = new File(activity.getCacheDir(), "tts_settings_test.wav");
+                try (FileOutputStream fos = new FileOutputStream(out)) {
+                    fos.write(audio);
+                }
+                android.media.MediaPlayer player = new android.media.MediaPlayer();
+                player.setDataSource(out.getAbsolutePath());
+                player.setOnCompletionListener(android.media.MediaPlayer::release);
+                player.prepare();
+                player.start();
+            } catch (Throwable t) {
+                android.util.Log.w("OnsExtractSettingsDialogs", "tts test playback failed", t);
+            }
+        }).start();
+        Toast.makeText(activity, R.string.engine_ons_tts_test_done, Toast.LENGTH_SHORT).show();
+    }
+
     private static void openEngineConfig(Activity activity, String engine) {
         switch (engine) {
             case OnsTranslateClient.ENGINE_LOCAL:
@@ -1523,58 +1596,8 @@ public final class OnsExtractSettingsDialogs {
         // 试听行：用当前引擎 + 全部参数朗读测试句
         LinearLayout testRow = settingNavRow(activity, R.drawable.ic_volume,
                 R.string.engine_ons_tts_test, null);
-        testRow.setOnClickListener(v -> {
-            final String testText = textOr(testField,
-                    activity.getString(R.string.engine_ons_tts_test_default));
-            final String engine = engineState[0];
-            if (OnsTtsEngines.ENGINE_SYSTEM.equals(engine)) {
-                try {
-                    android.speech.tts.TextToSpeech tts = new android.speech.tts.TextToSpeech(
-                            activity, status -> { });
-                    tts.setLanguage(java.util.Locale.CHINA);
-                    tts.setSpeechRate(OnsTtsEngines.rate(activity) / 50f);
-                    tts.setPitch(Math.max(0.5f, Math.min(2f, OnsTtsEngines.pitch(activity) / 50f)));
-                    String vn = OnsTtsEngines.voice(activity);
-                    if (!vn.isEmpty() && tts.getVoices() != null) {
-                        for (android.speech.tts.Voice vo : tts.getVoices()) {
-                            if (vo != null && vn.equals(vo.getName())) { tts.setVoice(vo); break; }
-                        }
-                    }
-                    tts.speak(testText, android.speech.tts.TextToSpeech.QUEUE_FLUSH, null, "tts_test");
-                } catch (Throwable t) {
-                    Toast.makeText(activity, String.valueOf(t.getMessage()), Toast.LENGTH_SHORT).show();
-                }
-                return;
-            }
-            new Thread(() -> {
-                byte[] audio;
-                if (OnsTtsEngines.ENGINE_HTTP.equals(engine)) {
-                    audio = OnsTtsEngines.httpSynthesize(activity, testText);
-                } else {
-                    audio = MultiTtsClient.synthesizeOn(testText,
-                            OnsTtsEngines.voice(activity),
-                            OnsTtsEngines.rate(activity),
-                            OnsTtsEngines.volume(activity),
-                            OnsTtsEngines.pitch(activity),
-                            OnsTtsEngines.multiHost(activity));
-                }
-                if (audio == null || audio.length == 0) return;
-                try {
-                    File out = new File(activity.getCacheDir(), "tts_settings_test.wav");
-                    try (FileOutputStream fos = new FileOutputStream(out)) {
-                        fos.write(audio);
-                    }
-                    android.media.MediaPlayer player = new android.media.MediaPlayer();
-                    player.setDataSource(out.getAbsolutePath());
-                    player.setOnCompletionListener(android.media.MediaPlayer::release);
-                    player.prepare();
-                    player.start();
-                } catch (Throwable t) {
-                    android.util.Log.w("OnsExtractSettingsDialogs", "tts test playback failed", t);
-                }
-            }).start();
-            Toast.makeText(activity, R.string.engine_ons_tts_test_done, Toast.LENGTH_SHORT).show();
-        });
+        testRow.setOnClickListener(v -> runTtsTest(activity, textOr(testField,
+                activity.getString(R.string.engine_ons_tts_test_default))));
         box.addView(testRow);
 
         ScrollView scroller = new ScrollView(activity);

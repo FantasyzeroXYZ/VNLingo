@@ -849,3 +849,38 @@
 5. **工具栏快捷键与设置行是两回事**：右缘面板的「透明度」按钮点按循环属于快捷操作，
    保留循环；但设置弹窗里的同名项必须是下拉（否则用户找不到「选一个值」的入口）。
 
+## 硬性约定（2026-10-08 用户要求，必须遵守）：二级设置页风格一致性
+
+**凡是新增/改造的二级设置页（设置页点进去的独立页），外观与结构必须与既有页面一致**：
+
+1. **壳**：Activity 必须继承 `AppScreenActivity` 并调用 `setAppScreenContent { ... }`
+   （统一处理 edge-to-edge、系统栏样式、`finish` 转场、`AppScreenScaffold` 主题包裹）。
+   **不要**自己在 Activity 里搭 `LinearLayout` + 顶栏，也不要只为了「能显示」而用裸 View。
+2. **正文结构**：
+   ```
+   MiuixSettingsTheme {
+     MiuixScaffold(containerColor = Transparent, contentWindowInsets = WindowInsets(0.dp),
+                   topBar = { AppTopBar(title = ..., background = Transparent,
+                                        contentColor = MiuixTheme.colorScheme.onBackground) }) { inner ->
+       LazyColumn(Modifier.fillMaxSize().padding(horizontal = 12.dp)
+                    .padding(top = inner.calculateTopPadding()),
+                  contentPadding = PaddingValues(top = 12.dp, bottom = 24.dp),
+                  verticalArrangement = Arrangement.spacedBy(12.dp)) {
+         item { MiuixCard(Modifier.fillMaxWidth().glassShadow().glassBorder(),
+                          cornerRadius = AppComponentCornerRadius) { Column(Modifier.padding(vertical = 4.dp)) { ... } } }
+         item { BottomInsetSpacer() }
+       }
+     }
+   }
+   ```
+3. **行控件只用 Miuix preference**：`OverlayDropdownPreference`（下拉）、`SwitchPreference`
+   （开关）、`ArrowPreference`（跳转/弹窗入口）；文本输入沿用既有页面的
+   Material3 `OutlinedTextField`。**新设置项一律下拉/开关，不要写「点按循环」的文字行。**
+4. **复用入口**：`app/.../ui/settings/EngineSettingsScreens.kt` 提供
+   `EngineSettingsPage/SettingsCard/SettingsHint` 三个壳组件 + 三个页面正文
+   （`TranslateSettingsScreen` / `TtsSettingsScreen` / `AnkiCardSettingsScreen`），
+   新增同类页面直接照它写。
+5. **反例（不要再犯）**：会话五十六曾把翻译/Anki/TTS 页做成「engine 侧 Activity +
+   自绘顶栏 + 纯 Android View 内容」，与其它设置页风格完全割裂，随后被要求重做——
+   引擎侧的 `buildXxxPage`（View 版本）只保留给**游戏内弹窗**使用，设置页一律走 Compose。
+

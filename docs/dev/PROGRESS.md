@@ -4,6 +4,38 @@
 > `docs/说明/游戏内提取制卡功能方案.md`（提取功能线方案）阅读。
 > 更新时间：2026-10-08
 
+## 2026-10-08 会话（五十八）：翻译/制卡/TTS 独立页重做为与既有设置页同款样式
+
+用户要求：新增的独立页外观风格必须与原来的设置独立页统一（并写入记忆）。
+
+**问题**：会话五十六那版是「engine 侧 Activity + 自绘顶栏 + 纯 Android View 内容」，
+即把一个悬浮弹窗塞进整页，背景、卡片、行的样式都与「应用设置 / 引擎管理 / 云同步」等
+二级页完全不同。
+
+**重做**（app 侧 Compose，与既有页同一套壳）：
+
+- `EngineSettingsPageActivity`（app）继承 `AppScreenActivity` + `setAppScreenContent`，
+  按 kind 分发到三个 Compose 正文；engine 侧那个 Activity 与 manifest 项删除。
+- 新增 `EngineSettingsScreens.kt`：`EngineSettingsPage`（`MiuixSettingsTheme` +
+  `MiuixScaffold` + `AppTopBar` + `LazyColumn`，含 `BottomInsetSpacer`）、
+  `SettingsCard`（`MiuixCard(glassShadow().glassBorder(), AppComponentCornerRadius)`）、
+  `SettingsHint`，以及三个页面正文：
+  - `TranslateSettingsScreen`：翻译引擎（下拉）/ 引擎配置（→ engine 弹窗）/ 翻译测试（→ 弹窗）；
+  - `TtsSettingsScreen`：语速/音高/音量/引擎/循环次数（下拉）、发音人（→ 弹窗）、
+    MultiTTS 服务器（Compose 输入弹窗）、HTTP 模板与试听文本（OutlinedTextField）、
+    自动朗读/句读（开关）、试听（→ engine `runTtsTest`）；
+  - `AnkiCardSettingsScreen`：牌组/模板（下拉，**只列 AnkiDroid 现有项**，首项「请选择…」）、
+    方案（→ 方案管理弹窗）、例句语音源（下拉）、自动截图（开关）、
+    要素 → 模型字段（每个要素一行下拉，选项＝「未映射」+ 该模板真实字段）。
+  **所有改动即时保存**（与其它设置页一致，不再有「保存」按钮）。
+- engine 侧为页面新开三个公共入口：`showEngineConfigDialog` / `showSchemeManagerDialog` /
+  `showVoicePickerDialog`，并把 TTS 试听逻辑抽成公共 `runTtsTest`（弹窗与页面共用）。
+- engine 的 `buildXxxPage`（View 版）**只保留给游戏内/面板弹窗**用。
+
+**真机验证**：三个页面与既有二级页同款（标题栏、卡片圆角/玻璃描边、Miuix 行控件、页面背景一致）——
+翻译页 `.tmp/v14_translate.png`、TTS 页 `.tmp/v14_tts.png`、制卡页 `.tmp/v14_anki.png`；
+测试中我误设的牌组/模板（测试 / jidoujisho Kinomoto）与字段映射已从设备 prefs 清回「未选择」。
+
 ## 2026-10-08 会话（五十七）：所有「点击循环」的设置项改成下拉选择
 
 用户要求：凡是靠「点一次换下一个值」才能选设置的行，全部改成下拉框。

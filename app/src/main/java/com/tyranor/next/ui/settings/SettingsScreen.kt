@@ -353,8 +353,8 @@ fun SettingsScreen(modifier: Modifier = Modifier) {
                                 summary = stringResource(com.core.engine.R.string.engine_ons_settings_section_translate),
                                 startAction = { SettingsItemIcon(R.drawable.ic_settings) },
                                 onClick = {
-                                    startActivityWithPageTransition(ctx, com.core.ons.EngineSettingsPageActivity
-                                        .createIntent(ctx, com.core.ons.EngineSettingsPageActivity.KIND_TRANSLATE))
+                                    startActivityWithPageTransition(ctx, EngineSettingsPageActivity
+                                        .createIntent(ctx, com.core.ons.EngineSettingsPageKind.TRANSLATE))
                                 },
                             )
                             ArrowPreference(
@@ -362,8 +362,8 @@ fun SettingsScreen(modifier: Modifier = Modifier) {
                                 summary = stringResource(com.core.engine.R.string.engine_ons_anki_card_title),
                                 startAction = { SettingsItemIcon(R.drawable.ic_settings) },
                                 onClick = {
-                                    startActivityWithPageTransition(ctx, com.core.ons.EngineSettingsPageActivity
-                                        .createIntent(ctx, com.core.ons.EngineSettingsPageActivity.KIND_ANKI))
+                                    startActivityWithPageTransition(ctx, EngineSettingsPageActivity
+                                        .createIntent(ctx, com.core.ons.EngineSettingsPageKind.ANKI))
                                 },
                             )
                             ArrowPreference(
@@ -371,8 +371,8 @@ fun SettingsScreen(modifier: Modifier = Modifier) {
                                 summary = stringResource(com.core.engine.R.string.engine_ons_tts_title),
                                 startAction = { SettingsItemIcon(R.drawable.ic_settings) },
                                 onClick = {
-                                    startActivityWithPageTransition(ctx, com.core.ons.EngineSettingsPageActivity
-                                        .createIntent(ctx, com.core.ons.EngineSettingsPageActivity.KIND_TTS))
+                                    startActivityWithPageTransition(ctx, EngineSettingsPageActivity
+                                        .createIntent(ctx, com.core.ons.EngineSettingsPageKind.TTS))
                                 },
                             )
                             ArrowPreference(
