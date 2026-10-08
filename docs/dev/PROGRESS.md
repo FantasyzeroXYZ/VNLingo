@@ -4,6 +4,34 @@
 > `docs/说明/游戏内提取制卡功能方案.md`（提取功能线方案）阅读。
 > 更新时间：2026-10-08
 
+## 2026-10-08 会话（四十七）：词汇处理移植 V1/V2（规则核对 + 还原结构 + 查询测试）
+
+执行 `docs/dev/词汇处理完整移植方案.md`；参考实现 `D:\code\test-JavaScript\TrackReader`
+（`packages/domain/src/yomitan/deinflection`，注意是「`.ts` 后缀 + 纯 JS/JSDoc」）。
+
+- **V1 规则完整性（已完成，0 差异）**：参考描述符用 esbuild 打包导出（Node 直接跑会因
+  `./transforms.js` 说明符找不到 `.ts` 而失败），与现网 assets 做**语义 diff**：
+  ja 22 条件/36 组/**439 规则**、en 5/6/**40**、ko 6/17/**124**、zh 1/0/0、vi 1/0/0，
+  **逐字段一致**，无需修正。
+- **V2 M1 还原结果结构（已完成）**：`OnsDeinflector.Result{term, rawSource,
+  conditions, path, score}` + `deinflectDetailed(q[, lang])`，按 score 升序、同分按
+  term 字典序；`path` 是完整条件链（参考只有单终止条件 + 未实现的 trace），
+  `pathString()` 供面板/制卡显示 `-e→v1`；旧 `deinflect()` 保留；缓存改存 detailed
+  且键含语言。
+  **对照验证 15/15**：参考侧（esbuild 打包 `deinflectWithPreprocess`）与 Java 侧
+  （javac + d8 → 真机 `app_process` 跑，喂同 5 份 JSON）的 `term:score` 集合完全一致，
+  含方案验收用例 `食べちゃった → 食べる:2`。
+- **V2 M6 查询测试（已完成）**：`OnsDictStore.lookupDetailed(...)`（① term ② reading
+  ③ 查表还原[待 V5] ④ 还原→term ⑤ 还原→reading + trace）与 `DetailedMatch`；
+  词典管理弹窗新增「查询测试」区（输入/测试/诊断轨迹/结果预览），真机截图确认渲染；
+  日文输入 adb 无法注入，语义验证走 harness。
+- **M3 全语言预处理（引擎侧已落地）**：预处理管线改为**按 JSON 名字**驱动，
+  补 zh 的「全角英数→半角」「繁体→简体（实为 NFKC）」，未知名保留原文。
+  局限（与参考一致）：zh 无 transforms，预处理变体不进候选；若要让中文全角/NFKC
+  真正命中，需在查询侧把变体当字面 term 试查（记为后续增强）。
+- **未完成**：V3（查询语言设置/读音开关/词典 scope）、V5（语言包 + 查表还原）、
+  V6（面板/制卡对接）。
+
 ## 2026-10-08 会话（四十六）：KRKR 文本碎片/重复/选项误提取（第二轮）
 
 执行 `docs/dev/KRKR文本碎片与选项误提取方案.md` 的 B1–B4，并**否证**了第一轮的

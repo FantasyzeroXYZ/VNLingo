@@ -41,6 +41,66 @@
       下载（GET+导入）全通过，全程零独立配置 ✓
 
 ## 未完成 / 遗留
+- [ ] 词汇处理完整移植（方案见 docs/词汇处理完整移植方案.md，2026-10-08 对照 TrackReader
+      packages/domain/src/yomitan 后定）：现状已具备——词形还原引擎（conditions/transforms/
+      递归收敛/入口条件全量激活/结果缓存，OnsDeinflector 185-244）、日语全量 439 条规则、
+      en 40 / ko 124 条、日语预处理管线 5 步、最长前缀递减匹配、reading 精确查询 + B1 补建
+      reading 索引、B3 批量候选查询、还原开关、词典页语言 chips（客户端启发式）。差距九项：
+      G1 还原结果只返回字符串、丢 score 与 conditions（候选按字典序而非深度排序，制卡
+      deinflection 要素无数据）；G2 无查表还原语言包（packs/store：meta+entries 两表、
+      inflected 单键 O(log n) 查、导入/删除/启停/内置包卸载-恢复）；G3 表还原未接入且
+      优先级应高于规则还原；G4 非日语语言不跑预处理（zh 的全角英数/NFKC 繁体规范化不生效，
+      导出 JSON 只存了预处理器名字）；G5 规则需与参考逐条 diff 核对（含 japanese-util
+      的 isStringEntirelyKana 等按需移植）；G6 无「查询语言」设置（selectLang 按脚本硬猜，
+      汉字默认归 ja）；G7 读音查询过窄（只对含假名候选查，参考按 scope 判定）；
+      G8 词典页语言筛选是纯客户端启发式，词典元数据无 scope 字段；G9 无查询测试/诊断
+      （看不到命中规则与还原路径）。六批：V1 规则 diff 与修正→V2 结果结构升级（保留旧
+      接口）+ 查询测试界面→V3 查询语言设置（含读音开关、词典 scope 字段与过滤、auto
+      消歧）→V4 全语言预处理（zh NFKC）→V5 语言包存取 + 查表还原接入查询管线
+      （term→reading→查表→规则→规则+reading 顺序）→V6 与制卡/面板对接（deinflection
+      要素、matchType、候选按 score 排序）。约束：deinflect() 旧接口保留；语言设置跨进程
+      MODE_MULTI_PROCESS；词典 scope 缺省=universal 不得导致查不到；表型包导入需事务+
+      进度+失败不残库
+- [ ] 提取设置项补全与交互改造（方案见 docs/设置项补全与交互改造方案.md，2026-10-08
+      对照 web game text 差异后定；**方向：不合并设置页，各页 1:1 保留，只补内容 + 交互
+      按参考实现重做**）：① 制卡字段映射从「模型字段行点按循环 12 档」改为参考式
+      **「要素 → 下拉选模型字段」**（首项「未映射」，按单词/句子分组，方案（单词卡/句子卡）
+      切换即切换要素集与映射，含同字段重复占用提示与一键解除，离线可编辑）；
+      ② 全设置页交互统一为「分区 Section + 行 Row（左标签右控件）+ 下拉/开关/滑块」，
+      废弃点行循环（透明度、语速、语音源、引擎档位等全部改控件）；③ 补设置项——**卡片方案
+      只做单词卡与句子卡两类**（单词卡 12 要素：word/reading/definition/audio/sentence/
+      translation/sentenceAudio/source/wordTags/deinflection/image/translatedImage；
+      句子卡 6 要素：sentence/translation/sentenceAudio/source/image/translatedImage；
+      **填空 cloze 与图片遮挡 image-occlusion 及 text/backExtra/occlusions/header/remarks/
+      video 要素一律不做**）、方案模型升级为 {id,name,schemeType(word|sentence),elements,
+      deck,model,fieldMap} + 启用集合与回退链 + 方案新建/编辑/复制/删除弹窗、字段自动匹配
+      （中英日别名表）、单词语音开关、截图时机、缺图行为、制卡超时与重试、标签、测试制卡
+      按钮；④ 面板动作绑定（语义动作表 →
+      GamepadSettings 捕获式绑定，替代 handleKey 硬编码，R1 长按双语义拆独立动作）；
+      ⑤ 引擎级游戏推进方式（触点注入/合成 Enter/合成方向键/不动作，解决「只认键盘」
+      引擎无法推进）；⑥ **六类「管理」全部落设置页**并按参考的统一管理列表范式实现
+      （分区标题带计数 + 行动按钮、列表项含启用/激活/排序/编辑/复制/删除、状态徽标、
+      空态、编辑弹窗、删除确认、组合类补筛选与分页）：词典管理（已导入列表+导入+
+      查词设置+查询测试+词典 API 列表+词形还原包；`DictManagerView`，词典页用
+      AndroidView 复用同一实现）／API 管理（翻译页「AI 翻译服务」服务链 + 服务卡片
+      增删改 + 连接测试 + 测试区）／Anki 方案管理（制卡页卡片方案区 + 新建/编辑弹窗，
+      内置单词卡/句子卡两预设）／字段映射组合管理（列表 + 筛选 + 分页 + 编辑弹窗，
+      制卡取激活组合并按启用集合回退）／TTS 管理（引擎链 + 参数 + 服务卡片列表 +
+      试听）／**快捷键管理**（手柄设置页扩展：快捷键方案列表〔保存/应用/编辑/复制/
+      删除 + 「当前」徽标〕+ 总开关〔关闭时隐藏其余键位设置〕+ 按键信号测试 + 键盘/
+      手柄键位网格〔点子进入录制〕；手柄重映射、虚拟鼠标五动作、面板动作、引擎推进
+      方式键位**合并为一套方案快照**，废弃 gamepad_remap / virtual_mouse_bindings
+      两份独立 prefs）；⑦ 应用设置页各管理入口补摘要（不新增页面）、面板设置弹窗只
+      保留入口与面板自身设置。
+      八批：S1 控件层+字段映射改下拉→S2 制卡弹窗分区+方案管理→S3 两类方案+要素表+方案
+      结构迁移→S4 自动匹配+制卡健壮性+测试制卡→S5a 管理范式+词典管理+API 管理
+      →S5b Anki 方案+字段映射组合+TTS 管理→S5c 快捷键管理→S5d 入口落点与其余页补全
+      →S6 面板动作+推进方式（键位纳入快捷键方案）。约束：engine 不得依赖 app 的
+      Compose（控件层纯 View）；六类管理不得
+      出现第二套实现（统一 View 组件 + 宿主嵌入，Compose 侧用 AndroidView）；方案升格
+      需可回滚；字段映射不得强依赖 AnkiDroid 连接；面板按键拦截与音量键放行语义不得
+      回归；方案字段命名用 schemeType，勿沿用已废止的 cardType；快捷键方案迁移时保留
+      旧 prefs 一版以便回滚
 - [ ] KRKR 提取到的文本碎片/重复/选项优先（方案见
       docs/KRKR文本碎片与选项误提取方案.md，2026-10-08 第二轮真机定位）：
       tsukikage 实测——当时 kr_extract_probe / kr_extract_tjs 均为默认 false，
@@ -197,3 +257,22 @@
 - [ ] 提取状态可见性（低优先）：钩子武装成功但该游戏无字符流时，面板/引擎设置
       目前无任何提示，用户只会看到空句栏；可考虑把 native 通道计数（诊断开关下）
       汇总成一行状态展示
+
+- [x] 词汇处理移植 V1（规则完整性核对，2026-10-08 会话四十七）：参考导出与现网
+      assets **逐字段一致**（ja 439/en 40/ko 124/zh 0/vi 0；conditions 22/5/6/1/1）
+- [x] 词汇处理移植 V2（M1 还原结构 + M6 查询测试，会话四十七）：
+      `OnsDeinflector.Result{term,rawSource,conditions,path,score}` +
+      `deinflectDetailed(q[,lang])`（score 升序、同分 term 字典序）；
+      `OnsDictStore.lookupDetailed` + 词典管理弹窗「查询测试」区（含诊断轨迹）。
+      **对照验证 15/15**（参考 JS ↔ Java 真机 harness，含 `食べちゃった→食べる:2`）
+- [x] 词汇处理移植 M3 引擎侧（会话四十七）：预处理管线改按 JSON 名字驱动，
+      补 zh「全角英数→半角」「繁体→简体(NFKC)」；未知名保留原文
+- [ ] 词汇处理移植 V3：M4 查询语言设置（全局 + 每游戏覆盖、读音查询开关、
+      词典 `scope` 列与过滤、auto 下汉字 ja/zh 消歧）；跨进程用 MODE_MULTI_PROCESS
+- [ ] 词汇处理移植 V5：M2 语言包（`pack_meta`/`pack_entries` 表、导入事务、
+      启停/卸载/恢复）+ 查表还原接入候选顺序 ③（标记 `table-deinflect`）
+- [ ] 词汇处理移植 V6：面板/制卡对接（`OnsExtractPanel.tryMatchCandidate` 改用
+      `lookupDetailed`、`deinflection` 要素填充、候选按 score 排序展示）
+- [ ] 词汇处理增强（方案未要求）：中文全角/NFKC 变体目前只进预处理、不进候选，
+      若要让「ＡＢＣ→ABC」真正命中，需在查询侧把预处理变体当字面 term 试查
+- [ ] 真机人工验收：词典页查询测试用**日文**用例（adb 无法注入日文输入）

@@ -680,6 +680,127 @@ public final class OnsDictStore {
         }
     }
 
+    /**
+     * 查询测试用的详细结果（M6）：对齐参考 `dict.tsx` 的 lookupTest 输出。
+     *
+     * <p>matchType 取值与参考候选顺序一致：
+     * `term`（①精确 term）/ `reading`（②精确 reading）/
+     * `table-deinflect`（③查表还原，V5 接入）/ `deinflect-term`（④规则还原→term）/
+     * `deinflect-reading`（⑤规则还原→reading）。
+     */
+    public static final class DetailedMatch {
+        public String query = "";
+        /** 实际使用的还原语言（ja/en/ko/zh/vi）。 */
+        public String language = "";
+        public String matchedTerm = "";
+        public String matchType = "none";
+        /** 命中候选的还原路径（如 `-te→v1`）。 */
+        public String deinflectionPath = "";
+        public int score = 0;
+        public final List<Group> groups = new ArrayList<>();
+        /** 全部规则还原候选（诊断展示：term/score/path）。 */
+        public final List<OnsDeinflector.Result> candidates = new ArrayList<>();
+        /** 逐层递减轨迹（诊断模式）：每个查询层的候选与是否命中。 */
+        public final List<String> trace = new ArrayList<>();
+
+        public boolean hit() {
+            return !groups.isEmpty();
+        }
+    }
+
+    /**
+     * 查询测试 / 面板共用的详细查询管线（方案 §3.2 的候选顺序）。
+     *
+     * @param query        查询串
+     * @param languageHint 查询语言（M4 设置；null = 按脚本分派）
+     * @param deinflect    是否启用词形还原
+     * @param reading      是否查读音（仅日语有效，对齐参考 skipReading = scope !== 'ja'）
+     * @param trace        是否记录逐层轨迹（诊断模式）
+     */
+    public DetailedMatch lookupDetailed(String query, String languageHint, boolean deinflect,
+                                        boolean reading, boolean trace) {
+        DetailedMatch out = new DetailedMatch();
+        if (query == null) return out;
+        String q = query.trim();
+        out.query = q;
+        if (q.isEmpty()) return out;
+        out.language = deinflectLanguage(q, languageHint);
+        final boolean ja = "ja".equals(out.language);
+        try {
+            for (int len = q.length(); len >= 1; len--) {
+                String prefix = q.substring(0, len);
+                // ① term 精确
+                List<Group> groups = searchTermExact(prefix, 12);
+                if (trace) out.trace.add(prefix + " term→" + (groups.isEmpty() ? "-" : groups.size() + "组"));
+                if (!groups.isEmpty()) {
+                    fill(out, prefix, "term", "", 0, groups);
+                    return out;
+                }
+                // ② reading 精确（仅日语；M4 起由设置决定）
+                if (reading && ja) {
+                    groups = searchReadingExact(prefix, 12);
+                    if (trace) out.trace.add(prefix + " reading→" + (groups.isEmpty() ? "-" : groups.size() + "组"));
+                    if (!groups.isEmpty()) {
+                        fill(out, prefix, "reading", "", 0, groups);
+                        return out;
+                    }
+                }
+                if (!deinflect) continue;
+                // ④/⑤ 规则还原（按 score 升序试查；候选一并记录供诊断）
+                List<OnsDeinflector.Result> candidates = OnsDeinflector.deinflectDetailed(prefix, out.language);
+                if (len == q.length()) out.candidates.addAll(candidates);
+                for (OnsDeinflector.Result c : candidates) {
+                    if (c.term.equals(prefix)) continue;
+                    groups = searchTermExact(c.term, 12);
+                    if (trace) {
+                        out.trace.add(prefix + " df→" + c.term + "(s" + c.score + ")"
+                                + (groups.isEmpty() ? "-" : groups.size() + "组"));
+                    }
+                    if (!groups.isEmpty()) {
+                        fill(out, c.term, "deinflect-term", c.pathString(), c.score, groups);
+                        return out;
+                    }
+                    if (reading && ja) {
+                        groups = searchReadingExact(c.term, 12);
+                        if (!groups.isEmpty()) {
+                            fill(out, c.term, "deinflect-reading", c.pathString(), c.score, groups);
+                            return out;
+                        }
+                    }
+                }
+            }
+        } catch (Throwable t) {
+            Log.w(TAG, "lookupDetailed failed for " + q, t);
+        }
+        return out;
+    }
+
+    private static void fill(DetailedMatch out, String term, String matchType, String path,
+                             int score, List<Group> groups) {
+        out.matchedTerm = term;
+        out.matchType = matchType;
+        out.deinflectionPath = path;
+        out.score = score;
+        out.groups.clear();
+        out.groups.addAll(groups);
+    }
+
+    /** 还原语言判定（M4 落地前的最小实现）：显式语言 → 采用；否则按脚本分派。 */
+    private static String deinflectLanguage(String query, String languageHint) {
+        if (languageHint != null && !languageHint.isEmpty() && !"auto".equals(languageHint)) {
+            return languageHint;
+        }
+        for (int i = 0; i < query.length(); i++) {
+            int cp = query.codePointAt(i);
+            if ((cp >= 0x3041 && cp <= 0x30FF) || (cp >= 0x31F0 && cp <= 0x31FF)
+                    || (cp >= 0x4E00 && cp <= 0x9FFF) || (cp >= 0x3400 && cp <= 0x4DBF)) {
+                return "ja";
+            }
+            if ((cp >= 0xAC00 && cp <= 0xD7AF) || (cp >= 0x1100 && cp <= 0x11FF)) return "ko";
+        }
+        return "en";
+    }
+
     /** 查词：对 query 取最长有命中前缀，返回该层的释义组（最多 maxGroups 组）。
      *  范围：当前词典优先，其次其余启用词典（对齐参考的 current-dictionary
      *  模型 + 跨启用词典回退）。 */

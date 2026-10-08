@@ -668,3 +668,33 @@
    另注：本会话中途 `.tmp` / `.tmp-test` 两个 scratch 目录**被外部清空过一次**，
    依赖 scratch 目录留证据的步骤要尽快把结论写进 docs。
 
+## 实测踩坑（2026-10-08 会话四十七新增：TrackReader 参考代码怎么在本机跑起来）
+
+1. **参考包是「`.ts` 后缀 + 纯 JS/JSDoc」**（`packages/domain/src/yomitan/**` 里没有
+   任何 TS 语法），但内部 import 写的是 `./transforms.js` 这类 **`.js` 说明符**，
+   而磁盘上是 `.ts` 文件：`node` 直接跑（含 `--experimental-strip-types`）会报
+   `ERR_MODULE_NOT_FOUND: .../transforms.js`。**正解 = 用参考仓自带的 esbuild 打包**：
+   `node_modules\.bin\esbuild <脚本>.mts --bundle --platform=node --format=esm --outfile=x.mjs`
+   （esbuild 会把 `./x.js` 重写解析到 `./x.ts`），再 `node x.mjs`。临时脚本放参考仓根
+   目录用相对路径导入最省事，跑完记得删。
+2. **五语言规则 JSON 的正确核对方式是语义 diff**，不是比字节：用
+   `.tmp/diff-deinflect.mjs` 比对 conditions 键集合与逐条内容、规则组集合与逐条规则、
+   preprocessors；现网 assets 与参考导出**逐字段一致**（ja 439/en 40/ko 124/zh 0/vi 0，
+   conditions ja 22/en 5/ko 6/zh 1/vi 1）。注意 `conditions` 是**对象映射**不是数组
+   （按数组统计会得到 `undefined`）。
+3. **词形还原的对照验证可以完全离线跑**：Java 侧用
+   `javac -cp <android.jar> OnsDeinflector.java Probe.java` → `d8 --min-api 30 --output <已存在目录>`
+   → `adb push` dex + JSON → `adb shell "CLASSPATH=... app_process /system/bin Probe /data/local/tmp"`，
+   设备提供真实 `org.json` / `android.util.Log`。为了让 harness 能喂 JSON，
+   `OnsDeinflector` 新增了 `initFromJson(Map<String,String>)`（`init(Context)` 变成
+   读 assets 再调它）——**引擎类要留一个「纯数据入口」**，否则只能在设备 UI 上验证。
+4. **抓设备/Node 输出必须用 `cmd /c "... > file"`**：PowerShell 的 `>` 会写 UTF-16LE，
+   `Out-File -Encoding utf8` 会带 BOM，两侧一对比就全是乱码/空行（本轮先踩了一次，
+   15 个用例全报 DIFF）。`adb shell` 的 stdout 也要走 `cmd /c` 重定向才是原始 UTF-8。
+5. **参考的 `deinflectionPath` 就是 `deinflect` 结果的 `conditions`**（终止条件数组，通常
+   单元素），`trace` 选项只有声明没实现；本项目在 `Result` 上补了真正的条件链 `path`
+   （不参与去重键），面板/制卡才有 `A→B` 可显示。
+6. **`preprocess` 是按名字驱动的**：JSON 只导出 `preprocessors: [名称]`，实现必须按名
+   查表；未知名要**保留原文**（对齐参考 try/catch 兜底），否则以后加语言会静默丢变体。
+   zh 的「繁体→简体」实际只做 NFKC（参考注释名与实现不符）。
+

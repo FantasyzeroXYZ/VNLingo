@@ -19,6 +19,8 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -80,6 +82,11 @@ fun DictionaryScreen(modifier: Modifier = Modifier) {
     // 无进度反馈易被误判为卡死
     var importProgress by remember { mutableStateOf("") }
     var deleteTarget by remember { mutableStateOf<OnsDictStore.DictInfo?>(null) }
+    // M6 查询测试：输入任意词 → 命中词形/matchType/还原路径/深度/释义组数（+ 可选诊断轨迹）
+    var testQuery by remember { mutableStateOf("") }
+    var testResult by remember { mutableStateOf("") }
+    var testRunning by remember { mutableStateOf(false) }
+    var testTrace by remember { mutableStateOf(false) }
     val importFailedMessage = stringResource(R.string.dict_import_failed)
 
     var dicts by remember { mutableStateOf(OnsDictStore.get().listDicts(context)) }
@@ -320,6 +327,67 @@ fun DictionaryScreen(modifier: Modifier = Modifier) {
                             modifier = Modifier.fillMaxWidth().padding(vertical = 8.dp),
                         )
                     }
+                    // ---- M6 查询测试（验收工具：看清「该命中却没命中」是规则/语言/词典问题）----
+                    MiuixCard(
+                        modifier = Modifier.fillMaxWidth().glassShadow().glassBorder(),
+                        cornerRadius = AppComponentCornerRadius,
+                    ) {
+                        Column(Modifier.padding(vertical = 4.dp)) {
+                            Text(
+                                stringResource(R.string.dict_lookup_test),
+                                style = MaterialTheme.typography.titleSmall,
+                                color = MaterialTheme.colorScheme.onSurface,
+                                modifier = Modifier.padding(horizontal = 16.dp, vertical = 6.dp),
+                            )
+                            OutlinedTextField(
+                                value = testQuery,
+                                onValueChange = { testQuery = it },
+                                singleLine = true,
+                                label = { Text(stringResource(R.string.dict_lookup_test_hint)) },
+                                modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp),
+                            )
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp),
+                            ) {
+                                TextButton(
+                                    enabled = !testRunning && testQuery.isNotBlank(),
+                                    onClick = {
+                                        val q = testQuery
+                                        val trace = testTrace
+                                        testRunning = true
+                                        testResult = ""
+                                        scope.launch {
+                                            val text = withContext(Dispatchers.IO) {
+                                                // 词典页此前不装载规则（只有引擎面板装载）：
+                                                // 查询测试要先 init（幂等，装载一次）
+                                                com.core.ons.OnsDeinflector.init(context)
+                                                formatLookupTest(OnsDictStore.get()
+                                                    .lookupDetailed(q, null, true, true, trace))
+                                            }
+                                            testResult = text
+                                            testRunning = false
+                                        }
+                                    },
+                                ) { Text(stringResource(R.string.dict_lookup_test_run)) }
+                                Text(
+                                    stringResource(R.string.dict_lookup_test_trace),
+                                    style = MaterialTheme.typography.bodySmall,
+                                    modifier = Modifier.weight(1f),
+                                )
+                                Switch(checked = testTrace, onCheckedChange = { testTrace = it })
+                            }
+                            if (testResult.isNotEmpty()) {
+                                Text(
+                                    testResult,
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    modifier = Modifier.fillMaxWidth()
+                                        .padding(horizontal = 16.dp, vertical = 6.dp),
+                                )
+                            }
+                        }
+                    }
                     LazyColumn(verticalArrangement = Arrangement.spacedBy(12.dp)) {
                         items(dicts, key = { it.id }) { dict ->
                             DictRow(
@@ -489,6 +557,45 @@ private fun DictRow(
 /** 词条数摘要（复用 engine 文案：%1$d 条）。 */
 private fun Context.stringWithCount(dict: OnsDictStore.DictInfo): String =
     getString(EngineR.string.engine_ons_dict_entries_fmt, dict.count)
+
+/**
+ * M6：查询测试结果格式化（纯文本，便于复制/对照 DiagLog）。
+ * 输出命中词形 / matchType / 语言 / 深度 / 还原路径 / 释义组数与前几组释义，
+ * 以及（诊断模式下的）规则还原候选与逐层轨迹。
+ */
+private fun formatLookupTest(m: OnsDictStore.DetailedMatch): String {
+    if (m.query.isEmpty()) return ""
+    val sb = StringBuilder()
+    if (m.hit()) {
+        sb.append("命中：").append(m.matchedTerm).append("  [").append(m.matchType).append(']')
+        sb.append("\n语言：").append(m.language)
+        if (m.score > 0) sb.append("  深度：").append(m.score)
+        if (m.deinflectionPath.isNotEmpty()) sb.append("  路径：").append(m.deinflectionPath)
+        sb.append("  释义组：").append(m.groups.size)
+        m.groups.take(3).forEach { g ->
+            val head = if (g.reading.isNotEmpty()) "${g.term}（${g.reading}）" else g.term
+            val gloss = g.glosses.firstOrNull()?.replace('\n', ' ')?.take(60) ?: ""
+            sb.append("\n  · ").append(head).append("：").append(gloss)
+        }
+    } else {
+        sb.append("未命中：").append(m.query).append("  语言：").append(m.language)
+        if (m.candidates.isEmpty()) sb.append("  （无规则还原候选）")
+    }
+    if (m.candidates.isNotEmpty()) {
+        sb.append("\n候选（按深度）：")
+        m.candidates.take(8).forEach { c ->
+            sb.append("\n  ").append(c.term).append(" (s").append(c.score).append(')')
+            if (c.path.isNotEmpty()) sb.append(' ').append(c.pathString())
+        }
+        if (m.candidates.size > 8) sb.append("\n  …共 ").append(m.candidates.size).append(" 条")
+    }
+    if (m.trace.isNotEmpty()) {
+        sb.append("\n轨迹（诊断）：")
+        m.trace.take(12).forEach { sb.append("\n  ").append(it) }
+        if (m.trace.size > 12) sb.append("\n  …共 ").append(m.trace.size).append(" 步")
+    }
+    return sb.toString()
+}
 
 
 /** 查询语言模式（词典页筛选；词条文字脚本启发式分类）。 */

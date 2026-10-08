@@ -23,6 +23,10 @@
     <string name="dict_filter_romaji">罗马字</string>
     <string name="dict_import_failed">导入失败</string>
     <string name="dict_delete_title">删除词典</string>
+    <string name="dict_lookup_test">查询测试</string>
+    <string name="dict_lookup_test_hint">输入要测试的词</string>
+    <string name="dict_lookup_test_run">测试</string>
+    <string name="dict_lookup_test_trace">诊断轨迹</string>
     <string name="dict_search_idle">当前词典：%1$s（%2$d 条），输入单词开始查询</string>
     <string name="dict_search_no_dict">暂无词典，点右上角「词典管理」导入</string>
     <string name="dict_manager_content_description">词典管理</string>

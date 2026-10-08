@@ -23,6 +23,10 @@
     <string name="dict_filter_romaji">Romaji</string>
     <string name="dict_import_failed">Import failed</string>
     <string name="dict_delete_title">Delete dictionary</string>
+    <string name="dict_lookup_test">Lookup test</string>
+    <string name="dict_lookup_test_hint">Word to test</string>
+    <string name="dict_lookup_test_run">Test</string>
+    <string name="dict_lookup_test_trace">Trace</string>
     <string name="dict_search_idle">Current dictionary: %1$s (%2$d entries). Type a word to look it up.</string>
     <string name="dict_search_no_dict">No dictionaries yet. Tap "Dictionaries" (top-right) to import.</string>
     <string name="dict_manager_content_description">Dictionaries</string>
