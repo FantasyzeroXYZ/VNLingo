@@ -117,6 +117,13 @@ public class OnsExtractPanel {
     private final Activity activity;
     private final Handler main = new Handler(Looper.getMainLooper());
 
+    /** M4 查询语言（auto/ja/zh/ko/en/vi；启动 extra 下发，全局 + 每游戏覆盖已合并）。 */
+    private String dictQueryLang = "auto";
+    /** M4 是否查读音（仅日语有效）。 */
+    private boolean dictReading = true;
+    /** M4「自动」下汉字归属（ja/zh；只读全局多进程 prefs）。 */
+    private String dictHanPriority = "ja";
+
     private OnsFloatingChip chip;
     private View sideButtons;
     /** 窗口承载模式（NativeActivity 宿主）：右缘按键组以独立小悬浮窗安装。 */
@@ -196,7 +203,28 @@ public class OnsExtractPanel {
         panelOpacity = prefs.getInt(KEY_OPACITY, OPACITY_STEPS[0]);
         // 词典库提前打开（导入/查词共用；后台线程 search 不依赖 context）
         OnsDictStore.get().init(activity);
-        OnsDeinflector.init(activity);  // 词形还原全量规则（assets/deinflect_ja.json）
+        OnsDeinflector.init(activity);  // 词形还原全量规则（assets/deinflect_*.json）
+        // M4 查询语言设置：查询语言/是否查读音随启动 extra 下发（全局 + 每游戏覆盖
+        // 已在 app 侧 resolver 合并）；汉字归属只读全局设置（多进程 prefs）。
+        android.content.Intent intent = activity.getIntent();
+        dictQueryLang = intent == null ? "auto"
+                : intent.getStringExtra(com.core.engine.LaunchContract.DICT_QUERY_LANG);
+        if (dictQueryLang == null || dictQueryLang.isEmpty()) dictQueryLang = "auto";
+        dictReading = intent == null
+                || intent.getBooleanExtra(com.core.engine.LaunchContract.DICT_READING, true);
+        try {
+            dictHanPriority = activity.getSharedPreferences(
+                            com.core.engine.EnginePrefs.APP_PREFS,
+                            android.content.Context.MODE_MULTI_PROCESS)
+                    .getString("dict_han_priority", "ja");
+        } catch (Throwable ignored) {
+            dictHanPriority = "ja";
+        }
+        if (!"zh".equals(dictHanPriority)) dictHanPriority = "ja";
+        // 词典范围过滤按「会话语言」：auto 不过滤（保持既有行为）
+        OnsDictStore.get().setQueryLanguage(dictQueryLang);
+        android.util.Log.i("OnsExtractPanel", "dict query lang=" + dictQueryLang
+                + " reading=" + dictReading + " han=" + dictHanPriority);
     }
 
     private android.content.SharedPreferences ttsPrefs() {
@@ -1332,16 +1360,24 @@ public class OnsExtractPanel {
         return false;
     }
 
+    /** M4：该候选生效的还原语言（显式设置优先；auto 时按脚本 + 汉字归属判定）。 */
+    private String effectiveLang(String cand) {
+        if (!"auto".equals(dictQueryLang)) return dictQueryLang;
+        return OnsDeinflector.detectLanguage(cand, dictHanPriority);
+    }
+
     private CandidateMatch tryMatchCandidate(String cand, boolean deinflect) {
         if (isRejectable(cand)) return null;
-        // B2 收窄：不含假名不查读音（TrackReader skipReading 的无 scope 替代）；
-        // 单字候选也不查——假名单字几乎没有词典价值，却占扫描层数的大头。
-        boolean tryReading = cand.length() > 1 && hasKana(cand);
+        // M4：语言决定还原规则与是否查读音（对齐参考 skipReading = scope !== 'ja'）；
+        // 单字候选仍不查读音——假名单字几乎没有词典价值，却占扫描层数的大头。
+        String lang = effectiveLang(cand);
+        boolean tryReading = dictReading && "ja".equals(lang) && cand.length() > 1;
         List<String> keys = new ArrayList<>();
         keys.add(cand);
         if (deinflect) {
-            for (String root : OnsDeinflector.deinflect(cand)) {
-                if (!root.equals(cand) && !keys.contains(root)) keys.add(root);
+            // M1：还原候选按 score 升序（同分 term 字典序），替代原先的字典序列表
+            for (OnsDeinflector.Result r : OnsDeinflector.deinflectDetailed(cand, lang)) {
+                if (!r.term.equals(cand) && !keys.contains(r.term)) keys.add(r.term);
             }
         }
         // B3：原形 + 全部还原形合并成一次 IN 查询（term 列、reading 列各一次），

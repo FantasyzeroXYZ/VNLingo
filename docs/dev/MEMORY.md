@@ -698,3 +698,28 @@
    查表；未知名要**保留原文**（对齐参考 try/catch 兜底），否则以后加语言会静默丢变体。
    zh 的「繁体→简体」实际只做 NFKC（参考注释名与实现不符）。
 
+## 实测踩坑（2026-10-08 会话四十八新增：词典查询语言设置 M4）
+
+1. **「每游戏覆盖」在引擎子进程怎么落地**：面板在 `:kirikiri2`/`:ons` 等子进程，
+   读不到 app 模块的 `PerGameSettingsStore`（模块方向 app → engine，不能反向依赖）。
+   可行做法 = app 侧 `EngineSettingsResolver` 先合并出生效值，`EngineLauncher.buildIntent`
+   把它写成 **intent extra**（`LaunchContract.DICT_QUERY_LANG` / `DICT_READING`），
+   面板在构造函数里 `activity.getIntent().getStringExtra(...)` 读取。
+   **只有「全局唯一、不含每游戏覆盖」的设置**（如 `dict_han_priority`）才走
+   `getSharedPreferences(EnginePrefs.APP_PREFS, MODE_MULTI_PROCESS)` 直读。
+2. **SQLite 加列后必须先探列再 `ALTER`**：`dicts` 表加 `scope` 用
+   `PRAGMA table_info(dicts)` 判存在性（与 `entries.dict_id` 同一套路），
+   否则每次启动都会写一次 schema 事务；**列默认值必须是「安全」值**——
+   scope 默认 `universal`，配 `buildScope` 里 `scope='universal' OR scope=?` 的条件，
+   保证未标注词典在任何查询语言下都不会突然查不到。
+3. **查询范围（scope）缓存要带语言维度**：`buildScope` 的 3s TTL 缓存原先只按时间失效，
+   加了查询语言后必须把语言一起入键（`scopeCacheLang`），否则切语言后仍用旧范围。
+4. **改「读音查询门控」是行为变更，不只是开关**：原先「候选含假名才查 reading」是
+   B2 的性能收窄；M4 对齐参考后改成「日语即查（长度>1）」，**每层扫描的 reading 查询
+   次数会上升**——好在有 B1 的 `(reading, dict_id)` 索引 + B3 批量 IN（同一句 5.9ms 级），
+   但改这块时要意识到这是**命中率与耗时的取舍**，别只看功能对齐。
+5. **设备抓 UI 截图前先唤醒**：真机 MIUI 息屏很快，`adb shell input tap` 落在黑屏上会
+   **静默无效**，而 `screencap` 会返回一张全黑或与上一张完全相同的图（可直接用文件大小/
+   sha 判断「这一帧没动」）。稳妥做法：一条命令里先 `input keyevent 224` +
+   `input swipe 540 2000 540 700 200` 唤醒解锁，再点，再截图。
+

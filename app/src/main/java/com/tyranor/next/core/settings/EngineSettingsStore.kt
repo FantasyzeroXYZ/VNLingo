@@ -470,6 +470,56 @@ object EngineSettingsStore {
     fun setKrExtractProbe(c: Context, b: Boolean) =
         prefs(c).edit().putBoolean(KEY_KR_EXTRACT_PROBE, b).apply()
 
+    // ---------- 词典查询语言（M4 查询语言设置；全局默认 + 每游戏覆盖） ----------
+
+    /** 查询语言：auto = 按文字脚本分派（假名/汉字→ja、谚文→ko、其余→en）。 */
+    const val DICT_LANG_AUTO = "auto"
+    const val DICT_LANG_JA = "ja"
+    const val DICT_LANG_ZH = "zh"
+    const val DICT_LANG_KO = "ko"
+    const val DICT_LANG_EN = "en"
+    const val DICT_LANG_VI = "vi"
+    /** 查询语言全量白名单（非法持久化值回退 auto）。 */
+    val DICT_LANGS = setOf(DICT_LANG_AUTO, DICT_LANG_JA, DICT_LANG_ZH, DICT_LANG_KO, DICT_LANG_EN, DICT_LANG_VI)
+
+    /** UI 循环顺序（与 DICT_LANGS 同集合，稳定顺序）。 */
+    val DICT_LANG_ORDER = listOf(
+        DICT_LANG_AUTO, DICT_LANG_JA, DICT_LANG_ZH, DICT_LANG_KO, DICT_LANG_EN, DICT_LANG_VI,
+    )
+
+    /** 汉字在「自动」下的默认归属：ja（默认，与参考 scope 行为一致）或 zh。 */
+    const val DICT_HAN_JA = "ja"
+    const val DICT_HAN_ZH = "zh"
+    val DICT_HAN_PRIORITIES = setOf(DICT_HAN_JA, DICT_HAN_ZH)
+
+    const val KEY_DICT_QUERY_LANG = "dict_query_lang"
+    const val KEY_DICT_READING = "dict_reading"
+    const val KEY_DICT_HAN_PRIORITY = "dict_han_priority"
+
+    fun getDictQueryLang(c: Context): String {
+        val v = prefs(c).getString(KEY_DICT_QUERY_LANG, DICT_LANG_AUTO)
+        return if (v != null && v in DICT_LANGS) v else DICT_LANG_AUTO
+    }
+
+    fun setDictQueryLang(c: Context, v: String) =
+        prefs(c).edit().putString(KEY_DICT_QUERY_LANG, if (v in DICT_LANGS) v else DICT_LANG_AUTO).apply()
+
+    /** 是否查读音（仅日语有效；对齐参考 skipReading = scope !== 'ja'）。 */
+    fun isDictReading(c: Context): Boolean =
+        prefs(c).getBoolean(KEY_DICT_READING, true)
+
+    fun setDictReading(c: Context, b: Boolean) =
+        prefs(c).edit().putBoolean(KEY_DICT_READING, b).apply()
+
+    /** 「自动」下汉字归属（默认 ja；选 zh 即「中文优先」）。 */
+    fun getDictHanPriority(c: Context): String {
+        val v = prefs(c).getString(KEY_DICT_HAN_PRIORITY, DICT_HAN_JA)
+        return if (v != null && v in DICT_HAN_PRIORITIES) v else DICT_HAN_JA
+    }
+
+    fun setDictHanPriority(c: Context, v: String) =
+        prefs(c).edit().putString(KEY_DICT_HAN_PRIORITY, if (v in DICT_HAN_PRIORITIES) v else DICT_HAN_JA).apply()
+
     fun getKrPatchOverlayMode(c: Context): String =
         normalizeKrPatchOverlayMode(prefs(c).getString(KEY_KR_PATCH_OVERLAY_MODE, KR_PATCH_OVERLAY_AUTO))
     fun setKrPatchOverlayMode(c: Context, v: String) =

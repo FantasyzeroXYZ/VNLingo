@@ -86,6 +86,9 @@ fun PerGameSettingsScreen(game: ScanGame) {
     var krPatchOverlayMode by remember(gid) { mutableStateOf(PerGameSettingsStore.getStr(ctx, gid, PerGameSettingsStore.F_PATCH_OVERLAY_MODE)) }
     var krExtractHook by remember(gid) { mutableStateOf(PerGameSettingsStore.getBool(ctx, gid, PerGameSettingsStore.F_EXTRACT_HOOK)) }
     var krTextSource by remember(gid) { mutableStateOf(PerGameSettingsStore.getStr(ctx, gid, PerGameSettingsStore.F_KR_TEXT_SOURCE)) }
+    // M4 词典查询覆盖（null = 跟随全局）
+    var dictQueryLang by remember(gid) { mutableStateOf(PerGameSettingsStore.getStr(ctx, gid, PerGameSettingsStore.F_DICT_QUERY_LANG)) }
+    var dictReading by remember(gid) { mutableStateOf(PerGameSettingsStore.getBool(ctx, gid, PerGameSettingsStore.F_DICT_READING)) }
     var krAnime4kMode by remember(gid) { mutableStateOf(PerGameSettingsStore.getStr(ctx, gid, PerGameSettingsStore.F_ANIME4K_MODE)) }
     var krFont by remember(gid) { mutableStateOf(PerGameSettingsStore.getStr(ctx, gid, PerGameSettingsStore.F_DEFAULT_FONT)) }
     var krForceFont by remember(gid) { mutableStateOf(PerGameSettingsStore.getBool(ctx, gid, PerGameSettingsStore.F_FORCE_DEFAULT_FONT)) }
@@ -205,6 +208,17 @@ fun PerGameSettingsScreen(game: ScanGame) {
     val globalKrTextSource = EngineSettingsStore.getKrTextSource(ctx)
     val globalOnsExtractHook = EngineSettingsStore.isOnsExtractHook(ctx)
     val globalArtExtractHook = EngineSettingsStore.isArtExtractHook(ctx)
+    // M4 词典查询（每游戏覆盖全局）
+    val globalDictQueryLang = EngineSettingsStore.getDictQueryLang(ctx)
+    val globalDictReading = EngineSettingsStore.isDictReading(ctx)
+    val dictQueryLangMap = mapOf(
+        EngineSettingsStore.DICT_LANG_AUTO to stringResource(R.string.dict_lang_auto),
+        EngineSettingsStore.DICT_LANG_JA to stringResource(R.string.dict_lang_ja),
+        EngineSettingsStore.DICT_LANG_ZH to stringResource(R.string.dict_lang_zh),
+        EngineSettingsStore.DICT_LANG_KO to stringResource(R.string.dict_lang_ko),
+        EngineSettingsStore.DICT_LANG_EN to stringResource(R.string.dict_lang_en),
+        EngineSettingsStore.DICT_LANG_VI to stringResource(R.string.dict_lang_vi),
+    )
     val krTextSourceMap = mapOf(
         EngineSettingsStore.KR_TEXT_SOURCE_HOOK to stringResource(R.string.settings_kr_text_source_hook),
         EngineSettingsStore.KR_TEXT_SOURCE_ENGINE to stringResource(R.string.settings_kr_text_source_engine),
@@ -307,6 +321,8 @@ fun PerGameSettingsScreen(game: ScanGame) {
         PerGameSettingsStore.setBool(ctx, gid, PerGameSettingsStore.F_SKIP_STARTUP_DIALOGS, krSkipStartupDialogs)
         PerGameSettingsStore.setBool(ctx, gid, PerGameSettingsStore.F_EXTRACT_HOOK, krExtractHook)
         PerGameSettingsStore.setStr(ctx, gid, PerGameSettingsStore.F_KR_TEXT_SOURCE, krTextSource)
+        PerGameSettingsStore.setStr(ctx, gid, PerGameSettingsStore.F_DICT_QUERY_LANG, dictQueryLang)
+        PerGameSettingsStore.setBool(ctx, gid, PerGameSettingsStore.F_DICT_READING, dictReading)
         PerGameSettingsStore.setStr(ctx, gid, PerGameSettingsStore.F_PATCH_OVERLAY_MODE, krPatchOverlayMode)
         PerGameSettingsStore.setStr(ctx, gid, PerGameSettingsStore.F_ANIME4K_MODE, krAnime4kMode?.takeIf { it in EngineSettingsStore.ANIME4K_MODES })
         PerGameSettingsStore.setStr(ctx, gid, PerGameSettingsStore.F_DEFAULT_FONT, krFont)
@@ -905,6 +921,30 @@ fun PerGameSettingsScreen(game: ScanGame) {
                                 modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 10.dp),
                             )
                         }
+                    }
+                }
+
+                // 词典查询（M4）：每游戏覆盖全局默认；面板在引擎进程按此选还原规则/
+                // 是否查读音/词典范围。放在引擎分支之外：所有带提取面板的引擎都适用。
+                item {
+                    SectionCard(stringResource(R.string.dict_query_settings)) {
+                        OverrideChoice(
+                            stringResource(R.string.dict_query_lang),
+                            dictQueryLangMap,
+                            globalDictQueryLang,
+                            dictQueryLang,
+                        ) { dictQueryLang = it }
+                        OverrideSwitch(
+                            stringResource(R.string.dict_reading),
+                            globalDictReading,
+                            dictReading,
+                        ) { dictReading = it }
+                        Text(
+                            stringResource(R.string.dict_reading_summary),
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 4.dp),
+                        )
                     }
                 }
 

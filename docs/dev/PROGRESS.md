@@ -4,6 +4,30 @@
 > `docs/说明/游戏内提取制卡功能方案.md`（提取功能线方案）阅读。
 > 更新时间：2026-10-08
 
+## 2026-10-08 会话（四十八）：词汇处理移植 V3（查询语言设置 M4）
+
+- **设置层**：`EngineSettingsStore` 新增 `dict_query_lang` / `dict_reading` /
+  `dict_han_priority`（白名单规范化，默认 auto/true/ja）；`PerGameSettingsStore`
+  新增 `F_DICT_QUERY_LANG` / `F_DICT_READING` 每游戏覆盖；
+  `EngineSettingsResolver` 合并为 `dictQueryLang` / `dictReading`。
+- **下发链**：`EngineLauncher.buildIntent` 给所有引擎 intent 加
+  `LaunchContract.DICT_QUERY_LANG` / `DICT_READING`；`OnsExtractPanel` 构造时读取，
+  汉字归属读全局多进程 prefs。真机日志
+  `OnsExtractPanel: dict query lang=ja reading=true han=ja` ✓。
+- **语言判定统一**：新增 `OnsDeinflector.detectLanguage(q, hanPriority)`
+  （假名→ja、谚文→ko、汉字→hanPriority 默认 ja、其余→en），`selectLang` 改走它。
+- **消费点**：面板 `tryMatchCandidate` 改用 `deinflectDetailed(cand, 生效语言)`
+  （候选**按 score 升序**，替换字典序）+ 读音门控改
+  `dictReading && 语言==ja && 长度>1`（对齐参考 `skipReading`，汉字词条也能按读音命中）；
+  `searchMatchedInner` 同语言；`OnsDictStore.setQueryLanguage` 让**非 auto 时查询范围
+  只保留 universal + 同语言词典**（范围缓存键含语言）。
+- **词典 scope（G8）**：`dicts.scope` 列（存量库探测后 ALTER 补列，默认 universal；
+  读不到一律 universal，不会因缺 scope 查不到）+ 词典行「语言范围」循环按钮。
+- **验证**：查词设置区渲染 ✓；点「查询语言」→ 落盘 `dict_query_lang=ja` ✓；
+  非 auto 时「汉字优先」隐藏 ✓；面板读到 extra ✓；V2 的参考对照 **15/15 复测仍 0 差异**。
+- **遗留**：词典页结果语言 chips 仍是启发式（未按 scope 过滤结果，需 Group 带 dict_id）；
+  V5（语言包 + 查表还原）、V6（面板/制卡对接）未开始。
+
 ## 2026-10-08 会话（四十七）：词汇处理移植 V1/V2（规则核对 + 还原结构 + 查询测试）
 
 执行 `docs/dev/词汇处理完整移植方案.md`；参考实现 `D:\code\test-JavaScript\TrackReader`

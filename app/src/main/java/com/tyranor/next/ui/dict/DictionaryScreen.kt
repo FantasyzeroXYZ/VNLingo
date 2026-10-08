@@ -42,6 +42,7 @@ import androidx.compose.ui.unit.dp
 import com.core.engine.R as EngineR
 import com.core.ons.OnsDictStore
 import com.tyranor.next.R
+import com.tyranor.next.core.settings.EngineSettingsStore
 import com.tyranor.next.theme.AppComponentCornerRadius
 import com.tyranor.next.theme.MiuixSettingsTheme
 import com.tyranor.next.theme.glassBorder
@@ -87,6 +88,10 @@ fun DictionaryScreen(modifier: Modifier = Modifier) {
     var testResult by remember { mutableStateOf("") }
     var testRunning by remember { mutableStateOf(false) }
     var testTrace by remember { mutableStateOf(false) }
+    // M4 查词设置（全局默认；每游戏覆盖在游戏设置页）
+    var dictQueryLang by remember { mutableStateOf(EngineSettingsStore.getDictQueryLang(context)) }
+    var dictReading by remember { mutableStateOf(EngineSettingsStore.isDictReading(context)) }
+    var dictHanPriority by remember { mutableStateOf(EngineSettingsStore.getDictHanPriority(context)) }
     val importFailedMessage = stringResource(R.string.dict_import_failed)
 
     var dicts by remember { mutableStateOf(OnsDictStore.get().listDicts(context)) }
@@ -327,6 +332,66 @@ fun DictionaryScreen(modifier: Modifier = Modifier) {
                             modifier = Modifier.fillMaxWidth().padding(vertical = 8.dp),
                         )
                     }
+                    // ---- M4 查词设置（查询语言 / 读音查询 / 汉字优先）----
+                    MiuixCard(
+                        modifier = Modifier.fillMaxWidth().glassShadow().glassBorder(),
+                        cornerRadius = AppComponentCornerRadius,
+                    ) {
+                        Column(Modifier.padding(vertical = 4.dp)) {
+                            Text(
+                                stringResource(R.string.dict_query_settings),
+                                style = MaterialTheme.typography.titleSmall,
+                                color = MaterialTheme.colorScheme.onSurface,
+                                modifier = Modifier.padding(horizontal = 16.dp, vertical = 6.dp),
+                            )
+                            CycleRow(
+                                title = stringResource(R.string.dict_query_lang),
+                                value = queryLangLabel(dictQueryLang),
+                                onNext = {
+                                    val idx = EngineSettingsStore.DICT_LANG_ORDER
+                                        .indexOf(dictQueryLang).coerceAtLeast(0)
+                                    dictQueryLang = EngineSettingsStore.DICT_LANG_ORDER[
+                                        (idx + 1) % EngineSettingsStore.DICT_LANG_ORDER.size]
+                                    EngineSettingsStore.setDictQueryLang(context, dictQueryLang)
+                                },
+                            )
+                            if (EngineSettingsStore.DICT_LANG_AUTO == dictQueryLang) {
+                                CycleRow(
+                                    title = stringResource(R.string.dict_han_priority),
+                                    value = if (dictHanPriority == EngineSettingsStore.DICT_HAN_ZH)
+                                        stringResource(R.string.dict_lang_zh)
+                                    else stringResource(R.string.dict_lang_ja),
+                                    onNext = {
+                                        dictHanPriority =
+                                            if (dictHanPriority == EngineSettingsStore.DICT_HAN_ZH)
+                                                EngineSettingsStore.DICT_HAN_JA
+                                            else EngineSettingsStore.DICT_HAN_ZH
+                                        EngineSettingsStore.setDictHanPriority(context, dictHanPriority)
+                                    },
+                                )
+                            }
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp),
+                            ) {
+                                Column(Modifier.weight(1f)) {
+                                    Text(
+                                        stringResource(R.string.dict_reading),
+                                        style = MaterialTheme.typography.bodyLarge,
+                                    )
+                                    Text(
+                                        stringResource(R.string.dict_reading_summary),
+                                        style = MaterialTheme.typography.bodySmall,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    )
+                                }
+                                Switch(checked = dictReading, onCheckedChange = {
+                                    dictReading = it
+                                    EngineSettingsStore.setDictReading(context, it)
+                                })
+                            }
+                        }
+                    }
                     // ---- M6 查询测试（验收工具：看清「该命中却没命中」是规则/语言/词典问题）----
                     MiuixCard(
                         modifier = Modifier.fillMaxWidth().glassShadow().glassBorder(),
@@ -401,6 +466,10 @@ fun DictionaryScreen(modifier: Modifier = Modifier) {
                                     refresh()
                                 },
                                 onDelete = { deleteTarget = dict },
+                                onScopeChanged = { scope ->
+                                    OnsDictStore.get().setDictScope(context, dict.id, scope)
+                                    refresh()
+                                },
                             )
                         }
                     }
@@ -506,6 +575,7 @@ private fun DictRow(
     onEnabledChanged: (Boolean) -> Unit,
     onSetCurrent: () -> Unit,
     onDelete: () -> Unit,
+    onScopeChanged: (String) -> Unit,
 ) {
     val context = LocalContext.current
     MiuixCard(
@@ -533,6 +603,7 @@ private fun DictRow(
             Row(
                 modifier = Modifier.fillMaxWidth().padding(top = 4.dp),
                 horizontalArrangement = Arrangement.spacedBy(8.dp),
+                verticalAlignment = Alignment.CenterVertically,
             ) {
                 if (!dict.current) {
                     TextButton(onClick = onSetCurrent) {
@@ -546,11 +617,56 @@ private fun DictRow(
                         modifier = Modifier.align(Alignment.CenterVertically),
                     )
                 }
+                // M4/G8 词典语言范围：点一次切下一个（全部→日本語→中文→한국어→English→Tiếng Việt）
+                TextButton(onClick = {
+                    val next = OnsDictStore.SCOPES[
+                        (OnsDictStore.SCOPES.indexOf(dict.scope).coerceAtLeast(0) + 1)
+                            % OnsDictStore.SCOPES.size]
+                    onScopeChanged(next)
+                }) {
+                    Text(stringResource(R.string.dict_scope_row, scopeLabel(dict.scope)))
+                }
                 TextButton(onClick = onDelete) {
                     Text(stringResource(R.string.common_delete), color = MaterialTheme.colorScheme.error)
                 }
             }
         }
+    }
+}
+
+/** 词典 scope 的显示名（universal/ja/zh/ko/en/vi）。 */
+@Composable
+private fun scopeLabel(scope: String): String = when (scope) {
+    "ja" -> stringResource(R.string.dict_lang_ja)
+    "zh" -> stringResource(R.string.dict_lang_zh)
+    "ko" -> stringResource(R.string.dict_lang_ko)
+    "en" -> stringResource(R.string.dict_lang_en)
+    "vi" -> stringResource(R.string.dict_lang_vi)
+    else -> stringResource(R.string.dict_scope_universal)
+}
+
+/** 查询语言显示名。 */
+@Composable
+private fun queryLangLabel(lang: String): String = when (lang) {
+    "ja" -> stringResource(R.string.dict_lang_ja)
+    "zh" -> stringResource(R.string.dict_lang_zh)
+    "ko" -> stringResource(R.string.dict_lang_ko)
+    "en" -> stringResource(R.string.dict_lang_en)
+    "vi" -> stringResource(R.string.dict_lang_vi)
+    else -> stringResource(R.string.dict_lang_auto)
+}
+
+/** 单行循环选择（点击切下一个取值）；与设置页的选择行交互一致。 */
+@Composable
+private fun CycleRow(title: String, value: String, onNext: () -> Unit) {
+    Row(
+        verticalAlignment = Alignment.CenterVertically,
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 16.dp, vertical = 6.dp),
+    ) {
+        Text(title, style = MaterialTheme.typography.bodyLarge, modifier = Modifier.weight(1f))
+        TextButton(onClick = onNext) { Text("$value ▾") }
     }
 }
 

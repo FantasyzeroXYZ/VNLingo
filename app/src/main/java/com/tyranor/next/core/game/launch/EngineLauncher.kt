@@ -759,6 +759,10 @@ object EngineLauncher {
         intent.putExtra(LaunchContract.THEME_COLOR_CARD, theme.cardArgb)
         intent.putExtra(LaunchContract.THEME_COLOR_TEXT, theme.textArgb)
         intent.putExtra(LaunchContract.THEME_COLOR_TEXT_MUTED, theme.mutedArgb)
+        // M4 词典查询语言：全局默认 + 每游戏覆盖（已在 resolver 合并），面板在引擎进程
+        // 读这两个 extra 决定还原规则/是否查读音/词典范围
+        intent.putExtra(LaunchContract.DICT_QUERY_LANG, settings.dictQueryLang)
+        intent.putExtra(LaunchContract.DICT_READING, settings.dictReading)
         return intent
     }
 

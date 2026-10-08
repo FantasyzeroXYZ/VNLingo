@@ -49,7 +49,13 @@ public final class OnsDictStore {
         public int count;
         public boolean enabled;
         public boolean current;
+        /** 词典语言范围（M4/G8）：universal（默认，任何查询语言可见）或 ja/zh/ko/en/vi。 */
+        public String scope = SCOPE_UNIVERSAL;
     }
+
+    /** 词典 scope 取值（M4/G8）：未标注一律 universal，**不得因缺 scope 导致查不到**。 */
+    public static final String SCOPE_UNIVERSAL = "universal";
+    public static final String[] SCOPES = {SCOPE_UNIVERSAL, "ja", "zh", "ko", "en", "vi"};
 
     public interface Progress {
         void onProgress(String message);
@@ -78,6 +84,10 @@ public final class OnsDictStore {
     /** 查询范围缓存（B2）：词典增删/启停/切换当前时失效。 */
     private volatile List<Long> scopeCache;
     private volatile long scopeCacheAt;
+    /** 范围缓存对应的查询语言（M4）：语言变了要重算。 */
+    private volatile String scopeCacheLang = "auto";
+    /** 进程内查询语言（M4）：auto/ja/zh/ko/en/vi；影响词典范围过滤。 */
+    private volatile String queryLanguage = "auto";
     /** 范围缓存有效期：扫描内数百次查询共用一份，跨进程词典变更最多滞后一个 TTL。 */
     private static final long SCOPE_CACHE_TTL_MS = 3000;
     private static volatile boolean readingIndexReady;
@@ -243,7 +253,20 @@ public final class OnsDictStore {
         database.execSQL("CREATE TABLE IF NOT EXISTS kv(name TEXT PRIMARY KEY NOT NULL, value TEXT)");
         database.execSQL("CREATE TABLE IF NOT EXISTS dicts("
                 + "id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT NOT NULL DEFAULT '',"
-                + "enabled INTEGER NOT NULL DEFAULT 1, count INTEGER NOT NULL DEFAULT 0)");
+                + "enabled INTEGER NOT NULL DEFAULT 1, count INTEGER NOT NULL DEFAULT 0,"
+                + "scope TEXT NOT NULL DEFAULT '" + SCOPE_UNIVERSAL + "')");
+        // M4/G8：存量库补 scope 列（未标注一律 universal，不影响既有查词）
+        Cursor dictCols = database.rawQuery("PRAGMA table_info(dicts)", null);
+        boolean hasScope = false;
+        while (dictCols.moveToNext()) {
+            if ("scope".equalsIgnoreCase(dictCols.getString(1))) hasScope = true;
+        }
+        dictCols.close();
+        if (!hasScope) {
+            database.execSQL("ALTER TABLE dicts ADD COLUMN scope TEXT NOT NULL DEFAULT '"
+                    + SCOPE_UNIVERSAL + "'");
+            Log.i(TAG, "dicts.scope column added (default universal)");
+        }
         // v1 表没有 dict_id 列：必须先补列，(dict_id, term) 索引才能建
         Cursor cols = database.rawQuery("PRAGMA table_info(entries)", null);
         boolean hasDictId = false;
@@ -330,7 +353,8 @@ public final class OnsDictStore {
         if (database == null) return out;
         Cursor c = database.rawQuery(
                 "SELECT d.id, d.name, d.enabled, d.count,"
-                        + " (SELECT value FROM kv WHERE name='current_dict') = CAST(d.id AS TEXT)"
+                        + " (SELECT value FROM kv WHERE name='current_dict') = CAST(d.id AS TEXT),"
+                        + " d.scope"
                         + " FROM dicts d ORDER BY d.id", null);
         while (c.moveToNext()) {
             DictInfo info = new DictInfo();
@@ -339,10 +363,28 @@ public final class OnsDictStore {
             info.enabled = c.getInt(2) != 0;
             info.count = c.getInt(3);
             info.current = !c.isNull(4) && c.getInt(4) != 0;
+            String scope = c.isNull(5) ? null : c.getString(5);
+            info.scope = scope == null || scope.isEmpty() ? SCOPE_UNIVERSAL : scope;
             out.add(info);
         }
         c.close();
         return out;
+    }
+
+    /** 设置词典语言范围（M4/G8）；非法值回落 universal。改完查询范围立即失效。 */
+    public synchronized void setDictScope(Context context, long id, String scope) {
+        SQLiteDatabase database = db(context);
+        if (database == null) return;
+        boolean known = false;
+        for (String s : SCOPES) {
+            if (s.equals(scope)) {
+                known = true;
+                break;
+            }
+        }
+        database.execSQL("UPDATE dicts SET scope=? WHERE id=?",
+                new Object[]{known ? scope : SCOPE_UNIVERSAL, id});
+        scopeCache = null;
     }
 
     /** 启用/停用；停用的词典不参与查词。 */
@@ -835,9 +877,10 @@ public final class OnsDictStore {
             List<Group> groups = exactLookup(database, scope, prefix, maxGroups);
             if (!groups.isEmpty()) return new Match(prefix, groups);
             if (!deinflect) continue;
-            for (String candidate : OnsDeinflector.deinflect(prefix)) {
-                groups = exactLookup(database, scope, candidate, maxGroups);
-                if (!groups.isEmpty()) return new Match(candidate, groups);
+            // M4：还原规则按查询语言（auto → 按脚本分派）
+            for (OnsDeinflector.Result r : OnsDeinflector.deinflectDetailed(prefix, hintLang())) {
+                groups = exactLookup(database, scope, r.term, maxGroups);
+                if (!groups.isEmpty()) return new Match(r.term, groups);
             }
         }
         return null;
@@ -846,19 +889,34 @@ public final class OnsDictStore {
     /** 当前词典优先、其余启用词典兜底的查询范围（TrackReader current-scope 模型）。
      *  B2：一次扫描会发数百次查询，每次现查 dicts 子查询（0.086ms/次）——结果带
      *  短 TTL 缓存；词典增删/启停/切当前（本进程）立即失效，跨进程变更最多滞后
-     *  一个 TTL 生效。 */
+     *  一个 TTL 生效。
+     *  M4/G8：查询语言非 auto 时，只保留 `scope = universal` 或 `scope = 查询语言`
+     *  的词典（未标注 = universal，永不会因此查不到）。 */
     private List<Long> buildScope(SQLiteDatabase database) {
+        final String lang = queryLanguage == null ? "auto" : queryLanguage;
+        final boolean filterByLang = !"auto".equals(lang);
         long now = System.currentTimeMillis();
         List<Long> cached = scopeCache;
-        if (cached != null && now - scopeCacheAt < SCOPE_CACHE_TTL_MS) return cached;
+        if (cached != null && now - scopeCacheAt < SCOPE_CACHE_TTL_MS
+                && lang.equals(scopeCacheLang)) return cached;
         List<Long> scope = new ArrayList<>();
-        if (currentDictId > 0) scope.add(currentDictId);
         Cursor c = null;
         try {
+            // 当前词典优先（但若它被标注成别的语言范围且与查询语言不符，则跳过）
+            if (currentDictId > 0
+                    && (!filterByLang || SCOPE_UNIVERSAL.equals(dictScope(database, currentDictId))
+                        || lang.equals(dictScope(database, currentDictId)))) {
+                scope.add(currentDictId);
+            }
+            List<String> args = new ArrayList<>();
+            if (currentDictId > 0) args.add(String.valueOf(currentDictId));
+            if (filterByLang) args.add(lang);
             c = database.rawQuery(
                     "SELECT id FROM dicts WHERE enabled=1"
-                            + (currentDictId > 0 ? " AND id<>?" : "") + " ORDER BY id",
-                    currentDictId > 0 ? new String[]{String.valueOf(currentDictId)} : null);
+                            + (currentDictId > 0 ? " AND id<>?" : "")
+                            + (filterByLang ? " AND (scope='" + SCOPE_UNIVERSAL + "' OR scope=?)" : "")
+                            + " ORDER BY id",
+                    args.isEmpty() ? null : args.toArray(new String[0]));
             while (c.moveToNext()) scope.add(c.getLong(0));
         } catch (Throwable t) {
             Log.w(TAG, "scope query failed", t);
@@ -867,7 +925,48 @@ public final class OnsDictStore {
         }
         scopeCache = scope;
         scopeCacheAt = now;
+        scopeCacheLang = lang;
         return scope;
+    }
+
+    /** 读某词典的 scope（未标注/读取失败一律 universal）。 */
+    private static String dictScope(SQLiteDatabase database, long id) {
+        Cursor c = null;
+        try {
+            c = database.rawQuery("SELECT scope FROM dicts WHERE id=?",
+                    new String[]{String.valueOf(id)});
+            if (c.moveToFirst()) {
+                String s = c.isNull(0) ? null : c.getString(0);
+                return s == null || s.isEmpty() ? SCOPE_UNIVERSAL : s;
+            }
+        } catch (Throwable t) {
+            Log.w(TAG, "dict scope read failed id=" + id, t);
+        } finally {
+            if (c != null) c.close();
+        }
+        return SCOPE_UNIVERSAL;
+    }
+
+    /**
+     * M4：设置进程内查询语言（auto/ja/zh/ko/en/vi）。
+     * 非 auto 时查询范围只保留 universal 与同语言词典；面板在 init 时按启动 extra 调用。
+     */
+    public void setQueryLanguage(String lang) {
+        String v = (lang == null || lang.isEmpty()) ? "auto" : lang;
+        if (!v.equals(queryLanguage)) {
+            queryLanguage = v;
+            scopeCache = null;
+        }
+    }
+
+    public String getQueryLanguage() {
+        return queryLanguage == null ? "auto" : queryLanguage;
+    }
+
+    /** 还原语言 hint：auto → null（引擎按文字脚本分派）。 */
+    private String hintLang() {
+        String v = getQueryLanguage();
+        return "auto".equals(v) ? null : v;
     }
 
     /** 查询范围；无词典时给 [-1] 快速空路径（返回单例，禁止再改写）。 */

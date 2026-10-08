@@ -53,6 +53,14 @@ object LaunchContract {
     /** 提取钩子开关（bool，缺省 true）：ONS/KRKR/Artemis 宿主按此武装文本提取钩子与面板。 */
     const val EXTRACT_HOOK = "extractHook"
 
+    // ---------- 词典查询（M4 查询语言设置，面板在引擎进程读这两个 extra） ----------
+
+    /** 查询语言（String：auto/ja/zh/ko/en/vi，缺省 auto = 按文字脚本分派）。 */
+    const val DICT_QUERY_LANG = "dictQueryLang"
+
+    /** 是否查读音（bool，仅日语有效；对齐参考 skipReading = scope !== 'ja'）。 */
+    const val DICT_READING = "dictReading"
+
     // ---------- ONS ----------
 
     const val GAME_ARGS = "gameargs"

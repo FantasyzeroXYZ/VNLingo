@@ -267,8 +267,14 @@
       **对照验证 15/15**（参考 JS ↔ Java 真机 harness，含 `食べちゃった→食べる:2`）
 - [x] 词汇处理移植 M3 引擎侧（会话四十七）：预处理管线改按 JSON 名字驱动，
       补 zh「全角英数→半角」「繁体→简体(NFKC)」；未知名保留原文
-- [ ] 词汇处理移植 V3：M4 查询语言设置（全局 + 每游戏覆盖、读音查询开关、
-      词典 `scope` 列与过滤、auto 下汉字 ja/zh 消歧）；跨进程用 MODE_MULTI_PROCESS
+- [x] 词汇处理移植 V3（M4 查询语言设置，会话四十八）：全局 + 每游戏覆盖的
+      「查询语言 / 读音查询 / 汉字优先」；intent extra 下发到引擎进程面板；
+      `detectLanguage` 统一语言判定；面板候选改 `deinflectDetailed(语言)`（score 序）
+      + 读音门控对齐 `skipReading`；`dicts.scope` 列与查询范围过滤；词典行
+      「语言范围」循环按钮。真机验证：设置落盘、面板读到 `lang=ja reading=true han=ja`、
+      参考对照 15/15 复测仍 0 差异
+- [ ] 词汇处理移植 V3 遗留：词典页结果语言 chips 仍是脚本启发式，未按 `dicts.scope`
+      过滤结果（需给 `OnsDictStore.Group` 带 dict_id 才能按词典范围筛）
 - [ ] 词汇处理移植 V5：M2 语言包（`pack_meta`/`pack_entries` 表、导入事务、
       启停/卸载/恢复）+ 查表还原接入候选顺序 ③（标记 `table-deinflect`）
 - [ ] 词汇处理移植 V6：面板/制卡对接（`OnsExtractPanel.tryMatchCandidate` 改用

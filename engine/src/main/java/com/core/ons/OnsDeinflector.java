@@ -315,19 +315,38 @@ public final class OnsDeinflector {
         return true;
     }
 
-    /** 语言分派：假名→ja、谚文→ko、汉字→ja（zh 规则集为空，语义无损）、其余→en。 */
+    /** 语言分派（默认汉字归 ja）：假名→ja、谚文→ko、汉字→ja、其余→en。 */
     private static LangRules selectLang(String s) {
+        return sLangs.get(detectLanguage(s, "ja"));
+    }
+
+    /**
+     * 语言判定（M4）：显式「自动」下的分派规则，供面板在查读音/规则选择前调用。
+     *
+     * <ul>
+     *   <li>假名（平/片假名、半角假名）→ ja</li>
+     *   <li>谚文 → ko</li>
+     *   <li>汉字 → {@code hanPriority}（ja = 默认，与参考 scope 行为一致；zh = 中文优先）</li>
+     *   <li>其余（拉丁等）→ en</li>
+     * </ul>
+     */
+    public static String detectLanguage(String s, String hanPriority) {
+        final String han = "zh".equals(hanPriority) ? "zh" : "ja";
+        if (s == null) return "en";
         for (int i = 0; i < s.length(); i++) {
             int cp = s.codePointAt(i);
             if ((cp >= 0x3041 && cp <= 0x30FF) || (cp >= 0x31F0 && cp <= 0x31FF)
-                    || (cp >= 0x4E00 && cp <= 0x9FFF) || (cp >= 0x3400 && cp <= 0x4DBF)) {
-                return sLangs.get("ja");
+                    || (cp >= 0xFF66 && cp <= 0xFF9F)) {
+                return "ja";
             }
             if ((cp >= 0xAC00 && cp <= 0xD7AF) || (cp >= 0x1100 && cp <= 0x11FF)) {
-                return sLangs.get("ko");
+                return "ko";
+            }
+            if ((cp >= 0x4E00 && cp <= 0x9FFF) || (cp >= 0x3400 && cp <= 0x4DBF)) {
+                return han;
             }
         }
-        return sLangs.get("en");
+        return "en";
     }
 
     // ---- 递归还原引擎（transform-engine.ts 对齐）----

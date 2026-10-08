@@ -134,6 +134,10 @@ object PerGameSettingsStore {
     // KRKR 文本输出源（"hook"=运行时文本流 / "engine_tjs"=引擎自身输出；null=跟随全局）
     const val F_KR_TEXT_SOURCE = "kr_text_source"
 
+    // 词典查询（M4 查询语言设置）：每游戏覆盖全局默认；null=跟随全局
+    const val F_DICT_QUERY_LANG = "dict_query_lang"
+    const val F_DICT_READING = "dict_reading"
+
     private fun prefs(context: Context) =
         context.applicationContext.getSharedPreferences(PREF_NAME, Context.MODE_PRIVATE)
 

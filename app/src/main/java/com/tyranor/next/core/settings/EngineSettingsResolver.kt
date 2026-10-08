@@ -78,6 +78,17 @@ object EngineSettingsResolver {
                     str(PerGameSettingsStore.F_KR_TEXT_SOURCE),
                     EngineSettingsStore.getKrTextSource(app),
                 ) else EngineSettingsStore.KR_TEXT_SOURCE_HOOK,
+            // M4 查询语言：每游戏覆盖 > 全局默认；非法持久化值回退 auto
+            dictQueryLang = EffectiveEngineSettings.resolveAllowed(
+                str(PerGameSettingsStore.F_DICT_QUERY_LANG),
+                EngineSettingsStore.getDictQueryLang(app),
+                EngineSettingsStore.DICT_LANGS,
+                EngineSettingsStore.DICT_LANG_AUTO,
+            ),
+            dictReading = EffectiveEngineSettings.resolveBool(
+                bool(PerGameSettingsStore.F_DICT_READING),
+                EngineSettingsStore.isDictReading(app),
+            ),
             krAnime4kMode = EffectiveEngineSettings.resolveAllowed(
                 str(PerGameSettingsStore.F_ANIME4K_MODE),
                 EngineSettingsStore.getKrAnime4kMode(app),
@@ -256,6 +267,10 @@ data class ResolvedEngineSettings(
     val extractHook: Boolean,
     /** KRKR 文本输出源：hook = 运行时文本流；engine_tjs = 引擎自身输出（TJS 发射器，实验性）。 */
     val krTextSource: String,
+    /** 词典查询语言（M4）：auto = 按文字脚本分派；显式值 = 用它选还原规则/是否查读音/词典范围。 */
+    val dictQueryLang: String,
+    /** 是否查读音（仅日语有效；对齐参考 skipReading = scope !== 'ja'）。 */
+    val dictReading: Boolean,
     val krAnime4kMode: String,
     val krRenderer: String,
     val artVersion: String,
