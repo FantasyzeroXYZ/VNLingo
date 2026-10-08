@@ -151,6 +151,8 @@
     <string name="engine_ons_dict_empty">辞書がありません。下からインポートしてください</string>
     <string name="engine_ons_dict_current">現在</string>
     <string name="engine_ons_dict_set_current">現在に設定</string>
+    <string name="engine_ons_dict_deinflect">検索時の原形還元</string>
+    <string name="engine_ons_dict_deinflect_summary">検索時に原形（英語の複数形・時制、日本語の活用）を自動的に試します</string>
     <string name="engine_ons_dict_enable">有効化</string>
     <string name="engine_ons_dict_disable">無効化</string>
     <string name="engine_ons_dict_delete">削除</string>

@@ -523,6 +523,19 @@ public final class OnsDictStore {
     // 查询：最长前缀 + 词形还原分层（japanese_search.dart tier 思路）
     // ------------------------------------------------------------------
 
+    /** 查词命中：matchedTerm = 实际命中的词形（递减前缀或还原原形），
+     *  groups 其释义。调用方高亮必须以 matchedTerm 为准——search 内部的
+     *  递减/还原意味着命中的词往往短于查询串。 */
+    public static final class Match {
+        public final String matchedTerm;
+        public final List<Group> groups;
+
+        Match(String matchedTerm, List<Group> groups) {
+            this.matchedTerm = matchedTerm;
+            this.groups = groups;
+        }
+    }
+
     /** 查词：对 query 取最长有命中前缀，返回该层的释义组（最多 maxGroups 组）。
      *  范围：当前词典优先，其次其余启用词典（对齐参考的 current-dictionary
      *  模型 + 跨启用词典回退）。 */
@@ -530,24 +543,27 @@ public final class OnsDictStore {
      *  顶层兜底：词典库异常（损坏/满盘/并发写冲突）降级为空结果并记日志，
      *  查词方（游戏内扫描/词典页）不因库异常崩溃。 */
     public List<Group> search(String query, int maxGroups) {
-        List<Group> empty = new ArrayList<>();
-        if (query == null) return empty;
+        Match m = searchMatched(query, maxGroups, true);
+        return m == null ? new ArrayList<>() : m.groups;
+    }
+
+    /** 查词并返回实际命中的词形。deinflect=false 时只做精确前缀递减。 */
+    public Match searchMatched(String query, int maxGroups, boolean deinflect) {
+        if (query == null) return null;
         try {
-            List<Group> out = searchInner(query, maxGroups);
-            return out == null ? empty : out;
+            return searchMatchedInner(query, maxGroups, deinflect);
         } catch (Throwable t) {
-            Log.w(TAG, "search failed for " + query, t);
-            return empty;
+            Log.w(TAG, "searchMatched failed for " + query, t);
+            return null;
         }
     }
 
-    private List<Group> searchInner(String query, int maxGroups) {
-        List<Group> empty = new ArrayList<>();
+    private Match searchMatchedInner(String query, int maxGroups, boolean deinflect) {
         String q = query.trim();
-        if (q.isEmpty()) return empty;
+        if (q.isEmpty()) return null;
         if (q.length() > 20) q = q.substring(0, 20);
         SQLiteDatabase database = db(null);
-        if (database == null) return empty;
+        if (database == null) return null;
         List<Long> scope = new ArrayList<>();
         if (currentDictId > 0) scope.add(currentDictId);
         Cursor c = null;
@@ -566,15 +582,37 @@ public final class OnsDictStore {
         for (int len = q.length(); len >= 1; len--) {
             String prefix = q.substring(0, len);
             List<Group> groups = exactLookup(database, scope, prefix, maxGroups);
-            if (groups.isEmpty()) {
-                for (String candidate : OnsDeinflector.deinflect(prefix)) {
-                    groups = exactLookup(database, scope, candidate, maxGroups);
-                    if (!groups.isEmpty()) break;
-                }
+            if (!groups.isEmpty()) return new Match(prefix, groups);
+            if (!deinflect) continue;
+            for (String candidate : OnsDeinflector.deinflect(prefix)) {
+                groups = exactLookup(database, scope, candidate, maxGroups);
+                if (!groups.isEmpty()) return new Match(candidate, groups);
             }
-            if (!groups.isEmpty()) return groups;
         }
-        return empty;
+        return null;
+    }
+
+    // ---- 词形还原开关（多进程共享；词典页设置，游戏内查词与词典页搜索共用）----
+
+    private static final String DEINFLECT_PREF = "ons_dict_settings";
+    private static final String DEINFLECT_KEY = "deinflect_enabled";
+
+    /** 查词词形还原开关（默认开）。MODE_MULTI_PROCESS：词典页（主进程）写、
+     *  游戏内查词（引擎进程）读。 */
+    public static boolean isDeinflectEnabled(Context context) {
+        try {
+            return context.getSharedPreferences(DEINFLECT_PREF, Context.MODE_MULTI_PROCESS)
+                    .getBoolean(DEINFLECT_KEY, true);
+        } catch (Throwable t) {
+            return true;
+        }
+    }
+
+    public static void setDeinflectEnabled(Context context, boolean enabled) {
+        try {
+            context.getSharedPreferences(DEINFLECT_PREF, Context.MODE_MULTI_PROCESS)
+                    .edit().putBoolean(DEINFLECT_KEY, enabled).apply();
+        } catch (Throwable ignored) { }
     }
 
     private List<Group> exactLookup(SQLiteDatabase database, List<Long> scope,

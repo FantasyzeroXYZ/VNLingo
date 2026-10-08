@@ -135,10 +135,16 @@ public final class OnsDeinflector {
 
     /**
      * 词形还原：返回词典原形候选（去重、按还原深度升序）。
-     * 未初始化/无结果返回空列表。
+     * 未初始化/无结果返回空列表。ASCII 输入走英文规则（内置），其余走 ja 规则。
      */
     public static List<String> deinflect(String query) {
-        if (!sLoaded || query == null || query.isEmpty()) return new ArrayList<>();
+        List<String> out = new ArrayList<>();
+        if (query == null || query.isEmpty()) return out;
+        if (isAsciiWord(query)) {
+            out.addAll(deinflectEn(query));
+            return out;
+        }
+        if (!sLoaded) return out;
 
         // 预处理管线（ja/preprocessors.ts 同序）生成变体，逐变体还原；
         // 自匹配（term === 变体且深度 0）由精确搜索覆盖，跳过
@@ -154,9 +160,210 @@ public final class OnsDeinflector {
                 }
             }
         }
-        List<String> out = new ArrayList<>(all.keySet());
-        java.util.Collections.sort(out);
-        return out;
+        List<String> jaOut = new ArrayList<>(all.keySet());
+        java.util.Collections.sort(jaOut);
+        return jaOut;
+    }
+
+    // ---- 英文词形还原（内置规则，无需资产；错误原形只会查空无害）----
+
+    private static boolean isAsciiWord(String s) {
+        for (int i = 0; i < s.length(); i++) {
+            if (s.charAt(i) > 0x7F) return false;
+        }
+        return true;
+    }
+
+    private static boolean isVowel(char c) {
+        return c == 'a' || c == 'e' || c == 'i' || c == 'o' || c == 'u';
+    }
+
+    /** 不规则变化表（屈折形 → 原形），覆盖常用动词/形容词/名词。 */
+    private static final java.util.Map<String, String[]> EN_IRREGULAR = new HashMap<>();
+    static {
+        EN_IRREGULAR.put("went", new String[]{"go"});
+        EN_IRREGULAR.put("gone", new String[]{"go"});
+        EN_IRREGULAR.put("was", new String[]{"be"});
+        EN_IRREGULAR.put("were", new String[]{"be"});
+        EN_IRREGULAR.put("been", new String[]{"be"});
+        EN_IRREGULAR.put("being", new String[]{"be"});
+        EN_IRREGULAR.put("am", new String[]{"be"});
+        EN_IRREGULAR.put("is", new String[]{"be"});
+        EN_IRREGULAR.put("are", new String[]{"be"});
+        EN_IRREGULAR.put("had", new String[]{"have"});
+        EN_IRREGULAR.put("has", new String[]{"have"});
+        EN_IRREGULAR.put("did", new String[]{"do"});
+        EN_IRREGULAR.put("does", new String[]{"do"});
+        EN_IRREGULAR.put("done", new String[]{"do"});
+        EN_IRREGULAR.put("made", new String[]{"make"});
+        EN_IRREGULAR.put("said", new String[]{"say"});
+        EN_IRREGULAR.put("got", new String[]{"get"});
+        EN_IRREGULAR.put("gotten", new String[]{"get"});
+        EN_IRREGULAR.put("took", new String[]{"take"});
+        EN_IRREGULAR.put("taken", new String[]{"take"});
+        EN_IRREGULAR.put("came", new String[]{"come"});
+        EN_IRREGULAR.put("saw", new String[]{"see"});
+        EN_IRREGULAR.put("seen", new String[]{"see"});
+        EN_IRREGULAR.put("knew", new String[]{"know"});
+        EN_IRREGULAR.put("known", new String[]{"know"});
+        EN_IRREGULAR.put("thought", new String[]{"think"});
+        EN_IRREGULAR.put("found", new String[]{"find"});
+        EN_IRREGULAR.put("gave", new String[]{"give"});
+        EN_IRREGULAR.put("given", new String[]{"give"});
+        EN_IRREGULAR.put("told", new String[]{"tell"});
+        EN_IRREGULAR.put("felt", new String[]{"feel"});
+        EN_IRREGULAR.put("left", new String[]{"leave"});
+        EN_IRREGULAR.put("brought", new String[]{"bring"});
+        EN_IRREGULAR.put("began", new String[]{"begin"});
+        EN_IRREGULAR.put("begun", new String[]{"begin"});
+        EN_IRREGULAR.put("kept", new String[]{"keep"});
+        EN_IRREGULAR.put("held", new String[]{"hold"});
+        EN_IRREGULAR.put("wrote", new String[]{"write"});
+        EN_IRREGULAR.put("written", new String[]{"write"});
+        EN_IRREGULAR.put("stood", new String[]{"stand"});
+        EN_IRREGULAR.put("heard", new String[]{"hear"});
+        EN_IRREGULAR.put("meant", new String[]{"mean"});
+        EN_IRREGULAR.put("met", new String[]{"meet"});
+        EN_IRREGULAR.put("ran", new String[]{"run"});
+        EN_IRREGULAR.put("paid", new String[]{"pay"});
+        EN_IRREGULAR.put("sat", new String[]{"sit"});
+        EN_IRREGULAR.put("lost", new String[]{"lose"});
+        EN_IRREGULAR.put("fell", new String[]{"fall"});
+        EN_IRREGULAR.put("sent", new String[]{"send"});
+        EN_IRREGULAR.put("built", new String[]{"build"});
+        EN_IRREGULAR.put("understood", new String[]{"understand"});
+        EN_IRREGULAR.put("drew", new String[]{"draw"});
+        EN_IRREGULAR.put("drawn", new String[]{"draw"});
+        EN_IRREGULAR.put("broke", new String[]{"break"});
+        EN_IRREGULAR.put("broken", new String[]{"break"});
+        EN_IRREGULAR.put("spoke", new String[]{"speak"});
+        EN_IRREGULAR.put("spoken", new String[]{"speak"});
+        EN_IRREGULAR.put("drove", new String[]{"drive"});
+        EN_IRREGULAR.put("driven", new String[]{"drive"});
+        EN_IRREGULAR.put("ate", new String[]{"eat"});
+        EN_IRREGULAR.put("eaten", new String[]{"eat"});
+        EN_IRREGULAR.put("drank", new String[]{"drink"});
+        EN_IRREGULAR.put("drunk", new String[]{"drink"});
+        EN_IRREGULAR.put("sang", new String[]{"sing"});
+        EN_IRREGULAR.put("sung", new String[]{"sing"});
+        EN_IRREGULAR.put("swam", new String[]{"swim"});
+        EN_IRREGULAR.put("swum", new String[]{"swim"});
+        EN_IRREGULAR.put("blew", new String[]{"blow"});
+        EN_IRREGULAR.put("blown", new String[]{"blow"});
+        EN_IRREGULAR.put("flew", new String[]{"fly"});
+        EN_IRREGULAR.put("flown", new String[]{"fly"});
+        EN_IRREGULAR.put("grew", new String[]{"grow"});
+        EN_IRREGULAR.put("grown", new String[]{"grow"});
+        EN_IRREGULAR.put("threw", new String[]{"throw"});
+        EN_IRREGULAR.put("thrown", new String[]{"throw"});
+        EN_IRREGULAR.put("wore", new String[]{"wear"});
+        EN_IRREGULAR.put("worn", new String[]{"wear"});
+        EN_IRREGULAR.put("won", new String[]{"win"});
+        EN_IRREGULAR.put("woke", new String[]{"wake"});
+        EN_IRREGULAR.put("woken", new String[]{"wake"});
+        EN_IRREGULAR.put("rode", new String[]{"ride"});
+        EN_IRREGULAR.put("ridden", new String[]{"ride"});
+        EN_IRREGULAR.put("rose", new String[]{"rise"});
+        EN_IRREGULAR.put("risen", new String[]{"rise"});
+        EN_IRREGULAR.put("chose", new String[]{"choose"});
+        EN_IRREGULAR.put("chosen", new String[]{"choose"});
+        EN_IRREGULAR.put("hid", new String[]{"hide"});
+        EN_IRREGULAR.put("hidden", new String[]{"hide"});
+        EN_IRREGULAR.put("led", new String[]{"lead"});
+        EN_IRREGULAR.put("taught", new String[]{"teach"});
+        EN_IRREGULAR.put("caught", new String[]{"catch"});
+        EN_IRREGULAR.put("fought", new String[]{"fight"});
+        EN_IRREGULAR.put("bought", new String[]{"buy"});
+        EN_IRREGULAR.put("sought", new String[]{"seek"});
+        EN_IRREGULAR.put("sold", new String[]{"sell"});
+        EN_IRREGULAR.put("spent", new String[]{"spend"});
+        EN_IRREGULAR.put("lent", new String[]{"lend"});
+        EN_IRREGULAR.put("bent", new String[]{"bend"});
+        EN_IRREGULAR.put("slept", new String[]{"sleep"});
+        EN_IRREGULAR.put("crept", new String[]{"creep"});
+        EN_IRREGULAR.put("swept", new String[]{"sweep"});
+        EN_IRREGULAR.put("wept", new String[]{"weep"});
+        EN_IRREGULAR.put("bit", new String[]{"bite"});
+        EN_IRREGULAR.put("bitten", new String[]{"bite"});
+        EN_IRREGULAR.put("lay", new String[]{"lie"});
+        EN_IRREGULAR.put("lain", new String[]{"lie"});
+        EN_IRREGULAR.put("laid", new String[]{"lay"});
+        EN_IRREGULAR.put("better", new String[]{"good", "well"});
+        EN_IRREGULAR.put("best", new String[]{"good", "well"});
+        EN_IRREGULAR.put("worse", new String[]{"bad", "badly"});
+        EN_IRREGULAR.put("worst", new String[]{"bad", "badly"});
+        EN_IRREGULAR.put("more", new String[]{"much", "many"});
+        EN_IRREGULAR.put("most", new String[]{"much", "many"});
+        EN_IRREGULAR.put("less", new String[]{"little"});
+        EN_IRREGULAR.put("least", new String[]{"little"});
+        EN_IRREGULAR.put("farther", new String[]{"far"});
+        EN_IRREGULAR.put("further", new String[]{"far"});
+        EN_IRREGULAR.put("older", new String[]{"old"});
+        EN_IRREGULAR.put("oldest", new String[]{"old"});
+    }
+
+    /**
+     * 英文词形还原：不规则表 + 后缀规则（复数/动词变化/比较级/副词）。
+     * 返回原形候选；错误原形只会精确查询落空，无害。
+     */
+    public static List<String> deinflectEn(String word) {
+        java.util.LinkedHashSet<String> out = new java.util.LinkedHashSet<>();
+        String w = word.trim();
+        int n = w.length();
+        if (n < 2) return new ArrayList<>(out);
+        String low = w.toLowerCase(java.util.Locale.ROOT);
+        String[] irr = EN_IRREGULAR.get(low);
+        if (irr != null) out.addAll(java.util.Arrays.asList(irr));
+
+        // 复数：-ies→y、-ves→f/fe、-es、-s
+        if (low.endsWith("ies") && n > 4) out.add(w.substring(0, n - 3) + "y");
+        if (low.endsWith("ves") && n > 4) {
+            out.add(w.substring(0, n - 3) + "f");
+            out.add(w.substring(0, n - 3) + "fe");
+        }
+        if (low.endsWith("es") && n > 3) out.add(w.substring(0, n - 2));
+        if (low.endsWith("s") && n > 2 && !low.endsWith("ss") && !low.endsWith("us")) {
+            out.add(w.substring(0, n - 1));
+        }
+        // 动词 -ing：原样基 / +e / 双写辅音还原
+        if (low.endsWith("ing") && n > 5) {
+            String b = w.substring(0, n - 3);
+            out.add(b);
+            out.add(b + "e");
+            if (b.length() > 2 && b.charAt(b.length() - 1) == b.charAt(b.length() - 2)
+                    && !isVowel(b.charAt(b.length() - 1))) {
+                out.add(b.substring(0, b.length() - 1));
+            }
+        }
+        // 动词 -ed：-ied→y、-d（love）、-ed（need）、双写还原（stopped）
+        if (low.endsWith("ied") && n > 4) out.add(w.substring(0, n - 3) + "y");
+        if (low.endsWith("ed") && n > 4) {
+            out.add(w.substring(0, n - 1));
+            String b = w.substring(0, n - 2);
+            out.add(b);
+            if (b.length() > 2 && b.charAt(b.length() - 1) == b.charAt(b.length() - 2)
+                    && !isVowel(b.charAt(b.length() - 1))) {
+                out.add(b.substring(0, b.length() - 1));
+            }
+        }
+        // 比较级/最高级：-ier/-iest→y、-er/-est（含 +e 与双写还原）
+        if (low.endsWith("ier") && n > 4) out.add(w.substring(0, n - 3) + "y");
+        if (low.endsWith("iest") && n > 5) out.add(w.substring(0, n - 4) + "y");
+        if (low.endsWith("er") && n > 4) {
+            out.add(w.substring(0, n - 1));
+            out.add(w.substring(0, n - 2));
+        }
+        if (low.endsWith("est") && n > 5) {
+            out.add(w.substring(0, n - 2));
+            out.add(w.substring(0, n - 3));
+        }
+        // 副词 -ly：去 ly；-ily→y
+        if (low.endsWith("ily") && n > 5) out.add(w.substring(0, n - 3) + "y");
+        if (low.endsWith("ly") && n > 4) out.add(w.substring(0, n - 2));
+
+        out.remove(w);
+        out.remove(low.equals(w) ? "" : w.toLowerCase(java.util.Locale.ROOT));
+        return new ArrayList<>(out);
     }
 
     // ---- 递归还原引擎（transform-engine.ts 对齐）----

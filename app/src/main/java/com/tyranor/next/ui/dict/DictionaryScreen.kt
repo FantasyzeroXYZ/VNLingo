@@ -130,7 +130,11 @@ fun DictionaryScreen(modifier: Modifier = Modifier) {
         searching = true
         delay(250)
         val found = withContext(Dispatchers.IO) {
-            runCatching { OnsDictStore.get().search(query.trim(), 20) }.getOrDefault(emptyList())
+            runCatching {
+                val m = OnsDictStore.get().searchMatched(
+                    query.trim(), 20, OnsDictStore.isDeinflectEnabled(context))
+                m?.groups ?: emptyList()
+            }.getOrDefault(emptyList())
         }
         results = found
         searching = false
@@ -163,6 +167,38 @@ fun DictionaryScreen(modifier: Modifier = Modifier) {
                     .padding(top = innerPadding.calculateTopPadding()),
             ) {
                 AppSearchField(query = query, onQueryChange = { query = it })
+                // 词形还原开关（词典页设置，游戏内点词查词共用同一开关）
+                var deinflect by remember { mutableStateOf(OnsDictStore.isDeinflectEnabled(context)) }
+                MiuixCard(
+                    modifier = Modifier.fillMaxWidth().padding(top = 8.dp)
+                        .glassShadow().glassBorder(),
+                    cornerRadius = AppComponentCornerRadius,
+                ) {
+                    Row(
+                        modifier = Modifier.padding(horizontal = 16.dp, vertical = 10.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Column(Modifier.weight(1f)) {
+                            Text(
+                                stringResource(EngineR.string.engine_ons_dict_deinflect),
+                                style = MaterialTheme.typography.titleSmall,
+                            )
+                            Text(
+                                stringResource(EngineR.string.engine_ons_dict_deinflect_summary),
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
+                        }
+                        androidx.compose.material3.Switch(
+                            checked = deinflect,
+                            onCheckedChange = {
+                                OnsDictStore.setDeinflectEnabled(context, it)
+                                deinflect = it
+                                dictsVersion++ // 触发搜索重算
+                            },
+                        )
+                    }
+                }
                 if (!results.isEmpty()) {
                     Row(
                         modifier = Modifier.fillMaxWidth().padding(top = 6.dp),

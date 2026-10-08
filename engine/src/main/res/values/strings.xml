@@ -147,6 +147,8 @@
     <string name="engine_ons_dict_empty">暂无词典，点下方导入</string>
     <string name="engine_ons_dict_current">当前</string>
     <string name="engine_ons_dict_set_current">设为当前</string>
+    <string name="engine_ons_dict_deinflect">查词词形还原</string>
+    <string name="engine_ons_dict_deinflect_summary">查词时自动尝试原形（英文复数/时态、日语活用还原）</string>
     <string name="engine_ons_dict_enable">启用</string>
     <string name="engine_ons_dict_disable">停用</string>
     <string name="engine_ons_dict_delete">删除</string>

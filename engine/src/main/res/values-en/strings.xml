@@ -146,6 +146,8 @@
     <string name="engine_ons_dict_empty">No dictionaries yet — import below</string>
     <string name="engine_ons_dict_current">Current</string>
     <string name="engine_ons_dict_set_current">Set current</string>
+    <string name="engine_ons_dict_deinflect">Lemmatize lookups</string>
+    <string name="engine_ons_dict_deinflect_summary">Try dictionary forms automatically (English plurals/tenses, Japanese conjugations)</string>
     <string name="engine_ons_dict_enable">Enable</string>
     <string name="engine_ons_dict_disable">Disable</string>
     <string name="engine_ons_dict_delete">Delete</string>
