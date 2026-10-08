@@ -35,6 +35,8 @@
     <string name="settings_extract_hook_summary">オフにするとネイティブフックを装着しません。パネルは残りますがテキストは出力されません（ゲーム専用モード）</string>
     <string name="settings_extract_hook_unsupported">このカーネル（krkrsdl3）はテキスト抽出に未対応です</string>
     <string name="settings_kr_text_source">テキスト出力方式</string>
+    <string name="settings_kr_extract_probe">パーサー層抽出（実験的）</string>
+    <string name="settings_kr_extract_probe_summary">字形チャンネルを経由せず、ゲームのパーサーをラップして本文を取得します。一部のゲームは起動に失敗する可能性があります（オフで元に戻ります）。「テキスト出力方式」と併用すると重複することがあります</string>
     <string name="settings_kr_text_source_hook">実行時テキストストリーム</string>
     <string name="settings_kr_text_source_engine">エンジン出力（TJS・実験的）</string>
     <string name="settings_play_stats">プレイ統計</string>

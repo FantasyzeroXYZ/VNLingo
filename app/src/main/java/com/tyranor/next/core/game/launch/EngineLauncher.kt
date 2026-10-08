@@ -1563,36 +1563,93 @@ object EngineLauncher {
     """.trimMargin()
 
     /**
-     * [KRKR-EXTRACT] 解析器层**换类瞬间包装**（设置 `kr_extract_probe` 开启时随
-     * patch.tjs overlay 注入；默认关，属实验特性，**可能崩游戏、可回滚**）。
+     * [KRKR-EXTRACT] 解析器层**换类瞬间包装 + tag 取证**（设置 `kr_extract_probe`
+     * 开启时随 patch.tjs overlay 注入；默认关，属实验特性，**可能崩游戏、可回滚**）。
      *
-     * 背景（2026-10-08 会话四十五真机探测）：KAG 在 patch.tjs 之后**第 1 帧**就把
-     * `global.KAGParser` 换成插件类（Ex 游戏换 KAGParserEx），换掉后该类并不暴露为
-     * 全局名。因此「顶层替换」必然早于注册（旧实现的引导期崩溃根因），而 Timer 延迟
-     * 在 Initialize 阶段会段错误。可用手段只剩 `System.addContinuousHandler`
-     * （实测非致命，连续 1800 帧无异常）。
+     * 机制（2026-10-08 两轮真机实测，详见
+     * `docs/dev/KRKR文本碎片与选项误提取方案.md`）：
+     * - KAG 在 patch.tjs 之后**第 1 帧**把 `global.KAGParser` 换成插件类（Ex 游戏换
+     *   KAGParserEx），换掉后该类不暴露为全局名；`Timer` 延迟在 Initialize 阶段会
+     *   段错误，唯一可用延迟手段是 `System.addContinuousHandler`（实测非致命）；
+     * - TJS2 **不允许在函数体内声明类**，且从被替换方法里调用原方法的所有约定都抛，
+     *   所以只能：**顶层声明子类**（声明时基类是换类前的旧 KAGParser）→ 在第 1 帧把
+     *   子类写回 `global.KAGParser`，子类用 `super.getNextTag()` 转发；
+     * - 本版本（V5）额外做 **tag 取证**：前 64 个 tag 打印
+     *   `[probe] tag=<十六进制> len=<d.text 长度> cp=<首 UTF-16 码元> elm=<0/1>`，
+     *   用于确定 Ex 变体到底用哪个 tag/字段承载正文（旧版只认 `ch`+`d.text`，
+     *   于是只收到 `のものもの` 这类碎片）。
      *
-     * 做法：patch.tjs 阶段记下 `global.KAGParser` 原值并注册逐帧 handler；在检测到
-     * 该值被替换的那一帧，**在函数体内**声明 `class TnWrapP extends KAGParser`
-     * （TJS 的 extends 在声明语句执行时求值，此刻解析到的是换后的新类）并写回
-     * `global.KAGParser`。getNextTag 复用 v8 的 ch 缓冲逻辑，命中 `[TNEXT]` 前缀
-     * 经控制台 → Label 钩子 → NativeBridge.onKrxtText 进提取桥。
-     *
-     * 必须保持**纯 ASCII**（Kirikiroid2 按内容探测 patch.tjs 编码）；全部 try/catch
-     * 包裹；失败只放弃提取，不影响游戏的其余部分。
+     * 必须保持**纯 ASCII**（Kirikiroid2 按内容探测 patch.tjs 编码，且绝不打印日文
+     * tag 文本）；全部 try/catch 包裹；失败只放弃提取，不影响游戏其余部分。
      */
     private fun krExtractProbeScript(): String = """
         |
         |
-        |// TYRANOR_NEXT_KRKR_EXTRACT_WRAP_V4
+        |// TYRANOR_NEXT_KRKR_EXTRACT_WRAP_V5
         |global.__tnOrig = null;
-        |global.__tnOrigMethod = null;
+        |global.__tnProbeCount = 0;
+        |global.__tnGt = 0;
+        |global.__tnCtor = 0;
+        |global.__tnFieldFail = false;
         |try { global.__tnOrig = global.KAGParser; } catch(e) {}
         |function tnEmit(s) {
         |  try { Debug.message("[TNEXT]" + s); } catch(e) { try { Debug.notice("[TNEXT]" + s); } catch(e2) {} }
         |}
+        |function tnHex(s) {
+        |  var hexd = "0123456789abcdef";
+        |  var h = "";
+        |  var i = 0;
+        |  while (i < s.length) {
+        |    var c = s.charCodeAt(i);
+        |    h = h + hexd.charAt((c >> 12) & 15) + hexd.charAt((c >> 8) & 15) + hexd.charAt((c >> 4) & 15) + hexd.charAt(c & 15);
+        |    i = i + 1;
+        |  }
+        |  return h;
+        |}
+        |function tnProbeTag(d, tn) {
+        |  if (global.__tnProbeCount >= 64) return;
+        |  global.__tnProbeCount = global.__tnProbeCount + 1;
+        |  var h = "[hexfail]";
+        |  try { h = tnHex(tn); } catch(e) {}
+        |  var len = -1;
+        |  var cp = -1;
+        |  if (!global.__tnFieldFail) {
+        |    try {
+        |      var t = d.text;
+        |      if (t !== void) {
+        |        len = t.length;
+        |        if (len > 0) cp = t.charCodeAt(0);
+        |      }
+        |    } catch(e) { global.__tnFieldFail = true; }
+        |  }
+        |  var elm = -1;
+        |  if (!global.__tnFieldFail) {
+        |    try { elm = (d.elm === void) ? 0 : 1; } catch(e) { global.__tnFieldFail = true; }
+        |  }
+        |  try { Debug.message("[probe] tag=" + h + " len=" + len + " cp=" + cp + " elm=" + elm); } catch(e) {}
+        |}
+        |function tnSafeTag(d) {
+        |  var r = "?";
+        |  try {
+        |    var t = d.tagname;
+        |    if (t === void) { r = "void"; } else { r = "len" + t.length + ":" + tnHex(t); }
+        |  } catch(e) { r = "threw"; }
+        |  return r;
+        |}
+        |function tnSafeText(d) {
+        |  var r = "?";
+        |  try {
+        |    var t = d.text;
+        |    if (t === void) { r = "void"; } else { r = "len" + t.length; }
+        |  } catch(e) { r = "threw"; }
+        |  return r;
+        |}
         |class TnWrapP extends KAGParser {
         |  var tnBuf = "";
+        |  function TnWrapP() {
+        |    global.__tnCtor = global.__tnCtor + 1;
+        |    try { Debug.message("[probe] wrapCtor no=" + global.__tnCtor); } catch(e) {}
+        |  }
         |  function tnFlush() {
         |    if (tnBuf == "") return;
         |    var s = tnBuf;
@@ -1601,8 +1658,13 @@ object EngineLauncher {
         |  }
         |  function getNextTag() {
         |    var d = super.getNextTag();
+        |    global.__tnGt = global.__tnGt + 1;
+        |    if (global.__tnGt <= 8) {
+        |      try { Debug.message("[probe] gt=" + global.__tnGt + " tag=" + tnSafeTag(d) + " text=" + tnSafeText(d)); } catch(e) {}
+        |    }
         |    if (d === void) { tnFlush(); return d; }
         |    var tn = d.tagname;
+        |    try { tnProbeTag(d, tn); } catch(e) {}
         |    if (tn == "ch") {
         |      tnBuf += d.text;
         |    } else {
@@ -1612,69 +1674,39 @@ object EngineLauncher {
         |    return d;
         |  }
         |}
-        |function tnPatchedGetNextTag() {
-        |  if (global.__tnAllFailed) return null;
-        |  var d = null;
-        |  var ok = false;
-        |  try {
-        |    global.KAGParser.getNextTag = global.__tnOrigMethod;
-        |    d = this.getNextTag();
-        |    ok = true;
-        |  } catch(e) {
-        |    ok = false;
-        |  }
-        |  try { global.KAGParser.getNextTag = tnPatchedGetNextTag; } catch(e) {}
-        |  if (!ok) {
-        |    if (!global.__tnAllFailed) {
-        |      global.__tnAllFailed = true;
-        |      try { Debug.message("[probe] callViaInstanceFailed"); } catch(e2) {}
-        |    }
-        |    return null;
-        |  }
-        |  if (d === void) return d;
-        |  var hb = global.__tnHookBuf;
-        |  var tn = d.tagname;
-        |  if (tn == "ch") {
-        |    global.__tnHookBuf = hb + d.text;
-        |  } else {
-        |    if (tn == "r") { global.__tnHookBuf = hb + " "; }
-        |    if (global.__tnHookBuf != "") { tnEmit(global.__tnHookBuf); global.__tnHookBuf = ""; }
-        |  }
-        |  return d;
-        |}
         |function tnTick() {
         |  global.__tnFrames = global.__tnFrames + 1;
         |  if (global.__tnDone) return;
         |  var f = global.__tnFrames;
         |  if (f == 600) { try { Debug.message("[probe] t600"); } catch(e) {} }
-        |  if (f > 5400) {
+        |  if (f > 20000) {
         |    global.__tnDone = true;
-        |    try { Debug.message("[probe] wrapGiveup frames=" + f); } catch(e) {}
+        |    try { Debug.message("[probe] tickGiveup frames=" + f + " changes=" + global.__tnChanges); } catch(e) {}
         |    try { System.removeContinuousHandler(tnTick); } catch(e) {}
         |    return;
         |  }
-        |  var same = true;
-        |  try { same = (global.KAGParser === global.__tnOrig); } catch(e) { same = true; }
-        |  if (same) return;
-        |  global.__tnDone = true;
-        |  try { Debug.message("[probe] swapped frames=" + f); } catch(e) {}
-        |  global.__tnHookBuf = "";
-        |  try { global.KAGParser = TnWrapP; Debug.message("[probe] assignClass=ok"); } catch(e) { try { Debug.message("[probe] assignClass=threw"); } catch(e2) {} }
-        |  try { System.removeContinuousHandler(tnTick); } catch(e) {}
+        |  var cur = null;
+        |  try { cur = global.KAGParser; } catch(e) { return; }
+        |  if (cur === global.__tnLast) return;
+        |  global.__tnLast = cur;
+        |  global.__tnChanges = global.__tnChanges + 1;
+        |  if (cur === TnWrapP) return;
+        |  try { Debug.message("[probe] parserChange no=" + global.__tnChanges + " frames=" + f); } catch(e) {}
+        |  if (global.__tnChanges <= 40) {
+        |    try { global.KAGParser = TnWrapP; global.__tnLast = TnWrapP; } catch(e) { try { Debug.message("[probe] reassignThrew"); } catch(e2) {} }
+        |  }
         |}
         |try { Debug.message("[probe] patch.tjs executed"); } catch(e) {}
         |try {
         |  global.__tnFrames = 0;
         |  global.__tnDone = false;
+        |  global.__tnChanges = 0;
+        |  global.__tnLast = global.KAGParser;
         |  System.addContinuousHandler(tnTick);
-        |  Debug.message("[probe] wrap handler installed");
+        |  Debug.message("[probe] watch handler installed");
         |} catch(e) {
-        |  try { Debug.message("[probe] wrap handler failed"); } catch(e2) {}
+        |  try { Debug.message("[probe] watch handler failed"); } catch(e2) {}
         |}
-        |class TnTopP extends KAGParser {
-        |  function tnPing() { return 1; }
-        |}
-        |try { Debug.message("[probe] topClass=ok"); } catch(e) {}
                 |
     """.trimMargin()
 

@@ -942,6 +942,7 @@ internal fun EngineSettingsDetailScreen(kind: EngineSettingsKind) {
     var krPatchOverlayMode by remember { mutableStateOf(EngineSettingsStore.getKrPatchOverlayMode(ctx)) }
     var krExtractTjs by remember { mutableStateOf(EngineSettingsStore.isKrExtractTjs(ctx)) }
     var krExtractHook by remember { mutableStateOf(EngineSettingsStore.isKrExtractHook(ctx)) }
+    var krExtractProbe by remember { mutableStateOf(EngineSettingsStore.isKrExtractProbe(ctx)) }
     var onsExtractHook by remember { mutableStateOf(EngineSettingsStore.isOnsExtractHook(ctx)) }
     var artExtractHook by remember { mutableStateOf(EngineSettingsStore.isArtExtractHook(ctx)) }
     var krFont by remember { mutableStateOf(EngineSettingsStore.getKrDefaultFont(ctx)) }
@@ -1025,6 +1026,7 @@ internal fun EngineSettingsDetailScreen(kind: EngineSettingsKind) {
         EngineSettingsStore.setKrPatchOverlayMode(ctx, krPatchOverlayMode)
         EngineSettingsStore.setKrExtractTjs(ctx, krExtractTjs)
         EngineSettingsStore.setKrExtractHook(ctx, krExtractHook)
+        EngineSettingsStore.setKrExtractProbe(ctx, krExtractProbe)
         EngineSettingsStore.setOnsExtractHook(ctx, onsExtractHook)
         EngineSettingsStore.setArtExtractHook(ctx, artExtractHook)
         EngineSettingsStore.setKrDefaultFont(ctx, krFont)
@@ -1103,6 +1105,7 @@ internal fun EngineSettingsDetailScreen(kind: EngineSettingsKind) {
                 krSwCompress, krOglCompress, krMem, krTexsize, krAccurate, krFps, isSdl3, krIs134126,
                 krVCursorScale, krMenuOpa, krPatchOverlayMode, krAnime4k, krExtractTjs,
                 krExtractHook, onsExtractHook, artExtractHook,
+                krExtractProbe,
                 ons, artKernel, artVersion, artRotate, artPatch, artResolution, artSideCut, artSurfaceCache,
                 artFontCache, artPowerSaving, tyExternal, tyScoped, rpgMakerMod, rpgLegacyRenderer, rpgSaveInterop, rpgMvVersion, rpgMzVersion, rpg, renpyVersion, renpy, siglusLanguage, fbNls,
                 fvpNls, fvpSystemFont, fvpTextHidpi, fvpFont, fontLauncher, fvpFontLauncher, winlator, ppssppVersion, webShellPort,
@@ -1122,6 +1125,7 @@ internal fun EngineSettingsDetailScreen(kind: EngineSettingsKind) {
                 onKrPatchOverlayMode = { krPatchOverlayMode = it },
                 onKrExtractTjs = { krExtractTjs = it },
                 onKrExtractHook = { krExtractHook = it },
+                onKrExtractProbe = { krExtractProbe = it },
                 onOnsExtractHook = { onsExtractHook = it },
                 onArtExtractHook = { artExtractHook = it },
                 onKrForceFont = { krForceFont = it },
@@ -1214,6 +1218,7 @@ private fun LazyListPlaceholder(
     krVCursorScale: String, krMenuOpa: String, krPatchOverlayMode: String, krAnime4k: String,
     krExtractTjs: Boolean,
     krExtractHook: Boolean, onsExtractHook: Boolean, artExtractHook: Boolean,
+    krExtractProbe: Boolean,
     ons: EngineSettingsStore.Ons, artKernel: String, artVersion: String, artRotate: Boolean, artPatch: String,
     artResolution: String, artSideCut: String, artSurfaceCache: String, artFontCache: String,
     artPowerSaving: String, tyExternal: Boolean, tyScoped: Boolean, rpgMakerMod: Boolean,
@@ -1233,6 +1238,7 @@ private fun LazyListPlaceholder(
     onKrPatchOverlayMode: (String) -> Unit,
     onKrExtractTjs: (Boolean) -> Unit,
     onKrExtractHook: (Boolean) -> Unit, onOnsExtractHook: (Boolean) -> Unit, onArtExtractHook: (Boolean) -> Unit,
+    onKrExtractProbe: (Boolean) -> Unit,
     onKrForceFont: (Boolean) -> Unit, onKrRenderer: (String) -> Unit, onKrDrawThread: (String) -> Unit,
     onKrSwCompress: (String) -> Unit, onKrOglCompress: (String) -> Unit, onKrMem: (String) -> Unit,
     onKrTexsize: (String) -> Unit, onKrAccurate: (String) -> Unit, onKrFps: (String) -> Unit,
@@ -1328,6 +1334,14 @@ private fun LazyListPlaceholder(
                         summary = stringResource(R.string.settings_extract_hook_summary),
                         checked = krExtractHook,
                         onCheckedChange = onKrExtractHook,
+                    )
+                    // 解析器层提取（实验性）：绕过字形通道直接取正文；
+                    // 部分游戏可能引导失败，关闭即回滚（overlay 不再注入）
+                    SwitchPreference(
+                        title = stringResource(R.string.settings_kr_extract_probe),
+                        summary = stringResource(R.string.settings_kr_extract_probe_summary),
+                        checked = krExtractProbe,
+                        onCheckedChange = onKrExtractProbe,
                     )
                 }
                 if (!isSdl3) {

@@ -407,6 +407,87 @@ std::atomic<bool> gFlushThreadRunning{false};
 std::string gPage;        // 累计整页（跨 flush 周期持久）
 std::string gLastEmitted;
 
+// ---- B2（方案：KRKR文本碎片与选项误提取 §4.2）字形通道过滤与降级 ----
+// 该通道看到的是「字形缓存未命中事件」，与「哪段是正文」无关：
+//   · 选项按钮整块重绘 → 整行被捕获（用户报了「像是选项文本」）
+//   · 对白打字机在复用 Label/图集命中时几乎不触发 → 长时间不更新
+//   · 字体图集/装饰重绘 → HVIFNWYqO幅モトダ… 这类噪声串
+// 在解析器通道可用之前，至少让面板不被碎片与堆叠污染：长度下限、同页去重、冻结停发。
+constexpr size_t kMinPageCodepoints = 4;   // 少于 4 个码点的派生结果不上行
+constexpr size_t kRecentEmittedCap = 8;    // 同页最近上行集合（去重窗口）
+constexpr int kFrozenStreakLimit = 3;      // 连续 N 次派生结果相同 = 冻结，停发
+std::string gRecentEmitted[kRecentEmittedCap];
+size_t gRecentEmittedCount = 0;
+std::string gLastDerived;
+size_t gLastRawSize = 0;
+int gFrozenStreak = 0;
+
+/** UTF-8 码点计数（只数首字节，非法序列按 1 计；用于长度下限，不追求精确）。 */
+size_t ftUtf8Codepoints(const std::string& s) {
+    size_t n = 0;
+    for (unsigned char c : s) {
+        if ((c & 0xC0) != 0x80) ++n;
+    }
+    return n;
+}
+
+/**
+ * 堆叠串判定（用户报告的「大量重复」形态）：同一段 1..3 码点的前缀在串首连续
+ * 重复 ≥3 次，即 kazurauta/tsukikage 实测的 `きさらぎさらぎさらぎさらぎ…`、
+ * `か　ず　はか　ず　は…` 这类「重绘链被当成页」的产物。只查串首，避免误伤正文
+ * 中偶发的叠字（如「ああ、そうか」只有 2 次重复）。
+ */
+bool ftLooksStacked(const std::string& s) {
+    const size_t total = ftUtf8Codepoints(s);
+    if (total < 6) return false;
+    for (size_t unitCp = 1; unitCp <= 3; ++unitCp) {
+        // 计算 unitCp 个码点的字节长度
+        size_t bytes = 0;
+        size_t cps = 0;
+        for (size_t i = 0; i < s.size() && cps < unitCp; ++i) {
+            if ((static_cast<unsigned char>(s[i]) & 0xC0) != 0x80) ++cps;
+            bytes = i + 1;
+        }
+        if (cps < unitCp || bytes == 0) break;
+        const std::string unit = s.substr(0, bytes);
+        int repeats = 0;
+        size_t pos = 0;
+        while (pos + bytes <= s.size() && s.compare(pos, bytes, unit) == 0) {
+            ++repeats;
+            pos += bytes;
+        }
+        if (repeats >= 3) return true;
+    }
+    return false;
+}
+
+/** 同页去重：命中返回 true（已上行过，跳过）。 */
+bool ftRecentlyEmitted(const std::string& s) {
+    for (size_t i = 0; i < gRecentEmittedCount; ++i) {
+        if (gRecentEmitted[i] == s) return true;
+    }
+    return false;
+}
+
+/** 记录一次上行（环形，超过容量整体前移，代价 O(1)×容量，锁内可接受）。 */
+void ftRememberEmitted(const std::string& s) {
+    if (gRecentEmittedCount < kRecentEmittedCap) {
+        gRecentEmitted[gRecentEmittedCount++] = s;
+        return;
+    }
+    for (size_t i = 1; i < kRecentEmittedCap; ++i) gRecentEmitted[i - 1] = gRecentEmitted[i];
+    gRecentEmitted[kRecentEmittedCap - 1] = s;
+}
+
+/** 页切换/清空时重置去重窗口与冻结计数。 */
+void ftResetEmitMemory() {
+    for (size_t i = 0; i < kRecentEmittedCap; ++i) gRecentEmitted[i].clear();
+    gRecentEmittedCount = 0;
+    gLastDerived.clear();
+    gLastRawSize = 0;
+    gFrozenStreak = 0;
+}
+
 /**
  * 页缓冲增量模型（核心）：在原始链里 rfind 已知页——
  * 找到 → 其后即是新打字符的增量，拼接（打字机换行后重绘只查新段，
@@ -435,6 +516,7 @@ void deriveAndMaybeEmitLocked(bool pageEnd, const std::string& snap) {
         } else {
             gPage = derived;      // 翻页
             gRawBuf = derived;    // raw 重置到新页
+            ftResetEmitMemory();
         }
     } else {
         gPage = derived;
@@ -444,10 +526,45 @@ void deriveAndMaybeEmitLocked(bool pageEnd, const std::string& snap) {
         const size_t p = gRawBuf.rfind(gPage);
         gRawBuf.erase(0, p == std::string::npos ? gRawBuf.size() / 3 : p);
     }
+    // 冻结统计（仅诊断用，不再参与上行门控）：派生与原始链双双不动 = 链推不出新页。
+    // 注意不能只看「派生结果相同」——打字机停顿时两者都不变是常态。
+    const size_t rawNow = gRawBuf.size();
+    if (derived == gLastDerived && rawNow == gLastRawSize) {
+        if (gFrozenStreak < kFrozenStreakLimit) ++gFrozenStreak;
+    } else {
+        gLastDerived = derived;
+        gLastRawSize = rawNow;
+        gFrozenStreak = 0;
+    }
     if (!gPage.empty() && gPage != gLastEmitted) {
+        // B2 过滤 1：太短（碎片/单字）不上行
+        if (ftUtf8Codepoints(gPage) < kMinPageCodepoints) {
+            if (diagEnabled()) {
+                static int shortSkips = 0;
+                if (++shortSkips % 20 == 1) LOGI("ft skip: short cps=%zu", ftUtf8Codepoints(gPage));
+            }
+            return;
+        }
+        // B2 过滤 2：同页已上行过的内容不重复上行（原实现只有一位 gLastEmitted）
+        if (ftRecentlyEmitted(gPage)) {
+            if (diagEnabled()) {
+                static int dupSkips = 0;
+                if (++dupSkips % 20 == 1) LOGI("ft skip: dup cps=%zu", ftUtf8Codepoints(gPage));
+            }
+            return;
+        }
+        // B2 过滤 3：堆叠串（同一前缀连续 ≥3 次）不上行——用户报告的「大量重复」
         const auto sinceEmit = std::chrono::steady_clock::now() - gLastEmitAt;
+        if (ftLooksStacked(gPage)) {
+            if (diagEnabled()) {
+                static int stackedSkips = 0;
+                if (++stackedSkips % 20 == 1) LOGI("ft skip: stacked cps=%zu", ftUtf8Codepoints(gPage));
+            }
+            return;
+        }
         if (!pageEnd && sinceEmit < std::chrono::milliseconds(300)) return;  // 打字中节流
         gLastEmitted = gPage;
+        ftRememberEmitted(gPage);
         gLastEmitAt = std::chrono::steady_clock::now();
         std::string out = gPage;
         out.insert(0, "[FTLN]");
@@ -486,14 +603,29 @@ void flushTimerLoop() {
             // 「有字符流但页推导不产出（raw 增长、无 ft line）」。
             // 必须在 raw 空判定之前打印：清空后仍需观察计数器是否仍在增长。
             static uint64_t tick = 0;
+            static uint64_t lastIdxCalls = 0;
+            static uint64_t lastGlyphCalls = 0;
+            static int frozenTicks = 0;
             if (++tick % 5 == 0) {
+                const uint64_t idxCalls = gFtCharCalls.load(std::memory_order_relaxed);
+                const uint64_t glyphCalls = gFtGlyphCalls.load(std::memory_order_relaxed);
                 LOGI("ft state: raw=%zu known=%zu idx_calls=%llu glyph_calls=%llu nextchar=%llu label=%llu",
                      rawSize, knownSize,
-                     static_cast<unsigned long long>(gFtCharCalls.load(std::memory_order_relaxed)),
-                     static_cast<unsigned long long>(gFtGlyphCalls.load(std::memory_order_relaxed)),
+                     static_cast<unsigned long long>(idxCalls),
+                     static_cast<unsigned long long>(glyphCalls),
                      static_cast<unsigned long long>(gFtNextCharCalls.load(std::memory_order_relaxed)),
                      static_cast<unsigned long long>(gLabelCalls.load(std::memory_order_relaxed)));
                 if (!rawCopy.empty()) LOGI("ft raw: %s", rawCopy.c_str());
+                // B2 冻结降级标记：字形请求 ≥10s 无增长（5 个 2s tick）→ 该通道此刻
+                // 看不到对白推进（字形图集命中），面板应显示降级状态而不是空等
+                if (idxCalls == lastIdxCalls && glyphCalls == lastGlyphCalls) {
+                    if (frozenTicks < 1000) ++frozenTicks;
+                } else {
+                    frozenTicks = 0;
+                }
+                lastIdxCalls = idxCalls;
+                lastGlyphCalls = glyphCalls;
+                if (frozenTicks == 5) LOGI("glyph-frozen: no FT request for 10s (font atlas hit)");
             }
         }
         if (rawSize == 0) continue;
@@ -506,6 +638,7 @@ void flushTimerLoop() {
                 gPage.clear();
                 gLastEmitted.clear();
                 gRawBuf.clear();
+                ftResetEmitMemory();
             } else if (gRawBuf.size() > 4096) {
                 gRawBuf.erase(0, gRawBuf.size() - 512);
             }
