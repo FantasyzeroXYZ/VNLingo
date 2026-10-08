@@ -220,10 +220,17 @@
     <string name="engine_ons_anki_refresh_fields">フィールド再取得</string>
     <string name="engine_ons_anki_card_field_read_failed">フィールドの読み取りに失敗しました</string>
     <string name="engine_ons_anki_card_default_fields">。デフォルトフィールドを表示</string>
-    <string name="engine_ons_anki_voice_auto">自動（ゲーム音声優先）</string>
-    <string name="engine_ons_anki_voice_game">ゲーム音声のみ</string>
+    <string name="engine_ons_anki_voice_auto">ゲーム音声優先（無い文は TTS で補完）</string>
+    <string name="engine_ons_anki_voice_game">ゲーム音声のみ（無ければ入れない）</string>
     <string name="engine_ons_anki_voice_tts">TTS のみ</string>
-    <string name="engine_ons_anki_voice_off">オフ</string>
+    <string name="engine_ons_anki_voice_off">音声なし</string>
+
+    <string name="engine_ons_anki_word_voice">単語音声ソース</string>
+    <string name="engine_ons_anki_word_voice_tts">TTS で単語を読み上げ</string>
+    <string name="engine_ons_anki_word_voice_local">ローカル音声 DB（AnkiConnect localaudio）</string>
+    <string name="engine_ons_anki_word_voice_local_hint">ローカル音声 DB は Anki の local audio プラグイン（AnkiconnectAndroid）が提供します。下のソース一覧から単語の音声を取得して Anki のメディアに取り込みます（見つからない場合は TTS）。</string>
+    <string name="engine_ons_anki_local_sources">ローカル音声ソース（カンマ区切り）</string>
+    <string name="engine_ons_anki_local_port">AnkiConnect ポート</string>
     <string name="engine_ons_anki_on">オン</string>
     <string name="engine_ons_anki_off">オフ</string>
     <string name="engine_ons_settings_page_save">保存</string>

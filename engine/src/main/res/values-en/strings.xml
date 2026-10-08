@@ -217,10 +217,17 @@
     <string name="engine_ons_anki_refresh_fields">Refresh fields</string>
     <string name="engine_ons_anki_card_field_read_failed">Failed to read model fields</string>
     <string name="engine_ons_anki_card_default_fields">, showing default fields</string>
-    <string name="engine_ons_anki_voice_auto">Auto (game voice first)</string>
-    <string name="engine_ons_anki_voice_game">Game voice only</string>
+    <string name="engine_ons_anki_voice_auto">Game voice first (fill gaps with TTS)</string>
+    <string name="engine_ons_anki_voice_game">Game voice only (skip when missing)</string>
     <string name="engine_ons_anki_voice_tts">TTS only</string>
-    <string name="engine_ons_anki_voice_off">Off</string>
+    <string name="engine_ons_anki_voice_off">No audio</string>
+
+    <string name="engine_ons_anki_word_voice">Word audio source</string>
+    <string name="engine_ons_anki_word_voice_tts">TTS pronunciation</string>
+    <string name="engine_ons_anki_word_voice_local">Local audio DB (AnkiConnect localaudio)</string>
+    <string name="engine_ons_anki_word_voice_local_hint">The local audio DB is served by Anki\'s local audio plugin (AnkiconnectAndroid): the word pronunciation is looked up in the sources below and copied into Anki\'s media library; falls back to TTS when not found.</string>
+    <string name="engine_ons_anki_local_sources">Local audio sources (comma separated)</string>
+    <string name="engine_ons_anki_local_port">AnkiConnect port</string>
     <string name="engine_ons_anki_on">On</string>
     <string name="engine_ons_anki_off">Off</string>
     <string name="engine_ons_settings_page_save">Save</string>

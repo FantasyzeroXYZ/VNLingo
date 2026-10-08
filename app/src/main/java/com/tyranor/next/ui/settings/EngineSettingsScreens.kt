@@ -396,6 +396,11 @@ internal fun AnkiCardSettingsScreen() {
     var deck by remember { mutableStateOf(com.core.anki.AnkiCardConfig.deck(ctx)) }
     var model by remember { mutableStateOf(com.core.anki.AnkiCardConfig.model(ctx)) }
     var voiceSource by remember { mutableStateOf(com.core.anki.AnkiCardConfig.voiceSource(ctx)) }
+    var wordVoice by remember { mutableStateOf(com.core.anki.AnkiCardConfig.wordVoiceSource(ctx)) }
+    var localSources by remember { mutableStateOf(com.core.anki.AnkiCardConfig.localAudioSources(ctx)) }
+    var localPort by remember {
+        mutableStateOf(com.core.anki.AnkiCardConfig.localAudioPort(ctx).toString())
+    }
     var captureOnCard by remember { mutableStateOf(com.core.anki.AnkiCardConfig.captureOnCard(ctx)) }
     var fieldMap by remember {
         mutableStateOf(com.core.anki.AnkiCardConfig.fieldMap(ctx).toMutableMap())
@@ -460,12 +465,57 @@ internal fun AnkiCardSettingsScreen() {
         }
         item {
             SettingsCard {
+                // 单词语音源：TTS 朗读 / 本地音频库（AnkiConnect for Android 的 localaudio，
+                // 即 Anki 的 local audio 插件所托管的本地音频 db）
+                OverlayDropdownPreference(
+                    title = stringResource(EngineR.string.engine_ons_anki_word_voice),
+                    items = listOf(
+                        stringResource(EngineR.string.engine_ons_anki_word_voice_tts),
+                        stringResource(EngineR.string.engine_ons_anki_word_voice_local),
+                    ),
+                    selectedIndex = if (wordVoice == com.core.anki.AnkiCardConfig.WORD_VOICE_LOCAL) 1 else 0,
+                    onSelectedIndexChange = { i ->
+                        wordVoice = if (i == 1) com.core.anki.AnkiCardConfig.WORD_VOICE_LOCAL
+                        else com.core.anki.AnkiCardConfig.WORD_VOICE_TTS
+                        com.core.anki.AnkiCardConfig.setWordVoiceSource(ctx, wordVoice)
+                    },
+                )
+                if (wordVoice == com.core.anki.AnkiCardConfig.WORD_VOICE_LOCAL) {
+                    SettingsHint(stringResource(EngineR.string.engine_ons_anki_word_voice_local_hint))
+                    // 查询源（jpod,nhk16,forvo…）与 AnkiConnect 端口
+                    androidx.compose.material3.OutlinedTextField(
+                        value = localSources,
+                        onValueChange = {
+                            localSources = it
+                            com.core.anki.AnkiCardConfig.setLocalAudioSources(ctx, it)
+                        },
+                        singleLine = true,
+                        label = { Text(stringResource(EngineR.string.engine_ons_anki_local_sources)) },
+                        modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp),
+                    )
+                    androidx.compose.material3.OutlinedTextField(
+                        value = localPort,
+                        onValueChange = {
+                            localPort = it.filter { ch -> ch.isDigit() }.take(5)
+                            localPort.toIntOrNull()?.let { p ->
+                                com.core.anki.AnkiCardConfig.setLocalAudioPort(ctx, p)
+                            }
+                        },
+                        singleLine = true,
+                        label = { Text(stringResource(EngineR.string.engine_ons_anki_local_port)) },
+                        modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 4.dp),
+                    )
+                }
+            }
+        }
+        item {
+            SettingsCard {
                 OverlayDropdownPreference(
                     title = stringResource(EngineR.string.engine_ons_anki_card_voice),
                     items = listOf(
-                        stringResource(EngineR.string.engine_ons_anki_voice_auto),
-                        stringResource(EngineR.string.engine_ons_anki_voice_game),
                         stringResource(EngineR.string.engine_ons_anki_voice_tts),
+                        stringResource(EngineR.string.engine_ons_anki_voice_game),
+                        stringResource(EngineR.string.engine_ons_anki_voice_auto),
                         stringResource(EngineR.string.engine_ons_anki_voice_off),
                     ),
                     selectedIndex = voiceOptions.indexOf(voiceSource).coerceAtLeast(0),
@@ -517,11 +567,11 @@ internal fun AnkiCardSettingsScreen() {
     }
 }
 
-/** 语音源取值顺序（与引擎侧一致）。 */
+/** 句子语音源取值顺序（与引擎侧一致）：纯 TTS / 纯游戏语音 / 游戏优先+缺语音补 TTS / 关闭。 */
 private val voiceOptions = listOf(
-    com.core.anki.AnkiCardConfig.VOICE_AUTO,
-    com.core.anki.AnkiCardConfig.VOICE_GAME,
     com.core.anki.AnkiCardConfig.VOICE_TTS,
+    com.core.anki.AnkiCardConfig.VOICE_GAME,
+    com.core.anki.AnkiCardConfig.VOICE_AUTO,
     com.core.anki.AnkiCardConfig.VOICE_OFF,
 )
 

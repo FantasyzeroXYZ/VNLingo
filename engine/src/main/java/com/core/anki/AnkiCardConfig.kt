@@ -30,10 +30,15 @@ object AnkiCardConfig {
     const val SLOT_IMAGE = "image"                   // 图片（游戏截图 <img>）
 
     // ---- 语音源策略 ----
-    const val VOICE_AUTO = "auto"   // 游戏配对语音优先，无则 TTS
-    const val VOICE_GAME = "game"   // 仅游戏配对语音
-    const val VOICE_TTS = "tts"     // 仅 TTS 生成
+    // 句子语音（三类 + 关闭）
+    const val VOICE_AUTO = "auto"   // 游戏配对语音优先，缺语音的句子用 TTS 补齐
+    const val VOICE_GAME = "game"   // 纯游戏语音（没有就不放）
+    const val VOICE_TTS = "tts"     // 纯 TTS 生成
     const val VOICE_OFF = "off"     // 不要语音
+
+    // 单词语音（TTS 发音 / 本地音频库）
+    const val WORD_VOICE_TTS = "tts"        // TTS 朗读单词（默认）
+    const val WORD_VOICE_LOCAL = "local"    // 本地音频库（AnkiConnect for Android 的 localaudio）
 
     internal const val PREFS = "anki_card_config"
     private const val KEY_DECK = "deck"
@@ -41,7 +46,16 @@ object AnkiCardConfig {
     private const val KEY_FIELD_MAP = "field_map"
     private const val KEY_CAPTURE = "capture_on_card"
     private const val KEY_VOICE_SOURCE = "voice_source"
+    private const val KEY_WORD_VOICE_SOURCE = "word_voice_source"
+    private const val KEY_LOCAL_AUDIO_SOURCES = "local_audio_sources"
+    private const val KEY_LOCAL_AUDIO_PORT = "local_audio_port"
     private const val KEY_LAST_MODEL_FIELDS = "last_model_fields"
+
+    /** 本地音频库默认查询的源（AnkiconnectAndroid /localaudio/get/?sources=…）。 */
+    const val DEFAULT_LOCAL_AUDIO_SOURCES = "jpod,jpod_alternate,nhk16,forvo"
+
+    /** AnkiConnect for Android 默认端口。 */
+    const val DEFAULT_LOCAL_AUDIO_PORT = 8765
 
     // 不预设任何牌组/模板名：必须由用户从 AnkiDroid 现有内容里选择。
     // 未选择时返回空串，制卡入口据此提示「先选择」，绝不自动创建同名牌组/模板。
@@ -130,6 +144,38 @@ object AnkiCardConfig {
     @JvmStatic
     fun setVoiceSource(context: Context, value: String) {
         prefs(context).edit().putString(KEY_VOICE_SOURCE, value).apply()
+    }
+
+    // ---- 单词语音源（TTS / 本地音频库） ----
+
+    @JvmStatic
+    fun wordVoiceSource(context: Context): String =
+        prefs(context).getString(KEY_WORD_VOICE_SOURCE, WORD_VOICE_TTS) ?: WORD_VOICE_TTS
+
+    @JvmStatic
+    fun setWordVoiceSource(context: Context, value: String) {
+        prefs(context).edit().putString(KEY_WORD_VOICE_SOURCE, value).apply()
+    }
+
+    /** 本地音频库要查询的源（逗号分隔，如 `jpod,nhk16,forvo`）。 */
+    @JvmStatic
+    fun localAudioSources(context: Context): String =
+        prefs(context).getString(KEY_LOCAL_AUDIO_SOURCES, DEFAULT_LOCAL_AUDIO_SOURCES)
+            ?: DEFAULT_LOCAL_AUDIO_SOURCES
+
+    @JvmStatic
+    fun setLocalAudioSources(context: Context, value: String) {
+        prefs(context).edit().putString(KEY_LOCAL_AUDIO_SOURCES, value.trim()).apply()
+    }
+
+    /** AnkiConnect for Android 端口（本地音频库经它读取，默认 8765）。 */
+    @JvmStatic
+    fun localAudioPort(context: Context): Int =
+        prefs(context).getInt(KEY_LOCAL_AUDIO_PORT, DEFAULT_LOCAL_AUDIO_PORT)
+
+    @JvmStatic
+    fun setLocalAudioPort(context: Context, value: Int) {
+        prefs(context).edit().putInt(KEY_LOCAL_AUDIO_PORT, value).apply()
     }
 
     /**

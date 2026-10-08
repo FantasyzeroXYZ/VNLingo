@@ -219,10 +219,17 @@
     <string name="engine_ons_anki_refresh_fields">刷新字段</string>
     <string name="engine_ons_anki_card_field_read_failed">字段读取失败</string>
     <string name="engine_ons_anki_card_default_fields">，显示默认字段</string>
-    <string name="engine_ons_anki_voice_auto">自动（游戏语音优先）</string>
-    <string name="engine_ons_anki_voice_game">仅游戏语音</string>
-    <string name="engine_ons_anki_voice_tts">仅 TTS 生成</string>
-    <string name="engine_ons_anki_voice_off">关闭</string>
+    <string name="engine_ons_anki_voice_auto">游戏语音优先（缺语音的句子用 TTS 补齐）</string>
+    <string name="engine_ons_anki_voice_game">纯游戏语音（没有就不放）</string>
+    <string name="engine_ons_anki_voice_tts">纯 TTS 生成</string>
+    <string name="engine_ons_anki_voice_off">不要语音</string>
+
+    <string name="engine_ons_anki_word_voice">单词语音源</string>
+    <string name="engine_ons_anki_word_voice_tts">TTS 发音单词</string>
+    <string name="engine_ons_anki_word_voice_local">本地音频库（AnkiConnect localaudio）</string>
+    <string name="engine_ons_anki_word_voice_local_hint">本地音频库由 Anki 的 local audio 插件（AnkiconnectAndroid）托管：按下面的源列表查询单词发音并拷进 Anki 媒体库；查不到时回退 TTS。</string>
+    <string name="engine_ons_anki_local_sources">本地音频源（逗号分隔）</string>
+    <string name="engine_ons_anki_local_port">AnkiConnect 端口</string>
     <string name="engine_ons_anki_on">开</string>
     <string name="engine_ons_anki_off">关</string>
     <string name="engine_ons_settings_page_save">保存</string>

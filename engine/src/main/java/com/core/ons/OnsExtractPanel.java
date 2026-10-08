@@ -1918,22 +1918,52 @@ public class OnsExtractPanel {
                     }
                 }
 
-                // 单词语音槽位：TTS 生成
+                // 单词语音槽位：本地音频库（AnkiConnect localaudio）优先按配置，否则 TTS
                 String wordAudioField = fieldMap.get(com.core.anki.AnkiCardConfig.SLOT_AUDIO);
                 if (wordAudioField != null && !wordAudioField.isEmpty()) {
-                    byte[] wav = ttsSynthesizeQuiet(term);
-                    if (wav != null) {
+                    boolean localFirst = com.core.anki.AnkiCardConfig.WORD_VOICE_LOCAL.equals(
+                            com.core.anki.AnkiCardConfig.wordVoiceSource(activity));
+                    boolean done = false;
+                    if (localFirst) {
                         try {
-                            File vf = new File(dir, "anki_w_" + timestamp() + ".wav");
-                            try (FileOutputStream fos = new FileOutputStream(vf)) {
-                                fos.write(wav);
-                            }
-                            String mark = helper.addMedia(vf, vf.getName(), "audio");
-                            if (mark != null) {
-                                slots.put(com.core.anki.AnkiCardConfig.SLOT_AUDIO, mark);
+                            File lf = new File(dir, "anki_w_" + timestamp() + ".bin");
+                            boolean ok = com.core.anki.LocalAudioClient.fetchWordAudioToFile(
+                                    "127.0.0.1",
+                                    com.core.anki.AnkiCardConfig.localAudioPort(activity),
+                                    term, reading,
+                                    com.core.anki.AnkiCardConfig.localAudioSources(activity),
+                                    lf);
+                            if (ok) {
+                                String ext = com.core.anki.LocalAudioClient.extensionOf(lf.getName());
+                                File named = new File(dir, "anki_w_" + timestamp() + "." + ext);
+                                if (lf.renameTo(named) || named.exists()) {
+                                    File use = named.exists() ? named : lf;
+                                    String mark = helper.addMedia(use, use.getName(), "audio");
+                                    if (mark != null) {
+                                        slots.put(com.core.anki.AnkiCardConfig.SLOT_AUDIO, mark);
+                                        done = true;
+                                    }
+                                }
                             }
                         } catch (Throwable t) {
-                            Log.w(TAG, "card word audio import failed", t);
+                            Log.w(TAG, "local audio word card failed", t);
+                        }
+                    }
+                    if (!done) {
+                        byte[] wav = ttsSynthesizeQuiet(term);
+                        if (wav != null) {
+                            try {
+                                File vf = new File(dir, "anki_w_" + timestamp() + ".wav");
+                                try (FileOutputStream fos = new FileOutputStream(vf)) {
+                                    fos.write(wav);
+                                }
+                                String mark = helper.addMedia(vf, vf.getName(), "audio");
+                                if (mark != null) {
+                                    slots.put(com.core.anki.AnkiCardConfig.SLOT_AUDIO, mark);
+                                }
+                            } catch (Throwable t) {
+                                Log.w(TAG, "card word audio import failed", t);
+                            }
                         }
                     }
                 }
