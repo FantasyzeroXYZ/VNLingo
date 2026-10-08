@@ -210,47 +210,85 @@ class AnkiDroidHelper(private val context: Context) {
     // ─── 媒体导入 ───────────────────────────────────────────────────────
 
     /**
-     * 导入本地文件到 collection.media，返回 Anki 字段标记（[sound:x] /
-     * <img src=x>）。mimeType 只接受 API 约定的 "audio" / "image"。
-     * 优先走 AnkiDroid 进程自拷（无权限问题），失败回退直拷。
+     * 导入本地文件到 collection.media，返回 Anki 字段标记（[sound:x] / <img src=x>）。
+     *
+     * 三步降级（每一步都记日志，制卡缺图/缺音时能在 logcat 定位到是哪一步断的）：
+     * 1. **content:// + 显式授权**（`FileProvider` → `grantUriPermission(com.ichi2.anki)`）：
+     *    Android 11+ 起 AnkiDroid 进程读不到我们私有目录的 `file://`，这是唯一可靠路径；
+     * 2. `file://`（老 AnkiDroid / 老 Android 可用）；
+     * 3. 直拷 collection.media（Android 11+ 基本不可写，仅作老系统兜底）。
      */
     fun addMedia(file: File, preferredName: String, mimeType: String): String? {
-        if (!file.exists() || file.length() == 0L) return null
+        if (!file.exists() || file.length() == 0L) {
+            Log.w(TAG, "addMedia: 文件不存在或为空 ${file.absolutePath}")
+            return null
+        }
+        // API 约定 preferredName 不带扩展名（扩展名由提供方按媒体类型决定）
+        val baseName = preferredName.substringBeforeLast('.')
+
+        // 1) content:// + 授权（Android 11+ 的唯一可靠路径）
+        val shared = fileProviderUri(file)
+        if (shared != null) {
+            try {
+                context.grantUriPermission(
+                    ANKIDROID_PACKAGE, shared, Intent.FLAG_GRANT_READ_URI_PERMISSION
+                )
+            } catch (t: Throwable) {
+                Log.w(TAG, "grantUriPermission 失败（AnkiDroid 可能读不到该 Uri）", t)
+            }
+            try {
+                val raw = api?.addMediaFromUri(shared, baseName, mimeType)
+                if (!raw.isNullOrEmpty()) {
+                    Log.i(TAG, "addMedia(content) ok: $raw")
+                    return raw
+                }
+                Log.w(TAG, "addMedia(content) 返回空：$baseName（$mimeType）")
+            } catch (t: Throwable) {
+                Log.w(TAG, "addMediaFromUri(content) 异常：$baseName", t)
+            }
+        } else {
+            Log.w(TAG, "addMedia: 无法为该文件生成 content:// Uri（FileProvider 未配置？）")
+        }
+
+        // 2) 旧 file:// 路径（老 AnkiDroid / 老 Android）
         try {
-            val raw = api?.addMediaFromUri(
-                Uri.fromFile(file), preferredName, mimeType
-            )
-            if (!raw.isNullOrEmpty()) return raw
+            val raw = api?.addMediaFromUri(Uri.fromFile(file), preferredName, mimeType)
+            if (!raw.isNullOrEmpty()) {
+                Log.i(TAG, "addMedia(file) ok: $raw")
+                return raw
+            }
+            Log.w(TAG, "addMedia(file) 返回空：$preferredName")
         } catch (t: Throwable) {
-            Log.w(TAG, "addMediaFromUri failed for $preferredName", t)
+            Log.w(TAG, "addMediaFromUri(file) 异常：$preferredName", t)
         }
-        return storeFileDirectly(file, preferredName)?.let { name ->
-            if (mimeType == "audio") "[sound:$name]" else "<img src=\"$name\" />"
-        }
+
+        // 不再做「直拷 collection.media」兜底：Android 11+ 下第三方应用写不进 AnkiDroid 的
+        // media 目录（scoped storage），而旧路径 /sdcard/AnkiDroid/collection.media 从
+        // AnkiDroid 2.16 起就不再是它的媒体目录——直拷会「看起来成功」（返回 <img> 标记）
+        // 但 AnkiDroid 找不到文件，卡片显示缺图且无从排查。宁可失败并明确提示。
+        Log.w(TAG, "addMedia 失败（未写入 AnkiDroid 媒体库）：$preferredName")
+        return null
     }
 
-    /** 直拷回退：scoped 路径优先，legacy 路径兜底（两处都写兼容面最大）。 */
-    private fun storeFileDirectly(file: File, targetName: String): String? = try {
-        val candidates = listOf(
-            File("/storage/emulated/0/Android/data/com.ichi2.anki/files/AnkiDroid/collection.media"),
-            File("/storage/emulated/0/AnkiDroid/collection.media")
+    /**
+     * 本应用 FileProvider 的 content:// Uri。
+     *
+     * 宿主 App 的清单里已声明 `${applicationId}.fileprovider`（@xml/file_paths），
+     * 其 paths 覆盖了 `external-files-path extract/`（制卡截图落在这里）。
+     */
+    private fun fileProviderUri(file: File): Uri? = try {
+        androidx.core.content.FileProvider.getUriForFile(
+            context, "${context.packageName}.fileprovider", file
         )
-        var ok = false
-        for (dir in candidates) {
-            try {
-                dir.mkdirs()
-                val out = File(dir, targetName)
-                file.copyTo(out, overwrite = true)
-                if (out.exists() && out.length() > 0) ok = true
-            } catch (t: Throwable) {
-                Log.d(TAG, "direct copy to ${dir.path} failed: ${t.message}")
-            }
-        }
-        if (ok) targetName else null
     } catch (t: Throwable) {
-        Log.w(TAG, "storeFileDirectly failed", t)
+        Log.w(TAG, "FileProvider.getUriForFile 失败：${file.absolutePath}", t)
         null
     }
+
+    // 已删除「直拷 collection.media」回退：Android 11+ 第三方应用写不进 AnkiDroid 的媒体
+    // 目录，且旧路径 /sdcard/AnkiDroid/collection.media 自 AnkiDroid 2.16 起不再是它的
+    // 媒体目录 —— 直拷返回成功标记但卡片缺图，属于「假装成功」，比失败更难排查
+    // （用户实测：图片落在旧目录、AnkiDroid 完全看不到）。
 
     // ─── 笔记 ───────────────────────────────────────────────────────────
 

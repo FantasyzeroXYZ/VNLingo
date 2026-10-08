@@ -50,6 +50,8 @@ android {
 dependencies {
     implementation libs.appcompat
     implementation libs.androidx.documentfile
+    // FileProvider：截图以 content:// 分享给 AnkiDroid（Android 11+ 下 file:// 私有目录它读不到）
+    implementation libs.androidx.core.ktx
     implementation libs.kotlin.stdlib
     // ML Kit on-device 翻译（ONS 提取面板「本地翻译引擎」，对齐 anki 参考）
     implementation 'com.google.mlkit:translate:17.0.2'

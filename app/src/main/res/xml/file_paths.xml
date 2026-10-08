@@ -22,4 +22,8 @@
     <files-path
         name="diag_log"
         path="diag/" />
+    <!-- 制卡媒体（提取面板截图/语音：getExternalFilesDir/extract）经 FileProvider 交给 AnkiDroid -->
+    <external-files-path
+        name="extract_media"
+        path="extract/" />
 </paths>

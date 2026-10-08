@@ -4,6 +4,43 @@
 > `docs/说明/游戏内提取制卡功能方案.md`（提取功能线方案）阅读。
 > 更新时间：2026-10-08
 
+## 2026-10-08 会话（五十九）：修「制卡图片进不了 AnkiDroid 媒体库」
+
+用户反馈：制卡设置里映射了图片字段，制卡后卡片没有图片，疑似图片没被截取、也没进 AnkiDroid 媒体库。
+
+**真机取证**（logcat + 直接看两边媒体目录）：
+
+| 现象 | 证据 |
+|---|---|
+| 截图本身没问题 | `word card frame captured=true`、`screenshot file=…/extract/anki_shot_2026…png bytes=1685728` |
+| 走 `addMediaFromUri(file://)` 失败 | 无 `addMedia(file) ok` 日志；AnkiDroid 进程读不到我们私有目录的 `file://`（Android 11+ scoped storage） |
+| 兜底「直拷」写进了**废目录** | `/sdcard/AnkiDroid/collection.media/` 里躺着 3 个今天的 `anki_shot_*.png`；而 AnkiDroid 的真实媒体目录是 `/sdcard/Android/data/com.ichi2.anki/files/AnkiDroid/collection.media/`（自 AnkiDroid 2.16 起） |
+
+即：**直拷兜底「假装成功」**——返回 `<img>` 标记写进字段，但文件不在 AnkiDroid 的媒体目录里，
+所以卡片缺图且无从排查。
+
+**修复**：
+
+1. `AnkiDroidHelper.addMedia` 改为**三步降级**且每步记日志：
+   `content://`（`FileProvider` + 显式 `grantUriPermission(com.ichi2.anki)`）→ `file://`（老版本）→ 失败返回 null；
+2. **删除「直拷 collection.media」兜底**（会伪装成功，比失败更难查）；
+3. `preferredName` 去掉扩展名（API 约定不带扩展名），并记录最终标记；
+4. 词卡/句卡补日志：图片槽位字段名、是否现截成功、文件字节数、media 标记、最终字段数组；
+5. **媒体失败时给用户提示**：词卡 toast 改为「词卡已添加，但图片/语音未能写入 AnkiDroid 媒体库…」；
+6. 句卡也按「制卡时自动截图」现截（原先只用最近一次手动截图），顺带去掉词卡里硬编码的
+   `TyranorNext` 标签。
+
+**修复后真机验证**（kazurauta，映射 单词→Word、图片→Image）：
+```
+word card screenshot file=…/extract/anki_shot_20261008_234251.png bytes=1685728
+AnkiDroid: addMedia(content) ok: <img src="anki_shot_20261008_234251_3899741127135303637.png" />
+word card fields: [Word,…] → [と, , , , <img src="anki_shot_…png" />, ]
+```
+且该文件确实出现在 AnkiDroid 的真实媒体目录里（`ls` 已确认）。
+
+**顺带修复用户此前生成的卡片**：把旧目录里那 3 张孤儿截图 `adb push` 进 AnkiDroid 的真实
+媒体目录（文件名不变），使之前缺图的卡片恢复显示（AnkiDroid 下次打开/检查媒体时收录）。
+
 ## 2026-10-08 会话（五十八）：翻译/制卡/TTS 独立页重做为与既有设置页同款样式
 
 用户要求：新增的独立页外观风格必须与原来的设置独立页统一（并写入记忆）。

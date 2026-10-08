@@ -884,3 +884,26 @@
    自绘顶栏 + 纯 Android View 内容」，与其它设置页风格完全割裂，随后被要求重做——
    引擎侧的 `buildXxxPage`（View 版本）只保留给**游戏内弹窗**使用，设置页一律走 Compose。
 
+## 实测踩坑（2026-10-08 会话五十九新增：制卡媒体的正确落地方式）
+
+1. **Android 11+ 给 AnkiDroid 传媒体必须用 `content://` + 显式授权**：
+   `AddContentApi.addMediaFromUri(Uri.fromFile(...))` 在 Android 11+ **必然失败**——
+   AnkiDroid 进程读不到我们 `Android/data/<pkg>/files/...` 的 `file://`（scoped storage）。
+   正确做法：`FileProvider.getUriForFile(ctx, "${packageName}.fileprovider", file)`
+   （宿主清单里 `file_paths.xml` 要包含对应目录，如 `external-files-path extract/`）+
+   `context.grantUriPermission("com.ichi2.anki", uri, FLAG_GRANT_READ_URI_PERMISSION)`，
+   再交给 `addMediaFromUri`。
+2. **AnkiDroid 的媒体目录是 scoped 路径**：
+   `/sdcard/Android/data/com.ichi2.anki/files/AnkiDroid/collection.media`
+   （`/sdcard/AnkiDroid/collection.media` 是 2.16 之前的旧位置，**现在不是它的媒体库**）。
+   第三方应用也**写不进**这两个目录（Android 11+）——所以任何「直拷」兜底都只会
+   **假装成功**：字段里写上 `<img src=x>`，AnkiDroid 却找不到文件，卡片缺图且无从排查。
+   **失败就返回失败**，并给用户明确提示。
+3. **媒体导入每一步都要记日志**：本轮靠 `addMedia(content) ok:` / `addMedia(file) 返回空`
+   与两边目录 `ls` 的对照才定位到「写进了废目录」。日志要含：走了哪条路径、返回的标记、
+   文件字节数、目标目录内容。
+4. **验证「卡片有图」要看 AnkiDroid 侧的媒体目录**（`adb shell ls .../collection.media`），
+   不要只看字段里的 `<img>` 标记或 toast——标记存在 ≠ 文件存在。
+5. 外部塞进媒体目录的文件，AnkiDroid 下次打开（或「检查媒体」）才会收录——修复用户已有
+   卡片时可以直接 `adb push` 到该目录并让用户重开 AnkiDroid。
+

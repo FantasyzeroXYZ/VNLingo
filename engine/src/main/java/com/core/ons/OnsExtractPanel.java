@@ -1851,16 +1851,24 @@ public class OnsExtractPanel {
 
                 // 截图槽位：制卡时现截（主线程同步等待），失败回退最近一张手动截图
                 String shotField = fieldMap.get(com.core.anki.AnkiCardConfig.SLOT_IMAGE);
+                Log.i(TAG, "word card image slot: field=" + shotField + " captureOnCard=" + captureOnCard);
                 if (shotField != null && !shotField.isEmpty()) {
                     Bitmap shot = captureOnCard ? captureGameFrame(2500) : null;
+                    Log.i(TAG, "word card frame captured=" + (shot != null));
                     if (shot == null) shot = bridge.getScreenshot();
+                    if (shot == null) {
+                        Log.w(TAG, "word card: 没有可用截图（自动截取失败且无最近一次手动截图）");
+                    }
                     if (shot != null && !shot.isRecycled()) {
                         try {
                             File png = new File(dir, "anki_shot_" + timestamp() + ".png");
                             try (FileOutputStream fos = new FileOutputStream(png)) {
                                 shot.compress(Bitmap.CompressFormat.PNG, 95, fos);
                             }
+                            Log.i(TAG, "word card screenshot file=" + png.getAbsolutePath()
+                                    + " bytes=" + png.length());
                             String mark = helper.addMedia(png, png.getName(), "image");
+                            Log.i(TAG, "word card image mark=" + mark);
                             if (mark != null) {
                                 slots.put(com.core.anki.AnkiCardConfig.SLOT_IMAGE, mark);
                             }
@@ -1928,11 +1936,24 @@ public class OnsExtractPanel {
                     String slot = fieldToSlot.get(modelFields[i]);
                     fields[i] = slot == null ? "" : java.util.Objects.toString(slots.get(slot), "");
                 }
-                Long noteId = helper.addNote(modelId, deckId, fields,
-                        new java.util.HashSet<>(java.util.Collections.singletonList("TyranorNext")));
-                main.post(() -> toast(noteId != null
-                        ? R.string.engine_ons_extract_word_added
-                        : R.string.engine_ons_extract_anki_failed));
+                Log.i(TAG, "word card fields: " + java.util.Arrays.toString(modelFields)
+                        + " → " + java.util.Arrays.toString(fields));
+                Long noteId = helper.addNote(modelId, deckId, fields, null);
+                // 映射了图片/语音但媒体没进 AnkiDroid 媒体库：明确告知（否则卡片只是「缺图」）
+                final boolean mediaMissing =
+                        (shotField != null && !shotField.isEmpty()
+                                && !slots.containsKey(com.core.anki.AnkiCardConfig.SLOT_IMAGE))
+                        || (sentAudioField != null && !sentAudioField.isEmpty()
+                                && !slots.containsKey(com.core.anki.AnkiCardConfig.SLOT_SENTENCE_AUDIO));
+                main.post(() -> {
+                    if (noteId == null) {
+                        toast(R.string.engine_ons_extract_anki_failed);
+                    } else if (mediaMissing) {
+                        toast(R.string.engine_ons_extract_word_added_media_failed);
+                    } else {
+                        toast(R.string.engine_ons_extract_word_added);
+                    }
+                });
             } catch (Throwable t) {
                 Log.w(TAG, "makeWordCard failed", t);
                 main.post(() -> toast(R.string.engine_ons_extract_anki_failed));
@@ -3067,15 +3088,25 @@ public class OnsExtractPanel {
 
                 File dir = new File(activity.getExternalFilesDir(null), "extract");
                 dir.mkdirs();
-                // 图片（最近一张手动截图）
-                Bitmap shot = bridge.getScreenshot();
+                java.util.Map<String, String> fieldMap =
+                        com.core.anki.AnkiCardConfig.fieldMap(activity);
+                // 图片：与词卡同逻辑——按「制卡时自动截图」现截，失败回退最近一次手动截图
+                boolean captureOnCard = com.core.anki.AnkiCardConfig.captureOnCard(activity);
+                Bitmap shot = captureOnCard ? captureGameFrame(2500) : null;
+                if (shot == null) shot = bridge.getScreenshot();
+                Log.i(TAG, "sentence card image: field="
+                        + fieldMap.get(com.core.anki.AnkiCardConfig.SLOT_IMAGE)
+                        + " captureOnCard=" + captureOnCard + " bitmap=" + (shot != null));
                 if (shot != null && !shot.isRecycled()) {
                     File shotFile = new File(dir, "anki_" + timestamp() + ".png");
                     try (FileOutputStream fos = new FileOutputStream(shotFile)) {
                         shot.compress(Bitmap.CompressFormat.PNG, 95, fos);
                     }
                     String mark = helper.addMedia(shotFile, shotFile.getName(), "image");
+                    Log.i(TAG, "sentence card image mark=" + mark);
                     if (mark != null) slots.put(com.core.anki.AnkiCardConfig.SLOT_IMAGE, mark);
+                } else {
+                    Log.w(TAG, "sentence card: 没有可用截图（自动截取失败且无最近一次手动截图）");
                 }
                 // 句子音频（配对语音）
                 byte[] voice = bridge.ensureVoiceBytes();
@@ -3093,7 +3124,6 @@ public class OnsExtractPanel {
                 }
 
                 // 按模板字段序装配：字段 → 映射到它的要素内容
-                java.util.Map<String, String> fieldMap = com.core.anki.AnkiCardConfig.fieldMap(activity);
                 java.util.Map<String, String> fieldToSlot = new java.util.LinkedHashMap<>();
                 for (java.util.Map.Entry<String, String> e : fieldMap.entrySet()) {
                     if (!fieldToSlot.containsKey(e.getValue())) fieldToSlot.put(e.getValue(), e.getKey());
