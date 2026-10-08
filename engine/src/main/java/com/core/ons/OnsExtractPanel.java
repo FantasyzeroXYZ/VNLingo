@@ -2672,10 +2672,33 @@ public class OnsExtractPanel {
     /**
      * 面板展开时是否吞掉摇杆/轴事件（宿主 dispatchGenericMotionEvent 调用）。
      * 面板打开期间摇杆不得驱动游戏、也不驱动虚拟鼠标光标；收起时返回 false 透传。
+     *
+     * 另外处理**十字键被手柄报成 HAT 轴**的情况（实测部分手柄 D-pad 不产生按键事件，
+     * 只报 `AXIS_HAT_X/Y`）：面板展开时按 HAT 方向执行与 D-pad 按键相同的语义
+     * （←→ 选词、↑↓ 滚动），否则用户在面板里按方向键「没反应」。
      */
     public boolean handleMotion(android.view.MotionEvent event) {
-        return expanded;
+        if (!expanded) return false;
+        float hatX = event.getAxisValue(android.view.MotionEvent.AXIS_HAT_X);
+        float hatY = event.getAxisValue(android.view.MotionEvent.AXIS_HAT_Y);
+        if (hatX != 0f || hatY != 0f) {
+            long now = android.os.SystemClock.uptimeMillis();
+            if (now - lastHatNavMs < HAT_NAV_MIN_INTERVAL_MS) return true;
+            lastHatNavMs = now;
+            if (Math.abs(hatX) >= Math.abs(hatY)) {
+                if (hatX > 0) moveTokenSelection(1); else moveTokenSelection(-1);
+            } else {
+                scrollFocused(hatY > 0 ? 1 : -1);
+            }
+            return true;
+        }
+        // 摇杆/其它轴：面板展开时一律吞掉（不驱动游戏、也不驱动光标）
+        return true;
     }
+
+    /** HAT 轴导航的最小间隔（防同一次方向被重复上报导致连跳）。 */
+    private static final long HAT_NAV_MIN_INTERVAL_MS = 120;
+    private long lastHatNavMs;
 
     /** 命中的面板动作名（仅用于验收日志；未命中返回 null）。 */
     private static String panelActionOf(int code, boolean longPress) {

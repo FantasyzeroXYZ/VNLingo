@@ -146,11 +146,41 @@ class EngineVirtualMouse(
         return null
     }
 
-    /** 左摇杆连续移动光标（Activity.dispatchGenericMotionEvent 前置调用）。摇杆轴同样按设备框转发。 */
+    /**
+     * 摇杆 / 十字键移动光标（Activity.dispatchGenericMotionEvent 前置调用）。
+     *
+     * 处理三类轴：
+     * - 左摇杆 `AXIS_X/Y` → 连续移动（带死区）；
+     * - **十字键 HAT 轴 `AXIS_HAT_X/Y`**（实测部分手柄 D-pad 不产生按键事件，只报 HAT）
+     *   → 每次按固定步长移动一次（带最小间隔去抖）；
+     * - 右摇杆 `AXIS_RX/RY` → 同左摇杆（部分手柄/映射把它当鼠标用）。
+     */
     fun handleMotion(event: MotionEvent): Boolean {
-        if ((event.source and InputDevice.SOURCE_CLASS_JOYSTICK) == 0) return false
-        val x = event.getAxisValue(MotionEvent.AXIS_X)
-        val y = event.getAxisValue(MotionEvent.AXIS_Y)
+        // HAT 轴可能来自 SOURCE_JOYSTICK 或 SOURCE_DPAD，这里不按 source 过滤
+        val hatX = event.getAxisValue(MotionEvent.AXIS_HAT_X)
+        val hatY = event.getAxisValue(MotionEvent.AXIS_HAT_Y)
+        if (hatX != 0f || hatY != 0f) {
+            val now = android.os.SystemClock.uptimeMillis()
+            if (now - lastHatMoveMs < HAT_MOVE_MIN_INTERVAL_MS) return true
+            lastHatMoveMs = now
+            ensureCursor()
+            val step = 12f * resources.displayMetrics.density
+            cursorX = (cursorX + hatX * step).coerceIn(0f, width.toFloat())
+            cursorY = (cursorY + hatY * step).coerceIn(0f, height.toFloat())
+            invalidate()
+            return true
+        }
+        if ((event.source and InputDevice.SOURCE_CLASS_JOYSTICK) == 0) {
+            logUnhandledAxes(event)
+            return false
+        }
+        var x = event.getAxisValue(MotionEvent.AXIS_X)
+        var y = event.getAxisValue(MotionEvent.AXIS_Y)
+        // 左摇杆无输入时回退右摇杆（同一根轴映射不同手柄有差异）
+        if (x == 0f && y == 0f) {
+            x = event.getAxisValue(MotionEvent.AXIS_RX)
+            y = event.getAxisValue(MotionEvent.AXIS_RY)
+        }
         val deadzone = 0.15f
         if (-deadzone < x && x < deadzone && -deadzone < y && y < deadzone) return cursorVisible
         ensureCursor()
@@ -160,6 +190,29 @@ class EngineVirtualMouse(
         cursorY = (cursorY + ry * speed).coerceIn(0f, height.toFloat())
         invalidate()
         return true
+    }
+
+    /** HAT 轴移动的最小间隔（防同一次方向被重复上报导致连跳）。 */
+    private var lastHatMoveMs = 0L
+    private val HAT_MOVE_MIN_INTERVAL_MS = 120L
+
+    /** 诊断：收到的非摇杆轴事件记一条（限频 1s），用于定位「手柄方向键没反应」。 */
+    private var lastAxisLogMs = 0L
+    private fun logUnhandledAxes(event: MotionEvent) {
+        val now = android.os.SystemClock.uptimeMillis()
+        if (now - lastAxisLogMs < 1000) return
+        lastAxisLogMs = now
+        com.core.diag.DiagLog.debug(
+            "vmouse",
+            "motion source=0x" + Integer.toHexString(event.source) +
+                " X=" + event.getAxisValue(MotionEvent.AXIS_X) +
+                " Y=" + event.getAxisValue(MotionEvent.AXIS_Y) +
+                " RX=" + event.getAxisValue(MotionEvent.AXIS_RX) +
+                " RY=" + event.getAxisValue(MotionEvent.AXIS_RY) +
+                " HAT_X=" + event.getAxisValue(MotionEvent.AXIS_HAT_X) +
+                " HAT_Y=" + event.getAxisValue(MotionEvent.AXIS_HAT_Y) +
+                " Z=" + event.getAxisValue(MotionEvent.AXIS_Z),
+        )
     }
 
     private fun startHold(action: Int) {

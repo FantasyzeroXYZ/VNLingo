@@ -337,6 +337,7 @@ public abstract class ArtemisLauncherBaseActivity extends com.ies_net.artemis.Ar
             injectHostTouch(x, y, true);
         } catch (Throwable t) {
             Log.w("YukiArtemis", "injectHostTouch down failed (official kernel?)", t);
+            notifyClickUnsupportedOnce();
             return;
         }
         new android.os.Handler(android.os.Looper.getMainLooper())
@@ -347,6 +348,23 @@ public abstract class ArtemisLauncherBaseActivity extends com.ies_net.artemis.Ar
                         Log.w("YukiArtemis", "injectHostTouch up failed", t);
                     }
                 }, 120);
+    }
+
+    /**
+     * 虚拟鼠标点击提示（只提示一次）：官方内核缺 `injectHostTouch` 符号、钩子也拿不到
+     * 触摸对象时，点击无法生效——明确告诉用户换 compat 内核，而不是让他以为「点了没反应」。
+     */
+    private boolean clickUnsupportedNotified;
+
+    private void notifyClickUnsupportedOnce() {
+        if (clickUnsupportedNotified) return;
+        clickUnsupportedNotified = true;
+        try {
+            android.widget.Toast.makeText(this,
+                    com.core.engine.R.string.engine_artemis_click_unsupported,
+                    android.widget.Toast.LENGTH_LONG).show();
+        } catch (Throwable ignored) {
+        }
     }
 
     /** 光标悬停面板窗口时点面板控件（合成触摸派发给面板根视图），否则注入游戏。 */

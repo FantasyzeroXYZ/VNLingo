@@ -52,6 +52,7 @@
     <string name="engine_ons_extract_screenshot">スクリーンショット</string>
 
     <string name="engine_ons_extract_mouse_on">仮想マウス：オン（方向キーで移動、決定でクリック）</string>
+    <string name="engine_artemis_click_unsupported">この Artemis カーネルは仮想マウスのクリックに対応していません（injectHostTouch 未実装）。エンジン設定で compat カーネルに変更してください。</string>
     <string name="engine_ons_extract_mouse_off">仮想マウス：オフ（タッチモードに戻る）</string>
     <string name="engine_ons_extract_screenshot_saved">保存しました %1$s</string>
     <string name="engine_ons_extract_opacity">不透明度</string>
