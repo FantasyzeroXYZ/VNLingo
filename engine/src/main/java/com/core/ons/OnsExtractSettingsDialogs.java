@@ -716,17 +716,20 @@ public final class OnsExtractSettingsDialogs {
         final java.util.concurrent.atomic.AtomicReference<String> modelState =
                 new java.util.concurrent.atomic.AtomicReference<>(AnkiCardConfig.model(activity));
 
-        // 牌组行：下拉框（数据源 = AnkiDroid 现有牌组）
+        // 牌组行：下拉框（数据源 = AnkiDroid 现有牌组；首项「请选择」，不预设任何名字）
         if (deckNames.isEmpty()) {
             box.addView(labeledControl(activity, R.string.engine_ons_anki_card_deck,
                     unavailableHint(activity, ankiIssue, deckState.get())), matchWrap());
         } else {
-            Spinner deckSpinner = makeSpinner(activity,
-                    deckNames, indexOfString(deckNames, deckState.get()));
+            final java.util.List<String> deckOptions = new java.util.ArrayList<>();
+            deckOptions.add(activity.getString(R.string.engine_ons_anki_pick_placeholder));
+            deckOptions.addAll(deckNames);
+            int deckSel = indexOfString(deckNames, deckState.get());
+            Spinner deckSpinner = makeSpinner(activity, deckOptions, deckSel < 0 ? 0 : deckSel + 1);
             deckSpinner.setOnItemSelectedListener(new AdapterView.OnItemSelectedListener() {
                 @Override
                 public void onItemSelected(AdapterView<?> parent, View view, int position, long id) {
-                    deckState.set(deckNames.get(position));
+                    deckState.set(position == 0 ? "" : deckOptions.get(position));
                 }
 
                 @Override
@@ -735,24 +738,27 @@ public final class OnsExtractSettingsDialogs {
             });
             box.addView(labeledControl(activity, R.string.engine_ons_anki_card_deck, deckSpinner),
                     matchWrap());
-            if (indexOfString(deckNames, AnkiCardConfig.deck(activity)) < 0) {
+            if (deckSel < 0 && !deckState.get().isEmpty()) {
                 box.addView(noteText(activity,
                         activity.getString(R.string.engine_ons_anki_card_value_missing,
-                                AnkiCardConfig.deck(activity))), matchWrap());
+                                deckState.get())), matchWrap());
             }
         }
 
-        // 模板行：下拉框（数据源 = AnkiDroid 现有模板）；选定后重建字段映射行
+        // 模板行：下拉框（数据源 = AnkiDroid 现有模板；首项「请选择」）；选定后重建字段映射行
         if (modelNames.isEmpty()) {
             box.addView(labeledControl(activity, R.string.engine_ons_anki_card_model,
                     unavailableHint(activity, ankiIssue, modelState.get())), matchWrap());
         } else {
-            Spinner modelSpinner = makeSpinner(activity,
-                    modelNames, indexOfString(modelNames, modelState.get()));
+            final java.util.List<String> modelOptions = new java.util.ArrayList<>();
+            modelOptions.add(activity.getString(R.string.engine_ons_anki_pick_placeholder));
+            modelOptions.addAll(modelNames);
+            int modelSel = indexOfString(modelNames, modelState.get());
+            Spinner modelSpinner = makeSpinner(activity, modelOptions, modelSel < 0 ? 0 : modelSel + 1);
             modelSpinner.setOnItemSelectedListener(new AdapterView.OnItemSelectedListener() {
                 @Override
                 public void onItemSelected(AdapterView<?> parent, View view, int position, long id) {
-                    String picked = modelNames.get(position);
+                    String picked = position == 0 ? "" : modelOptions.get(position);
                     if (!picked.equals(modelState.get())) {
                         modelState.set(picked);
                         if (rebuildFields[0] != null) rebuildFields[0].run();
@@ -765,10 +771,10 @@ public final class OnsExtractSettingsDialogs {
             });
             box.addView(labeledControl(activity, R.string.engine_ons_anki_card_model, modelSpinner),
                     matchWrap());
-            if (indexOfString(modelNames, AnkiCardConfig.model(activity)) < 0) {
+            if (modelSel < 0 && !modelState.get().isEmpty()) {
                 box.addView(noteText(activity,
                         activity.getString(R.string.engine_ons_anki_card_value_missing,
-                                AnkiCardConfig.model(activity))), matchWrap());
+                                modelState.get())), matchWrap());
             }
         }
 
@@ -949,6 +955,13 @@ public final class OnsExtractSettingsDialogs {
             String modelName = modelState.get() == null ? "" : modelState.get().trim();
             java.util.List<String> modelFields = new java.util.ArrayList<>();
             String readError = null;
+            if (modelName.isEmpty()) {
+                // 还没选模板：不显示任何「默认字段」占位（本应用不预设模板）
+                fieldsContainer.addView(noteText(activity,
+                        activity.getString(R.string.engine_ons_anki_card_model_unset)), matchWrap());
+                updateConflict.run();
+                return;
+            }
             try {
                 AnkiDroidHelper helper = new AnkiDroidHelper(activity);
                 if (!helper.isAnkiDroidInstalled()) {
@@ -1038,13 +1051,20 @@ public final class OnsExtractSettingsDialogs {
                 .setTitle(R.string.engine_ons_anki_card_title)
                 .setView(scroller)
                 .setPositiveButton(android.R.string.ok, (d, w) -> {
-                    // 牌组/模板只写「Anki 里确实存在」的值：数据源读取失败时保持原配置不动
-                    if (!deckNames.isEmpty() && deckState.get() != null
-                            && indexOfString(deckNames, deckState.get()) >= 0) {
+                    // 牌组/模板：只接受「AnkiDroid 里确实存在」的值；选「请选择」= 清空配置；
+                    // 数据源读取失败时保持原配置不动（不写脏值）
+                    if (deckNames.isEmpty()) {
+                        // 读不到 AnkiDroid 数据：不改动已保存的牌组/模板
+                    } else if (deckState.get() == null || deckState.get().isEmpty()) {
+                        AnkiCardConfig.setDeck(activity, "");
+                    } else if (indexOfString(deckNames, deckState.get()) >= 0) {
                         AnkiCardConfig.setDeck(activity, deckState.get());
                     }
-                    if (!modelNames.isEmpty() && modelState.get() != null
-                            && indexOfString(modelNames, modelState.get()) >= 0) {
+                    if (modelNames.isEmpty()) {
+                        // 同上
+                    } else if (modelState.get() == null || modelState.get().isEmpty()) {
+                        AnkiCardConfig.setModel(activity, "");
+                    } else if (indexOfString(modelNames, modelState.get()) >= 0) {
                         AnkiCardConfig.setModel(activity, modelState.get());
                     }
                     AnkiCardConfig.setCaptureOnCard(activity, captureState[0]);
@@ -1148,6 +1168,11 @@ public final class OnsExtractSettingsDialogs {
         final String deckName = AnkiCardConfig.deck(activity);
         final String modelName = AnkiCardConfig.model(activity);
         final AnkiDroidHelper helper = new AnkiDroidHelper(activity);
+        // 牌组/模板必须已在「Anki 设置」里选过（本 App 不预设任何牌组/模板名）
+        if (deckName.isEmpty() || modelName.isEmpty()) {
+            toast(activity, R.string.engine_ons_anki_need_config);
+            return;
+        }
         try {
             if (!helper.isAnkiDroidInstalled()) {
                 toast(activity, R.string.engine_ons_extract_anki_not_installed);
@@ -1260,7 +1285,7 @@ public final class OnsExtractSettingsDialogs {
                         Long deckId = null;
                         Long noteId = null;
                         try {
-                            deckId = helper.getOrCreateDeck(deckName);
+                            deckId = helper.findDeckId(deckName);
                             if (deckId != null) {
                                 noteId = helper.addNote(modelId, deckId, values, null);
                             }

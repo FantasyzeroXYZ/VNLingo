@@ -252,6 +252,10 @@
     <string name="engine_ons_anki_manual_empty">少なくとも 1 つのフィールドを入力してください</string>
     <string name="engine_ons_anki_manual_ok">カードを作成しました</string>
     <string name="engine_ons_anki_manual_failed">カード作成に失敗（AnkiDroid の権限/デッキ/モデルを確認）</string>
+    <string name="engine_ons_anki_pick_placeholder">選択…</string>
+    <string name="engine_ons_anki_need_config">先に「設定 → Anki 設定」でデッキとモデルを選択してください</string>
+    <string name="engine_ons_anki_target_missing">デッキまたはモデルが AnkiDroid に存在しません（デッキ %1$s / モデル %2$s）。選び直してください</string>
+    <string name="engine_ons_anki_card_model_unset">モデル未選択：上の「モデル名」で AnkiDroid 既存のモデルを選んでください（本アプリはプリセット/自動生成しません）</string>
     <string name="engine_ons_tts_title">TTS 設定</string>
     <string name="engine_ons_tts_engine">TTS エンジン</string>
     <string name="engine_ons_tts_engine_multi">MultiTTS</string>

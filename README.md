@@ -23,7 +23,9 @@ VNLingo 基于 **Tyranor Next**（多引擎 Galgame 聚合启动器）衍生，�
   汉字优先三项可全局设置并每游戏覆盖；词典可标注语言范围（scope），未标注一律视为通用
 - **翻译多源**：OpenAI 兼容 API、ML Kit 离线翻译、Google/Bing 免费端点、DeepL、百度翻译、Gemini、Claude（后四者与免费端点参考 MoeTranslate/overlay-translator 移植），内置翻译测试
 - **TTS 朗读**：系统 TextToSpeech 与 MultiTTS HTTP 合成双路径，自动朗读、语速调节
-- **AnkiDroid 制卡**：词卡/句卡一键入库（vendored 官方 API）
+- **AnkiDroid 制卡**：词卡/句卡一键入库（vendored 官方 API）；牌组与模板**必须从 AnkiDroid
+  现有内容里选择**（本应用不预设名字、不自动创建牌组/模板），字段映射「要素 → 模型字段」
+  用下拉配置；词典页右上角另有「直接制卡」入口，按当前模板字段手输/粘贴即入库
 - **截图**：PixelCopy 直取游戏 Surface（纯游戏画面），主页截图管理页
 - **游玩统计**：总/周/月时长三卡 + 每游戏列表
 - **右缘按键组**：文本框/截图/设置/音量（百分比）/点击模式/回主页 + 顶部折叠键，虚拟鼠标（D-pad/摇杆 + A 点击）与触摸直传切换

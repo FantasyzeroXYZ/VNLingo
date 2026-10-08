@@ -26,10 +26,8 @@ class AnkiDroidHelper(private val context: Context) {
         const val ANKIDROID_PACKAGE = "com.ichi2.anki"
         const val PERMISSION = "com.ichi2.anki.permission.READ_WRITE_DATABASE"
 
-        /** 默认牌组 / 模型名；首次制卡自动创建。 */
-        const val DEFAULT_DECK = "TyranorNext"
-        const val DEFAULT_MODEL = "TyranorNext Basic"
-        const val DEFAULT_WORD_MODEL = "TyranorNext Word"
+        // 不预设任何牌组/模型名：牌组与模板一律从 AnkiDroid 现有内容里选，
+        // 本项目不自动创建同名牌组/模板（用户明确要求，避免「凭空多出 TyranorNext」）。
 
         private const val DECK_REF_DB = "com.ichi2.anki.api.decks"
         private const val MODEL_REF_DB = "com.ichi2.anki.api.models"
@@ -164,75 +162,49 @@ class AnkiDroidHelper(private val context: Context) {
         emptyList()
     }
 
-    /** 取或建牌组。API 返回 null（提供方拒绝/集合未就绪）与异常分开记日志，
-     *  制卡失败的「静默无果」路径必须可在 logcat 定位。 */
-    fun getOrCreateDeck(deckName: String): Long? {
-        findDeckId(deckName)?.let { return it }
-        return try {
-            val id = api?.addNewDeck(deckName)
-            if (id == null) {
-                Log.w(TAG, "addNewDeck returned null: $deckName (provider denied or collection not ready)")
-            }
-            id?.also { cached ->
-                context.getSharedPreferences(DECK_REF_DB, Context.MODE_PRIVATE)
-                    .edit().putLong(deckName, cached).apply()
-            }
-        } catch (t: Throwable) {
-            Log.w(TAG, "addNewDeck failed: $deckName", t)
-            null
+    /**
+     * 取牌组（**不自动创建**）：牌组必须由用户从制卡设置的下拉里选择。
+     *
+     * 保留方法名里的 `OrCreate` 会诱使后来者重新引入「凭空建牌组」，因此这里只做查找；
+     * 需要新建牌组时请由用户在 AnkiDroid 里建好再选。
+     */
+    fun findDeck(deckName: String): Long? {
+        if (deckName.isBlank()) {
+            Log.w(TAG, "findDeck: 未配置牌组名")
+            return null
         }
-    }
-
-    /** 取或建基础模型（Front/Back 两字段）。 */
-    fun getOrCreateModel(modelName: String): Long? {
-        findModelId(modelName)?.let { return it }
-        return try {
-            val id = api?.addNewBasicModel(modelName)
-            if (id == null) {
-                Log.w(TAG, "addNewBasicModel returned null: $modelName")
-            }
-            id?.also { cached ->
-                context.getSharedPreferences(MODEL_REF_DB, Context.MODE_PRIVATE)
-                    .edit().putLong(modelName, cached).apply()
-            }
-        } catch (t: Throwable) {
-            Log.w(TAG, "addNewBasicModel failed: $modelName", t)
-            null
-        }
+        val id = findDeckId(deckName)
+        if (id == null) Log.w(TAG, "findDeck: AnkiDroid 中不存在牌组 $deckName")
+        return id
     }
 
     /**
-     * 取或建词卡模型（查词制卡用）：Word / Reading / Meaning / Sentence 四字段，
-     * 参考实现 anki_scheme.dart 的 word scheme；已存在但字段不符时按现有模型用。
+     * 取模板（**不自动创建**）：模板必须由用户从制卡设置的下拉里选择。
      */
-    fun getOrCreateWordModel(modelName: String = DEFAULT_WORD_MODEL): Long? {
-        findModelId(modelName)?.let { return it }
-        return try {
-            val id = api?.addNewCustomModel(
-                modelName,
-                arrayOf("Word", "Reading", "Meaning", "Sentence", "Image", "Audio"),
-                arrayOf("Card 1"),
-                arrayOf("{{Word}}<br>{{Reading}}"),
-                arrayOf(
-                    "{{FrontSide}}<hr id=answer>{{Meaning}}<br><br>{{Sentence}}" +
-                        "{{#Image}}<br><br>{{Image}}{{/Image}}" +
-                        "{{#Audio}}<br>{{Audio}}{{/Audio}}",
-                ),
-                ".card { font-family: sans-serif; font-size: 20px; text-align: center; }",
-                null,
-                0
-            )
-            if (id == null) {
-                Log.w(TAG, "addNewCustomModel returned null: $modelName")
-            }
-            id?.also { cached ->
-                context.getSharedPreferences(MODEL_REF_DB, Context.MODE_PRIVATE)
-                    .edit().putLong(modelName, cached).apply()
-            }
-        } catch (t: Throwable) {
-            Log.w(TAG, "addNewCustomModel failed: $modelName", t)
-            null
+    fun findModel(modelName: String): Long? {
+        if (modelName.isBlank()) {
+            Log.w(TAG, "findModel: 未配置模板名")
+            return null
         }
+        val id = findModelId(modelName)
+        if (id == null) Log.w(TAG, "findModel: AnkiDroid 中不存在模板 $modelName")
+        return id
+    }
+
+    /**
+     * 取词卡模型（查词制卡用）：Word / Reading / Meaning / Sentence / Image / Audio 六字段。
+     *
+     * **不自动创建**：模板必须由用户在制卡设置里从 AnkiDroid 现有模板中选择
+     * （用户明确要求，避免凭空生成 "TyranorNext Word" 之类的自定义模板）。
+     */
+    fun getWordModel(modelName: String): Long? {
+        if (modelName.isBlank()) {
+            Log.w(TAG, "getWordModel: 未配置模型名")
+            return null
+        }
+        val id = findModelId(modelName)
+        if (id == null) Log.w(TAG, "getWordModel: AnkiDroid 中不存在模型 $modelName")
+        return id
     }
 
     // ─── 媒体导入 ───────────────────────────────────────────────────────

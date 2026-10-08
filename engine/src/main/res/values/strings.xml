@@ -251,6 +251,10 @@
     <string name="engine_ons_anki_manual_empty">至少填写一个字段</string>
     <string name="engine_ons_anki_manual_ok">已制卡</string>
     <string name="engine_ons_anki_manual_failed">制卡失败（检查 AnkiDroid 权限/牌组/模板）</string>
+    <string name="engine_ons_anki_pick_placeholder">请选择…</string>
+    <string name="engine_ons_anki_need_config">请先在「设置 → Anki 设置」里选择牌组与模板</string>
+    <string name="engine_ons_anki_target_missing">牌组或模板在 AnkiDroid 中不存在（牌组 %1$s / 模板 %2$s），请重新选择</string>
+    <string name="engine_ons_anki_card_model_unset">尚未选择模板：请在上方「模型名」中选择 AnkiDroid 已有模板（本应用不预设、不自动创建模板）</string>
     <string name="engine_ons_tts_title">TTS 设置</string>
     <string name="engine_ons_tts_engine">TTS 引擎</string>
     <string name="engine_ons_tts_engine_multi">MultiTTS</string>

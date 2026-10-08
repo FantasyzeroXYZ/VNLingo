@@ -249,6 +249,10 @@
     <string name="engine_ons_anki_manual_empty">Fill in at least one field</string>
     <string name="engine_ons_anki_manual_ok">Card added</string>
     <string name="engine_ons_anki_manual_failed">Failed to add card (check AnkiDroid permission/deck/model)</string>
+    <string name="engine_ons_anki_pick_placeholder">Select…</string>
+    <string name="engine_ons_anki_need_config">Pick a deck and model in Settings → Anki first</string>
+    <string name="engine_ons_anki_target_missing">Deck or model no longer exists in AnkiDroid (deck %1$s / model %2$s) — pick again</string>
+    <string name="engine_ons_anki_card_model_unset">No model selected yet — pick an existing AnkiDroid note type above (nothing is preset or auto-created)</string>
     <string name="engine_ons_tts_title">TTS settings</string>
     <string name="engine_ons_tts_engine">TTS engine</string>
     <string name="engine_ons_tts_engine_multi">MultiTTS</string>

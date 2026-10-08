@@ -1769,13 +1769,18 @@ public class OnsExtractPanel {
             return;
         }
 
-        // 字段映射（AnkiCardConfig）：逻辑槽位 → Anki 模型字段名，参考
-        // web game text 扩展 ankiFieldMap 方案；模型不存在时默认模型兜底创建
+        // 字段映射（AnkiCardConfig）：逻辑槽位 → Anki 模型字段名；牌组/模板必须是用户
+        // 从 AnkiDroid 现有内容里选的（不预设、不自动创建）
         final String deckName = com.core.anki.AnkiCardConfig.deck(activity);
         final String modelName = com.core.anki.AnkiCardConfig.model(activity);
         final java.util.Map<String, String> fieldMap = com.core.anki.AnkiCardConfig.fieldMap(activity);
         final String voiceSource = com.core.anki.AnkiCardConfig.voiceSource(activity);
         final boolean captureOnCard = com.core.anki.AnkiCardConfig.captureOnCard(activity);
+
+        if (deckName.isEmpty() || modelName.isEmpty()) {
+            toast(R.string.engine_ons_anki_need_config);
+            return;
+        }
 
         new Thread(() -> {
             com.core.anki.AnkiDroidHelper helper = new com.core.anki.AnkiDroidHelper(activity);
@@ -1796,7 +1801,7 @@ public class OnsExtractPanel {
                 Long modelId = helper.findModelId(modelName);
                 if (modelId == null) {
                     main.post(() -> toast(activity.getString(
-                            R.string.engine_ons_extract_anki_model_missing, modelName)));
+                            R.string.engine_ons_anki_target_missing, deckName, modelName)));
                     return;
                 }
                 String[] realFields = helper.getModelFieldNames(modelId);
@@ -1805,13 +1810,11 @@ public class OnsExtractPanel {
                     return;
                 }
                 String[] modelFields = realFields;
-                if (modelId == null) {
-                    main.post(() -> toast(R.string.engine_ons_extract_anki_failed));
-                    return;
-                }
-                Long deckId = helper.getOrCreateDeck(deckName);
+                // 牌组只认 AnkiDroid 里已存在的（用户从列表里选过），不自动新建
+                Long deckId = helper.findDeckId(deckName);
                 if (deckId == null) {
-                    main.post(() -> toast(R.string.engine_ons_extract_anki_failed));
+                    main.post(() -> toast(activity.getString(
+                            R.string.engine_ons_anki_target_missing, deckName, modelName)));
                     return;
                 }
 
@@ -3050,12 +3053,20 @@ public class OnsExtractPanel {
                     main.post(() -> toast(R.string.engine_ons_extract_anki_need_permission));
                     return;
                 }
-                // 牌组跟配置走（与词卡同一牌组）；句卡模板保持内置 Front/Back
-                // 快路径（不参与字段映射，缺模型时沿用自动创建）
-                Long deckId = helper.getOrCreateDeck(com.core.anki.AnkiCardConfig.deck(activity));
-                Long modelId = helper.getOrCreateModel(com.core.anki.AnkiDroidHelper.DEFAULT_MODEL);
-                if (deckId == null || modelId == null) {
-                    main.post(() -> toast(R.string.engine_ons_extract_anki_failed));
+                // 牌组与模板一律走用户配置（不预设、不自动创建）：未配置或 AnkiDroid 里
+                // 已不存在时明确提示去「设置 → Anki 设置」选择
+                final String deckName = com.core.anki.AnkiCardConfig.deck(activity);
+                final String modelName = com.core.anki.AnkiCardConfig.model(activity);
+                if (deckName.isEmpty() || modelName.isEmpty()) {
+                    main.post(() -> toast(R.string.engine_ons_anki_need_config));
+                    return;
+                }
+                Long deckId = helper.findDeckId(deckName);
+                Long modelId = helper.findModelId(modelName);
+                String[] modelFields = modelId == null ? null : helper.getModelFieldNames(modelId);
+                if (deckId == null || modelFields == null || modelFields.length < 2) {
+                    main.post(() -> toast(activity.getString(
+                            R.string.engine_ons_anki_target_missing, deckName, modelName)));
                     return;
                 }
 
@@ -3096,9 +3107,12 @@ public class OnsExtractPanel {
                     back.append("<br><br>").append(android.text.Html.escapeHtml(page));
                 }
 
-                Long noteId = helper.addNote(modelId, deckId,
-                        new String[]{sentence, back.toString()},
-                        new java.util.HashSet<>(java.util.Collections.singletonList("TyranorNext")));
+                // 句卡按模板字段顺序填：首字段=当前句，次字段=截图+语音+整页，其余留空
+                String[] values = new String[modelFields.length];
+                for (int i = 0; i < values.length; i++) values[i] = "";
+                values[0] = sentence;
+                values[1] = back.toString();
+                Long noteId = helper.addNote(modelId, deckId, values, null);
                 main.post(() -> toast(noteId != null
                         ? R.string.engine_ons_extract_anki_added
                         : R.string.engine_ons_extract_anki_failed));

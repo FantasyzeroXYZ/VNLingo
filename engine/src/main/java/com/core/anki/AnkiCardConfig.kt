@@ -43,10 +43,10 @@ object AnkiCardConfig {
     private const val KEY_VOICE_SOURCE = "voice_source"
     private const val KEY_LAST_MODEL_FIELDS = "last_model_fields"
 
-    const val DEFAULT_DECK = "TyranorNext"
-    const val DEFAULT_MODEL = "TyranorNext Word"
+    // 不预设任何牌组/模板名：必须由用户从 AnkiDroid 现有内容里选择。
+    // 未选择时返回空串，制卡入口据此提示「先选择」，绝不自动创建同名牌组/模板。
 
-    /** 默认映射：与内置默认模型 TyranorNext Word（Word/Reading/Meaning/Sentence）对应。 */
+    /** 默认字段映射（仅当用户还没保存过映射时使用；保存时会按模板真实字段裁剪）。 */
     val DEFAULT_FIELD_MAP: Map<String, String> = mapOf(
         SLOT_WORD to "Word",
         SLOT_READING to "Reading",
@@ -59,7 +59,7 @@ object AnkiCardConfig {
 
     @JvmStatic
     fun deck(context: Context): String =
-        prefs(context).getString(KEY_DECK, DEFAULT_DECK)?.ifEmpty { DEFAULT_DECK } ?: DEFAULT_DECK
+        prefs(context).getString(KEY_DECK, "")?.trim().orEmpty()
 
     @JvmStatic
     fun setDeck(context: Context, deck: String) {
@@ -68,7 +68,7 @@ object AnkiCardConfig {
 
     @JvmStatic
     fun model(context: Context): String =
-        prefs(context).getString(KEY_MODEL, DEFAULT_MODEL)?.ifEmpty { DEFAULT_MODEL } ?: DEFAULT_MODEL
+        prefs(context).getString(KEY_MODEL, "")?.trim().orEmpty()
 
     @JvmStatic
     fun setModel(context: Context, model: String) {

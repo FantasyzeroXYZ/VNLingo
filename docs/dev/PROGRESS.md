@@ -4,6 +4,29 @@
 > `docs/说明/游戏内提取制卡功能方案.md`（提取功能线方案）阅读。
 > 更新时间：2026-10-08
 
+## 2026-10-08 会话（五十四）：彻底去掉预设牌组/模板名
+
+用户指出：不要再预设自定义的牌组名/模板名（TyranorNext 之类）。根因是**默认值即隐式预设**：
+`AnkiCardConfig.deck()/model()` 用 `getString(key, DEFAULT_DECK)` 兜底，界面于是显示一个
+用户从未选过的名字；用户在弹窗里点确定后这个「预设」就被真正写进配置，再往后制卡就落到
+那个牌组/模板上；更早的代码还有 `getOrCreateWordModel()/getOrCreateDeck()` 会自动在用户的
+AnkiDroid 里**创建** "TyranorNext Word" / "TyranorNext"。
+
+改动（提交见下）：
+
+| 位置 | 之前 | 现在 |
+|---|---|---|
+| `AnkiCardConfig` | `DEFAULT_DECK="TyranorNext"` / `DEFAULT_MODEL="TyranorNext Word"` 兜底 | 常量删除；未配置返回**空串** |
+| `AnkiDroidHelper` | `DEFAULT_DECK/DEFAULT_MODEL/DEFAULT_WORD_MODEL` + `getOrCreateDeck/getOrCreateModel/getOrCreateWordModel`（自动建） | 全部删除；新增 `findDeck/findModel/getWordModel`（**只查不建**） |
+| 制卡设置弹窗 | 下拉里预先选好配置值；未配置时显示预设名 | 下拉首项「请选择…」（空=清除配置）；未选模板时字段区只显示「尚未选择模板…」提示，不再显示伪造的默认字段行 |
+| 词卡/句卡制卡 | `getOrCreateDeck()` 兜底建牌组；句卡用硬编码 `DEFAULT_MODEL` 建模板 | 未配置 → toast「请先在「设置 → Anki 设置」里选择牌组与模板」；只认 AnkiDroid 里已存在的牌组/模板，找不到就提示重选；句卡按所选模板的字段顺序填（首字段=当前句，次字段=截图/语音/整页） |
+| 句卡标签 | 固定写 `TyranorNext` 标签 | 不再写标签 |
+
+**真机验证**：清空设备配置后打开制卡设置 → 牌组/模板均显示「请选择…」，字段区显示
+「尚未选择模板…（本应用不预设、不自动创建模板）」；此时点词典页「直接制卡」→ toast
+「请先在「设置 → Anki 设置」里选择牌组与模板」；在下拉里选真实牌组/模板后字段行按该模板
+重建（并自动剔除该模板里不存在的旧映射），按取消不写任何配置。
+
 ## 2026-10-08 会话（五十三）：词典页右上角「直接制卡」
 
 用户要求：导航词典页右上角加一个直接输入制卡的入口，点开显示设置好的模板字段，
