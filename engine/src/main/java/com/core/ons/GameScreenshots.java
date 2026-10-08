@@ -45,6 +45,12 @@ public final class GameScreenshots {
         return parent == null ? "unknown" : parent.getName();
     }
 
+    /** 与 [dir] 一致的目录名（游戏名 → 目录名），供按游戏过滤截图时比较。 */
+    public static String safeGameName(String gameName) {
+        String safe = sanitize(gameName);
+        return safe.isEmpty() ? "unknown" : safe;
+    }
+
     private static String sanitize(String name) {
         if (name == null) return "";
         return name.replaceAll("[\\\\/:*?\"<>|]", "_");

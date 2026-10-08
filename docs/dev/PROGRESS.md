@@ -2,7 +2,36 @@
 
 > 本文件由 AI 会话维护，记录本仓库功能线的实施进度。配合 `MEMORY.md`（环境/踩坑/决策，同目录）与
 > `docs/说明/游戏内提取制卡功能方案.md`（提取功能线方案）阅读。
-> 更新时间：2026-10-08
+> 更新时间：2026-10-09
+
+## 2026-10-09 会话（六十）：媒体与存档分家（截图独立入口、音频不保留）
+
+用户要求：不要把图片、音频放进存档管理；音频不用保留；图片在**条目选项**里另开一个截图管理。
+
+**改动**：
+
+1. **条目选项新增「截图管理」**（游戏详情页抽屉，位于「存档管理」与「引擎设置」之间，
+   图标用引擎的 `ic_camera`）：打开既有 `ScreenshotManagerActivity`，
+   带 `EXTRA_GAME` 只显示该游戏的截图（`GameScreenshots.safeGameName` 与目录名对齐）；
+   不传游戏名时显示全部。原来这个页面**没有任何入口**（孤立页面），现在接上了。
+2. **音频不再保留**：删掉历史回放的语音落盘缓存（`persistHistoryVoice` /
+   `historyVoiceFile` / `trimHistoryVoiceDir`），历史回放改为「档案按名补读 → TTS」；
+   新增 `GameMediaCleanup`（engine）在**应用启动**与**面板安装**时清理旧版本遗留的
+   语音缓存目录 `cacheDir/ons_extract_history`。
+3. **制卡临时媒体即用即删**：截图/语音交给 AnkiDroid 复制后立刻删除
+   `externalFilesDir/extract/anki_*.png|wav` 本地副本；启动时也会清理残留
+   （`GameMediaCleanup.purgeStaleCardMedia`）——图片归「截图管理」，音频不留。
+4. **存档管理不再把媒体算作存档**：`GameSaveManager.excludeFor` 增加媒体扩展名过滤
+   （png/jpg/jpeg/webp/gif/avif/wav/mp3/ogg/oga/opus/m4a/aac/flac/mp4/webm/mkv），
+   列表计数、导出 ZIP、云同步、删除都不会碰这些文件；**不含 `.bmp`**（ONS 的
+   `save*.bmp` 是存档缩略图，属于存档本体）。
+
+**真机验证**：
+
+- 游戏「English Version」条目选项 → 截图管理：显示「暂无截图」（该游戏确实没有）；
+- 游戏「ESG-13556」条目选项 → 截图管理：显示「共 3 张」，三张都属于 ESG-13556（过滤生效）；
+- 安装新版本后启动 App：`cache/ons_extract_history` 已消失、`files/extract/` 已清空
+  （旧语音缓存与制卡临时媒体都被清掉）。
 
 ## 2026-10-08 会话（五十九）：修「制卡图片进不了 AnkiDroid 媒体库」
 

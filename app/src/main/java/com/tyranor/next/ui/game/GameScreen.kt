@@ -150,6 +150,7 @@ import com.tyranor.next.ui.cover.coverSourceTitle
 import com.tyranor.next.ui.main.MainLibraryUiState
 import com.tyranor.next.ui.patch.KrkrOnlinePatchActivity
 import com.tyranor.next.ui.save.SaveManagementActivity
+import com.tyranor.next.ui.screenshots.ScreenshotManagerActivity
 import com.tyranor.next.ui.settings.PerGameSettingsActivity
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
@@ -632,6 +633,7 @@ internal fun GameActionsSheet(
     val drawerEditCoverTitle = stringResource(R.string.game_edit_cover)
     val drawerRenameTitle = stringResource(R.string.game_rename)
     val drawerSaveManagementTitle = stringResource(R.string.game_save_management)
+    val drawerScreenshotManagementTitle = stringResource(R.string.game_screenshot_management)
     val drawerOnlinePatchTitle = stringResource(R.string.game_online_patch)
     val drawerEngineSettingsTitle = stringResource(R.string.settings_engine_settings)
     val drawerDeleteTitle = stringResource(R.string.game_delete_title)
@@ -991,6 +993,22 @@ internal fun GameActionsSheet(
                         ),
                     )
                 }
+                add(
+                    DrawerAction(
+                        key = "screenshot_management",
+                        title = drawerScreenshotManagementTitle,
+                        icon = com.core.engine.R.drawable.ic_camera,
+                        showArrow = true,
+                        iconTint = drawerPrimaryColor,
+                        onClick = {
+                            startActivityWithPageTransition(
+                                context,
+                                ScreenshotManagerActivity.createIntent(context, game.title),
+                            )
+                            onDismiss()
+                        },
+                    ),
+                )
                 if (game.engine == EngineType.KIRIKIRI) {
                     add(
                         DrawerAction(

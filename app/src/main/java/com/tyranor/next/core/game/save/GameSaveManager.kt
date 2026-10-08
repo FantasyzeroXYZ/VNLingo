@@ -544,11 +544,25 @@ class GameSaveManager(private val context: Context) {
         (RpgSaveFormat.isRpgWebEngine(engine) && lower == RpgSaveFormat.ORIGINAL_DIR) ||
             isTransientTmpName(lower) ||
             (engine == EngineType.ARTEMIS && isArtemisResourceName(name)) ||
+            // 图片/音频一律不算存档、不导出、不上传（用户要求：截图与语音不进存档管理；
+            // 截图有自己的「截图管理」页，语音不保留）。注意不含 .bmp：ONS 的存档缩略图
+            // 就是 save*.bmp，属于存档本体。
+            isMediaFileName(lower) ||
             // AVG32/UK2 存档目录即游戏根：白名单之外的文件（含游戏资源）一律排除，
             // 导入交换后由 restoresExcludedFromBackup 从备份移回。
             (engine == EngineType.AVG32 && lower != AVG32_SAVE_FILE_NAME) ||
             (engine == EngineType.UK2 && !UK2_SAVE_NAME_RE.matches(lower))
     }
+
+    /** 图片/音频扩展名：这些文件不属于存档，列表/导出/导入/云同步都要跳过。 */
+    private fun isMediaFileName(lower: String): Boolean =
+        MEDIA_EXTENSIONS.any { lower.endsWith(it) }
+
+    private val MEDIA_EXTENSIONS = listOf(
+        ".png", ".jpg", ".jpeg", ".webp", ".gif", ".avif",
+        ".wav", ".mp3", ".ogg", ".oga", ".opus", ".m4a", ".aac", ".flac",
+        ".mp4", ".webm", ".mkv",
+    )
 
     /** AVG32 默认存档文件名（`#SAVEFILE` 自定义名暂不识别）。 */
     private val AVG32_SAVE_FILE_NAME = "save.ini"

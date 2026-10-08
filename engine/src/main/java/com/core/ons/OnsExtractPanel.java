@@ -207,6 +207,9 @@ public class OnsExtractPanel {
         panelOpacity = prefs.getInt(KEY_OPACITY, OPACITY_STEPS[0]);
         // 词典库提前打开（导入/查词共用；后台线程 search 不依赖 context）
         OnsDictStore.get().init(activity);
+        // 音频不再保留：清掉旧版本遗留的语音缓存目录（历史回放改走档案按名补读 / TTS）
+        GameMediaCleanup.purgeLegacyAudioCache(activity);
+        GameMediaCleanup.purgeStaleCardMedia(activity);
         OnsDeinflector.init(activity);  // 词形还原全量规则（assets/deinflect_*.json）
         com.core.ons.deinflect.DeinflectPackStore.get().init(activity);  // M2 语言包
         // M4 查询语言设置：查询语言/是否查读音随启动 extra 下发（全局 + 每游戏覆盖
@@ -1062,10 +1065,7 @@ public class OnsExtractPanel {
                 OnsHistoryOverlay.addEntry(activity, "#" + HISTORY_MAX + " " + he.sentence
                         + (he.voiceName.isEmpty() ? "" : "  ♪" + he.voiceName));
             }
-            // 主线程先取当句字节引用（配对时已缓存），后台只负责落盘，
-            // 避免后台再取时缓存已被下一句覆盖
-            byte[] pairedVoice = bridge.getVoiceName().isEmpty() ? null : bridge.ensureVoiceBytes();
-            persistHistoryVoice(bridge.getVoiceName(), pairedVoice);
+            // 语音不落盘（用户要求「音频不用保留」）：回放走档案按名补读 / TTS
             lastHistorySentence = sentence;
             listeningRevealed = false;
             selectedToken = -1;
@@ -1869,6 +1869,8 @@ public class OnsExtractPanel {
                                     + " bytes=" + png.length());
                             String mark = helper.addMedia(png, png.getName(), "image");
                             Log.i(TAG, "word card image mark=" + mark);
+                            // 已交给 AnkiDroid 复制，本地临时文件不再保留
+                            if (!png.delete()) Log.w(TAG, "临时截图删除失败: " + png.getName());
                             if (mark != null) {
                                 slots.put(com.core.anki.AnkiCardConfig.SLOT_IMAGE, mark);
                             }
@@ -2607,26 +2609,14 @@ public class OnsExtractPanel {
     }
 
     /**
-     * 历史回放：优先读配对时落盘的语音缓存（字节在配对时已由 bridge 活捕获），
-     * 无缓存再按存储名补读档案；都失败回退 TTS 朗读。
+     * 历史回放：按存储名补读档案里的语音；读不到回退 TTS 朗读。
+     *
+     * 不再把语音落盘缓存（用户要求「音频不用保留」）：语音只在当次会话里用于播放与制卡，
+     * 不长期占用存储。旧版本留下的缓存目录由 [GameMediaCleanup#purgeLegacyAudioCache] 清理。
      */
     private void playHistoryEntry(HistoryEntry entry) {
         stopVoice();
         if (!entry.voiceName.isEmpty()) {
-            File cached = historyVoiceFile(entry.voiceName);
-            if (cached != null && cached.exists() && cached.length() > 0) {
-                try {
-                    player = new MediaPlayer();
-                    player.setDataSource(cached.getAbsolutePath());
-                    player.setOnCompletionListener(mp -> stopVoice());
-                    player.prepare();
-                    player.start();
-                    return;
-                } catch (Throwable t) {
-                    Log.w(TAG, "history voice playback failed for " + entry.voiceName, t);
-                    stopVoice();
-                }
-            }
             byte[] bytes = facade.readVoiceBytesByName(entry.voiceName);
             if (bytes != null) {
                 playVoiceBytes(bytes, entry.voiceName);
@@ -2634,48 +2624,6 @@ public class OnsExtractPanel {
             }
         }
         speakText(entry.sentence);
-    }
-
-    private File historyVoiceFile(String voiceName) {
-        String name = sanitize(voiceName);
-        if (name.isEmpty()) return null;
-        File dir = new File(activity.getCacheDir(), "ons_extract_history");
-        dir.mkdirs();
-        return new File(dir, name);
-    }
-
-    /**
-     * 配对时把当前句语音字节写入缓存目录（后台落盘），供历史回放。
-     * 引擎档案层的按名补读在 UI 线程不可靠，落盘是历史回放的主路径。
-     */
-    private void persistHistoryVoice(String voiceName, byte[] bytes) {
-        if (voiceName == null || voiceName.isEmpty() || bytes == null || bytes.length == 0) return;
-        new Thread(() -> {
-            try {
-                File out = historyVoiceFile(voiceName);
-                if (out == null || (out.exists() && out.length() == bytes.length)) return;
-                try (FileOutputStream fos = new FileOutputStream(out)) {
-                    fos.write(bytes);
-                }
-                trimHistoryVoiceDir(out.getParentFile());
-            } catch (Throwable t) {
-                Log.w(TAG, "persistHistoryVoice failed for " + voiceName, t);
-            }
-        }, "ons-history-voice").start();
-    }
-
-    /** 语音缓存目录封顶：只留最近 100 条（每条可达 MB 级，长会话无限累积
-     *  会吃掉数百 MB；cacheDir 虽可被系统回收，主动封顶更稳）。 */
-    private static void trimHistoryVoiceDir(File dir) {
-        if (dir == null || !dir.isDirectory()) return;
-        File[] files = dir.listFiles();
-        if (files == null || files.length <= 100) return;
-        java.util.Arrays.sort(files, (a, b) -> Long.compare(a.lastModified(), b.lastModified()));
-        for (int i = 0; i < files.length - 100; i++) {
-            if (!files[i].delete()) {
-                Log.w("OnsExtractPanel", "trim history voice failed: " + files[i].getName());
-            }
-        }
     }
 
     /** 把语音字节写入缓存文件并用 MediaPlayer 播放（调用方先 stopVoice）。 */
@@ -3104,6 +3052,7 @@ public class OnsExtractPanel {
                     }
                     String mark = helper.addMedia(shotFile, shotFile.getName(), "image");
                     Log.i(TAG, "sentence card image mark=" + mark);
+                    if (!shotFile.delete()) Log.w(TAG, "临时截图删除失败: " + shotFile.getName());
                     if (mark != null) slots.put(com.core.anki.AnkiCardConfig.SLOT_IMAGE, mark);
                 } else {
                     Log.w(TAG, "sentence card: 没有可用截图（自动截取失败且无最近一次手动截图）");

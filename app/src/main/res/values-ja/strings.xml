@@ -374,6 +374,7 @@
     <string name="game_edit_cover">カバー画像を変更</string>
     <string name="game_rename">名前を変更</string>
     <string name="game_save_management">セーブ管理</string>
+    <string name="game_screenshot_management">スクリーンショット管理</string>
     <string name="game_online_patch">オンラインパッチ</string>
     <string name="game_delete_title">ゲームを削除</string>
     <string name="game_delete_message">「%1$s」のアプリ内記録、設定、キャッシュを削除します。ゲームファイルは削除されません。</string>

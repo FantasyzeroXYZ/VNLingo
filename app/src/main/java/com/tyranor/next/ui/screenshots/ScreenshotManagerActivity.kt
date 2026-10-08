@@ -54,21 +54,29 @@ import java.util.Date
 import java.util.Locale
 
 /**
- * 截图管理页（主页入口）：展示游戏内「截图」键保存的截图
+ * 截图管理页：展示游戏内「截图」键保存的截图
  * （getExternalFilesDir/screenshots/<游戏>/），支持查看大图、分享与删除。
+ *
+ * 两个入口：游戏条目的「条目选项 → 截图管理」（带 [EXTRA_GAME]，只看该游戏）、
+ * 不传游戏名则看全部。图片与音频分家：这里只列图片，音频不保留（见 OnsExtractPanel）。
  */
 class ScreenshotManagerActivity : AppScreenActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        val gameName = intent?.getStringExtra(EXTRA_GAME)?.takeIf { it.isNotBlank() }
         setAppScreenContent {
-            ScreenshotManagerScreen()
+            ScreenshotManagerScreen(gameName = gameName)
         }
     }
 
     companion object {
-        fun createIntent(context: Context): Intent =
+        /** 只查看某个游戏的截图时传入（游戏名，非空）。 */
+        const val EXTRA_GAME = "screenshot_game"
+
+        fun createIntent(context: Context, gameName: String? = null): Intent =
             Intent(context, ScreenshotManagerActivity::class.java)
+                .putExtra(EXTRA_GAME, gameName)
     }
 }
 
@@ -94,11 +102,14 @@ private fun thumbnailFor(file: File): Bitmap? = produceState<Bitmap?>(initialVal
 }.value
 
 @Composable
-private fun ScreenshotManagerScreen() {
+private fun ScreenshotManagerScreen(gameName: String? = null) {
     val context = LocalContext.current
     var reload by remember { mutableStateOf(0) }
-    val shots = remember(reload) {
-        GameScreenshots.list(context).map { file ->
+    val shots = remember(reload, gameName) {
+        val all = GameScreenshots.list(context)
+        val filtered = if (gameName == null) all
+        else all.filter { GameScreenshots.gameOf(it) == GameScreenshots.safeGameName(gameName) }
+        filtered.map { file ->
             ScreenshotItem(
                 file = file,
                 game = GameScreenshots.gameOf(file),

@@ -907,3 +907,18 @@
 5. 外部塞进媒体目录的文件，AnkiDroid 下次打开（或「检查媒体」）才会收录——修复用户已有
    卡片时可以直接 `adb push` 到该目录并让用户重开 AnkiDroid。
 
+## 硬性约定（2026-10-09 用户要求）：媒体与存档分家
+
+1. **图片、音频绝不放进「存档管理」**：截图的长期存放地是「截图管理」页
+   （`getExternalFilesDir/screenshots/<游戏>/`），音频**不保留**（只用于当次播放/制卡）。
+   往 `GameSaveManager.excludeFor` 里加媒体扩展名过滤时**不要包含 `.bmp`**——
+   ONS 的 `save*.bmp` 是存档缩略图，属于存档本体。
+2. **截图入口放在游戏「条目选项」**（`GameScreen` 的 DrawerAction：存档管理 → 截图管理 →
+   引擎设置），传 `game.title` 给 `ScreenshotManagerActivity` 只看该游戏；
+   不要再把截图管理塞进存档页或做成孤立页面（该页曾长期没有入口）。
+3. **媒体文件即用即删**：制卡截图/语音交给 AnkiDroid 复制进 `collection.media` 后，
+   本地 `extract/anki_*` 立即删除；`GameMediaCleanup` 在应用启动与面板安装时兜底清理
+   旧版本残留（`cacheDir/ons_extract_history`、`extract/anki_*`）。
+4. **历史回放的语音不再落盘**：走「档案按名补读（`readVoiceBytesByName`）→ TTS 朗读」，
+   不要为了回放方便把语音缓存到磁盘（用户明确要求音频不保留）。
+

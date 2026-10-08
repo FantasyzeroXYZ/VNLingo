@@ -373,6 +373,7 @@
     <string name="game_edit_cover">修改封面</string>
     <string name="game_rename">名称修改</string>
     <string name="game_save_management">存档管理</string>
+    <string name="game_screenshot_management">截图管理</string>
     <string name="game_online_patch">在线补丁</string>
     <string name="game_delete_title">删除游戏</string>
     <string name="game_delete_message">将移除「%1$s」的应用内记录、设置与缓存，不会删除游戏文件。</string>

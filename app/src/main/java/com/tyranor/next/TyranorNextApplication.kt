@@ -46,6 +46,10 @@ class TyranorNextApplication : Application(), DefaultLifecycleObserver, Configur
         UpdateNotificationManager.createChannel(this)
         // 游戏库 Room 迁移检查 + 首页缓存预热，避免主线程首次读库阻塞（迁移方案阶段 0）。
         GameLibraryRepository.init(this)
+        // 音频不再保留：清掉提取面板旧版本留下的语音缓存与制卡临时媒体
+        // （截图有独立的「截图管理」页，音频只用于当次播放/制卡，不长期占存储）
+        com.core.ons.GameMediaCleanup.purgeLegacyAudioCache(this)
+        com.core.ons.GameMediaCleanup.purgeStaleCardMedia(this)
         ProcessLifecycleOwner.get().lifecycle.addObserver(this)
     }
 

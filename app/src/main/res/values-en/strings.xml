@@ -374,6 +374,7 @@
     <string name="game_edit_cover">Change cover</string>
     <string name="game_rename">Rename</string>
     <string name="game_save_management">Save management</string>
+    <string name="game_screenshot_management">Screenshots</string>
     <string name="game_online_patch">Online patch</string>
     <string name="game_delete_title">Delete game</string>
     <string name="game_delete_message">This removes the in-app record, settings, and cache for “%1$s”. It will not delete game files.</string>
