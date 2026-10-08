@@ -211,7 +211,7 @@
     <string name="engine_ons_anki_card_model">モデル名</string>
     <string name="engine_ons_anki_card_voice">例文音声ソース</string>
     <string name="engine_ons_anki_card_capture">カード作成時に自動スクリーンショット</string>
-    <string name="engine_ons_anki_card_fields">フィールドマッピング（行をタップしてソースを切替）</string>
+    <string name="engine_ons_anki_card_fields">要素 → モデルフィールド（各要素の出力先をドロップダウンで選択、「未マップ」= 出力しない）</string>
     <string name="engine_ons_anki_pick_deck">AnkiDroid からデッキを選択…</string>
     <string name="engine_ons_anki_pick_model">AnkiDroid からモデルを選択…</string>
     <string name="engine_ons_anki_pick_manual">手動入力…</string>
@@ -239,6 +239,12 @@
     <string name="engine_ons_anki_slot_source">ソース（ゲーム）</string>
     <string name="engine_ons_anki_slot_deinflection">復元パス</string>
     <string name="engine_ons_anki_slot_match_type">一致方式</string>
+    <string name="engine_ons_anki_card_read_failed">AnkiDroid データの読み取りに失敗</string>
+    <string name="engine_ons_anki_card_keep_current">、現在の設定を維持：%1$s</string>
+    <string name="engine_ons_anki_card_value_missing">設定中の「%1$s」は AnkiDroid に存在しません。下から選び直してください</string>
+    <string name="engine_ons_anki_card_fields_cached">オフライン：前回のフィールド一覧を使用</string>
+    <string name="engine_ons_anki_card_field_conflict">複数の要素が同じフィールドを指しています：%1$s</string>
+    <string name="engine_ons_anki_card_field_conflict_fix">占有を解除</string>
     <string name="engine_ons_tts_title">TTS 設定</string>
     <string name="engine_ons_tts_engine">TTS エンジン</string>
     <string name="engine_ons_tts_engine_multi">MultiTTS</string>

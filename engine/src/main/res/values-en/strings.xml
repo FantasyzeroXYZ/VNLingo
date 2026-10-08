@@ -208,7 +208,7 @@
     <string name="engine_ons_anki_card_model">Model name</string>
     <string name="engine_ons_anki_card_voice">Sentence audio source</string>
     <string name="engine_ons_anki_card_capture">Auto-capture screenshot on card</string>
-    <string name="engine_ons_anki_card_fields">Field mapping (tap a field to cycle its source)</string>
+    <string name="engine_ons_anki_card_fields">Element → model field (pick where each element goes; “unmapped” = skip)</string>
     <string name="engine_ons_anki_pick_deck">Pick deck from AnkiDroid…</string>
     <string name="engine_ons_anki_pick_model">Pick note type from AnkiDroid…</string>
     <string name="engine_ons_anki_pick_manual">Enter manually…</string>
@@ -236,6 +236,12 @@
     <string name="engine_ons_anki_slot_source">Source (game)</string>
     <string name="engine_ons_anki_slot_deinflection">Deinflection path</string>
     <string name="engine_ons_anki_slot_match_type">Match type</string>
+    <string name="engine_ons_anki_card_read_failed">Failed to read AnkiDroid data</string>
+    <string name="engine_ons_anki_card_keep_current">, keeping current config: %1$s</string>
+    <string name="engine_ons_anki_card_value_missing">Configured “%1$s” no longer exists in AnkiDroid — pick another below</string>
+    <string name="engine_ons_anki_card_fields_cached">Offline: reusing the last known field list</string>
+    <string name="engine_ons_anki_card_field_conflict">Multiple elements point to the same field: %1$s</string>
+    <string name="engine_ons_anki_card_field_conflict_fix">Release</string>
     <string name="engine_ons_tts_title">TTS settings</string>
     <string name="engine_ons_tts_engine">TTS engine</string>
     <string name="engine_ons_tts_engine_multi">MultiTTS</string>

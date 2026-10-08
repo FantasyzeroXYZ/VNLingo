@@ -41,6 +41,7 @@ object AnkiCardConfig {
     private const val KEY_FIELD_MAP = "field_map"
     private const val KEY_CAPTURE = "capture_on_card"
     private const val KEY_VOICE_SOURCE = "voice_source"
+    private const val KEY_LAST_MODEL_FIELDS = "last_model_fields"
 
     const val DEFAULT_DECK = "TyranorNext"
     const val DEFAULT_MODEL = "TyranorNext Word"
@@ -114,5 +115,33 @@ object AnkiCardConfig {
     @JvmStatic
     fun setVoiceSource(context: Context, value: String) {
         prefs(context).edit().putString(KEY_VOICE_SOURCE, value).apply()
+    }
+
+    /**
+     * 最近一次成功读取的模型字段列表（按模型名缓存）。
+     *
+     * 用途：AnkiDroid 未安装/未授权时，设置页仍能按上次的字段列表编辑字段映射
+     * （对齐 `设置项补全与交互改造方案.md` §4.2「未连接时保留上次字段列表」）。
+     */
+    @JvmStatic
+    fun lastModelFields(context: Context, modelName: String): List<String> {
+        if (modelName.isBlank()) return emptyList()
+        val raw = prefs(context).getString(KEY_LAST_MODEL_FIELDS, null) ?: return emptyList()
+        return runCatching {
+            val obj = org.json.JSONObject(raw)
+            val arr = obj.optJSONArray(modelName) ?: return emptyList()
+            (0 until arr.length()).mapNotNull { arr.optString(it, "").ifEmpty { null } }
+        }.getOrDefault(emptyList())
+    }
+
+    @JvmStatic
+    fun setLastModelFields(context: Context, modelName: String, fields: Array<String>?) {
+        if (modelName.isBlank() || fields == null || fields.isEmpty()) return
+        val raw = prefs(context).getString(KEY_LAST_MODEL_FIELDS, null)
+        val obj = runCatching { org.json.JSONObject(raw ?: "{}") }.getOrDefault(org.json.JSONObject())
+        val arr = org.json.JSONArray()
+        for (f in fields) if (f.isNotEmpty()) arr.put(f)
+        obj.put(modelName, arr)
+        prefs(context).edit().putString(KEY_LAST_MODEL_FIELDS, obj.toString()).apply()
     }
 }

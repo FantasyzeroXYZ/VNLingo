@@ -210,7 +210,7 @@
     <string name="engine_ons_anki_card_model">模型名</string>
     <string name="engine_ons_anki_card_voice">例句语音源</string>
     <string name="engine_ons_anki_card_capture">制卡时自动截图</string>
-    <string name="engine_ons_anki_card_fields">字段映射（点字段行切换内容来源）</string>
+    <string name="engine_ons_anki_card_fields">要素 → 模型字段（下拉选择每个要素填入哪个字段，「未映射」= 不出卡）</string>
     <string name="engine_ons_anki_pick_deck">从 AnkiDroid 选择牌组…</string>
     <string name="engine_ons_anki_pick_model">从 AnkiDroid 选择模板…</string>
     <string name="engine_ons_anki_pick_manual">手动输入…</string>
@@ -238,6 +238,12 @@
     <string name="engine_ons_anki_slot_source">来源（游戏）</string>
     <string name="engine_ons_anki_slot_deinflection">还原路径</string>
     <string name="engine_ons_anki_slot_match_type">命中方式</string>
+    <string name="engine_ons_anki_card_read_failed">读取 AnkiDroid 数据失败</string>
+    <string name="engine_ons_anki_card_keep_current">，保持当前配置：%1$s</string>
+    <string name="engine_ons_anki_card_value_missing">当前配置的「%1$s」在 AnkiDroid 中不存在，请从下方重新选择</string>
+    <string name="engine_ons_anki_card_fields_cached">离线：沿用上次读取的字段列表</string>
+    <string name="engine_ons_anki_card_field_conflict">多个要素指向同一字段：%1$s</string>
+    <string name="engine_ons_anki_card_field_conflict_fix">解除占用</string>
     <string name="engine_ons_tts_title">TTS 设置</string>
     <string name="engine_ons_tts_engine">TTS 引擎</string>
     <string name="engine_ons_tts_engine_multi">MultiTTS</string>
