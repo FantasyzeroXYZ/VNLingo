@@ -628,6 +628,7 @@
     <string name="save_export_format_tyranor">Tyranor mode</string>
     <string name="save_export_format_tyranor_summary">Tyranor native format</string>
     <string name="save_error_resolve_game_dir">Unable to resolve the local game directory</string>
+    <string name="save_error_save_dir_is_game_root">The save folder resolved to the game root (%1$s); save management was stopped so the whole game is not treated as saves</string>
     <string name="save_error_krkr_sdl3_external_unavailable">KRKR SDL3 app-specific storage is unavailable</string>
     <string name="save_location_krkr_sdl3_scoped">KRKR SDL3 isolated save directory</string>
     <string name="save_error_app_internal_unavailable">App internal storage is unavailable</string>
@@ -642,6 +643,8 @@
     <string name="save_location_engine_game_dir">%1$s in-game save directory</string>
     <string name="save_location_engine_no_file_interface">%1$s does not expose a standard file-based save interface</string>
     <string name="save_location_artemis_game_dir">Artemis game-directory saves</string>
+    <string name="save_location_artemis_dat">Artemis saves (*.dat in the game folder; media and assets excluded)</string>
+    <string name="save_location_artemis_savedata">Artemis save folder (savedata/)</string>
     <string name="save_location_unknown_unsupported">Unknown engines do not support save management</string>
     <string name="save_error_no_exportable_files">No exportable save files found</string>
     <string name="save_error_create_export_zip">Unable to create export ZIP</string>

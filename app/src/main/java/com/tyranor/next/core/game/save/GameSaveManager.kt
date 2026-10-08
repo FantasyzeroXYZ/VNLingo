@@ -11,6 +11,7 @@ import com.tyranor.next.core.game.model.ScanGame
 import com.tyranor.next.core.i18n.AppLocaleController
 import com.tyranor.next.core.settings.EngineSettingsResolver
 import com.tyranor.next.core.settings.EngineSettingsStore
+import com.tyranor.next.core.settings.ResolvedEngineSettings
 import java.io.File
 import java.io.FileInputStream
 import java.io.FileOutputStream
@@ -36,7 +37,31 @@ class GameSaveManager(private val context: Context) {
             ?: return SaveLocation(null, text(R.string.save_error_resolve_game_dir), false)
         // 三级设置统一解析（应用级 + 单游戏覆盖），避免本类重复逐字段合并（P0-3）
         val settings = EngineSettingsResolver.resolve(appContext, game, root)
+        val resolved = resolveSaveLocationInner(game, root, settings)
 
+        // 安全兜底（用户实测踩坑）：除 AVG32/UK2 这两类「存档就是游戏根里单个白名单文件」
+        // 的引擎外，任何引擎的存档目录都不得**等于游戏根**——否则「存档管理」会把整个游戏
+        // （图片/音频/剧本/资源包）当成存档来计数、导出 ZIP、上传云端。
+        // 宁可显示「不可管理」，也不要再导出一个装着整个游戏的 ZIP。
+        val dir = resolved.directory
+        if (dir != null && game.engine != EngineType.AVG32 && game.engine != EngineType.UK2
+            && game.engine != EngineType.ARTEMIS
+            && dir.absolutePath.trimEnd('/') == root.trimEnd('/')
+        ) {
+            return SaveLocation(
+                null,
+                text(R.string.save_error_save_dir_is_game_root, game.engine.displayName),
+                false,
+            )
+        }
+        return resolved
+    }
+
+    private fun resolveSaveLocationInner(
+        game: ScanGame,
+        root: String,
+        settings: ResolvedEngineSettings,
+    ): SaveLocation {
         return when (game.engine) {
             EngineType.KIRIKIRI -> {
                 // 可移动存储上启动器强制走 KrSafMirror 镜像（与独立存档开关无关），
@@ -102,7 +127,19 @@ class GameSaveManager(private val context: Context) {
             EngineType.VN, EngineType.WEB_OTHER, EngineType.RPGMAKER, EngineType.RENPY,
             EngineType.PSP, EngineType.NINTENDO_SWITCH, EngineType.CATSYSTEM2, EngineType.PC ->
                 SaveLocation(null, text(R.string.save_location_engine_no_file_interface, game.engine.displayName), false)
-            EngineType.ARTEMIS -> SaveLocation(File(root), text(R.string.save_location_artemis_game_dir), true)
+            EngineType.ARTEMIS -> {
+                // Artemis 的存档是**游戏根目录下的 *.dat**（saveg.dat / autosave.dat /
+                // system.dat…），而同一个目录里还躺着提取面板与内核产生的
+                // `screenshots/`、`extract/`、`artemis_extract/voice/` 与游戏资源
+                // （root.pfs / movie / system）。用户实测：整目录导出会把截图与语音
+                // 一起打进存档 ZIP，所以这里用**白名单**（见 excludeFor），
+                // 只认根级 *.dat，目录一律不进。
+                SaveLocation(
+                    File(root),
+                    text(R.string.save_location_artemis_dat),
+                    true,
+                )
+            }
             EngineType.SIGLUS -> SaveLocation(
                 File(root, "savedata"),
                 text(R.string.save_location_engine_game_dir, game.engine.displayName),
@@ -543,7 +580,10 @@ class GameSaveManager(private val context: Context) {
         // MV/MZ 存档目录内的 original/ 是格式转化/互通留底，不参与列表计数/导出/导入/删除
         (RpgSaveFormat.isRpgWebEngine(engine) && lower == RpgSaveFormat.ORIGINAL_DIR) ||
             isTransientTmpName(lower) ||
-            (engine == EngineType.ARTEMIS && isArtemisResourceName(name)) ||
+            // Artemis：白名单——只认游戏根下的 *.dat（存档），截图/语音/资源包与一切子目录
+            // 都不算存档（用户实测：整目录导出会把 screenshots/ 与 artemis_extract/voice/
+            // 一起打进 ZIP）。目录名不以 .dat 结尾，因此递归也不会进入任何子目录。
+            (engine == EngineType.ARTEMIS && !lower.endsWith(".dat")) ||
             // 图片/音频一律不算存档、不导出、不上传（用户要求：截图与语音不进存档管理；
             // 截图有自己的「截图管理」页，语音不保留）。注意不含 .bmp：ONS 的存档缩略图
             // 就是 save*.bmp，属于存档本体。
@@ -591,14 +631,8 @@ class GameSaveManager(private val context: Context) {
             engine == EngineType.UK2 ||
             RpgSaveFormat.isRpgWebEngine(engine)
 
-    private fun isArtemisResourceName(name: String?): Boolean {
-        val normalized = name?.trim()?.lowercase(Locale.ROOT) ?: return false
-        return normalized == "system" || normalized == "movie" ||
-            normalized == "artemisengine.exe" || normalized == "system.ini" ||
-            normalized.startsWith("root.pfs") || normalized.endsWith(".pfs") ||
-            normalized.endsWith(".xp3") || normalized.endsWith(".arc") ||
-            normalized.endsWith(".pak") || normalized.endsWith(".dat.arc")
-    }
+    // isArtemisResourceName 已删除：Artemis 现在用「根级 *.dat」白名单（见 excludeFor），
+    // 不必再逐个列举资源包名（root.pfs / *.pfs / *.xp3 / *.arc / *.pak / system / movie）。
 
     @Throws(IOException::class)
     private fun createTemporaryDirectory(): File {

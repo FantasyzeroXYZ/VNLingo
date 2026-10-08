@@ -921,4 +921,13 @@
    旧版本残留（`cacheDir/ons_extract_history`、`extract/anki_*`）。
 4. **历史回放的语音不再落盘**：走「档案按名补读（`readVoiceBytesByName`）→ TTS 朗读」，
    不要为了回放方便把语音缓存到磁盘（用户明确要求音频不保留）。
+5. **「存档目录 = 游戏根」的引擎必须用白名单，不能只排资源包**（2026-10-09 修复）：
+   Artemis 游戏根里除了本体的 `root.pfs/movie/system`，还有**我们自己写进去的**
+   `screenshots/`、`extract/`、`artemis_extract/voice/`（提取面板与内核），
+   旧实现只排除 pfs/arc 之类资源包名 ⇒ 导出 ZIP 把截图与语音一起打包（用户实测 18 MB 包
+   里 19/22 个条目是媒体）。正确做法：**只认根级 `*.dat`**（目录名不以 .dat 结尾，
+   递归自然不会进子目录）；AVG32/UK2 同理（`save.ini` / `FLAGnn.dat` 白名单）。
+6. **安全兜底**：`resolveSaveLocation` 里除 AVG32/UK2/ARTEMIS 外，任何引擎解析出的存档目录
+   若等于游戏根，直接判「不可管理」（`save_error_save_dir_is_game_root`）。
+   排查这类问题时，**先解开用户手上的导出 ZIP 看条目**——一眼就能看出谁把什么打了进去。
 

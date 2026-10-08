@@ -628,6 +628,7 @@
     <string name="save_export_format_tyranor">Tyranor モード</string>
     <string name="save_export_format_tyranor_summary">Tyranor ネイティブ形式</string>
     <string name="save_error_resolve_game_dir">ゲームのローカルフォルダを解析できません</string>
+    <string name="save_error_save_dir_is_game_root">セーブフォルダがゲーム直下（%1$s）と判定されたため、ゲーム全体をセーブとして扱わないよう管理を中止しました</string>
     <string name="save_error_krkr_sdl3_external_unavailable">KRKR SDL3 のアプリ個別ストレージを使用できません</string>
     <string name="save_location_krkr_sdl3_scoped">KRKR SDL3 個別セーブフォルダ</string>
     <string name="save_error_app_internal_unavailable">アプリ内部ストレージを使用できません</string>
@@ -642,6 +643,8 @@
     <string name="save_location_engine_game_dir">%1$s ゲーム内セーブフォルダ</string>
     <string name="save_location_engine_no_file_interface">%1$s には標準ファイルセーブ管理インターフェイスがありません</string>
     <string name="save_location_artemis_game_dir">Artemis ゲームフォルダ内セーブ</string>
+    <string name="save_location_artemis_dat">Artemis セーブ（ゲームフォルダ直下の *.dat。メディアと資源は含めない）</string>
+    <string name="save_location_artemis_savedata">Artemis セーブフォルダ（savedata/）</string>
     <string name="save_location_unknown_unsupported">不明なエンジンはセーブ管理に対応していません</string>
     <string name="save_error_no_exportable_files">書き出し可能なセーブファイルが見つかりません</string>
     <string name="save_error_create_export_zip">書き出し ZIP を作成できません</string>

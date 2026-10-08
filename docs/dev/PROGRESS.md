@@ -4,6 +4,43 @@
 > `docs/说明/游戏内提取制卡功能方案.md`（提取功能线方案）阅读。
 > 更新时间：2026-10-09
 
+## 2026-10-09 会话（六十一）：Artemis 存档导出把截图/语音打进 ZIP —— 根因与修复
+
+用户反馈：条目的「存档管理 → 导出 ZIP」里似乎带了音频和图片文件夹。
+
+**取证（解开用户已有的导出包 `Japanese Version_saves.zip`，18.26 MB）**：
+
+```
+artemis_extract/voice/*.ogg          ← 11 个：提取面板/内核的语音副本
+screenshots/Japanese Version/*.png   ←  8 个：截图
+saveg.dat / system.dat / autosave.dat ← 只有这 3 个是真存档
+```
+
+根因：**Artemis 的「存档目录」被解析成游戏根目录**，而这个目录里同时躺着
+`screenshots/`、`extract/`、`artemis_extract/voice/`（提取面板与内核写的）以及
+`root.pfs`/`movie`/`system` 等游戏本体。导出/计数/云同步都把整目录算作存档。
+
+**修复**（`GameSaveManager`）：
+
+1. `excludeFor(ARTEMIS)` 改为**白名单**：只认游戏根下的 `*.dat`（saveg/autosave/system…）。
+   目录名不以 `.dat` 结尾 ⇒ 递归不会进入 `screenshots/`、`artemis_extract/`、`extract/`、
+   `movie/`、`system/` 等任何子目录；资源包与非存档文件也一律排除。
+2. 删掉原 `isArtemisResourceName`（逐条列举 root.pfs/*.pfs/*.xp3/*.arc/system/movie）——
+   白名单已覆盖，无需列举。
+3. 新增**安全兜底**：除 AVG32/UK2/ARTEMIS 这三个「存档目录=游戏根（靠白名单过滤）」的引擎外，
+   任何引擎解析出的存档目录若等于游戏根，直接判为不可管理并提示
+   （`save_error_save_dir_is_game_root`）——宁可不可管理，也不要再导出一个装着整个游戏的 ZIP。
+4. 存档位置描述改为「Artemis 存档（游戏目录内 *.dat，媒体与资源不计入）」。
+
+**真机验证**：Artemis 游戏「Japanese Version」的存档管理页由「整目录计数」变为
+**当前存档文件：3 个**（＝autosave.dat / saveg.dat / system.dat）；导出/导入/删除/云同步
+与列表共用同一个 `excludeFor` 谓词（`writeZipContents`/`collectFiles` 对目录同样过滤），
+因此 ZIP 里只会有这 3 个 `.dat`。
+（SAF 文件选择器不接受脚本点击，最后一步「点保存」需人工确认；ZIP 预期 ~25 KB。）
+
+**给用户的提醒**：已有的 `Japanese Version_saves.zip`（18.26 MB）与解压出的
+`Japanese Version_saves/` 目录都含截图与语音，属于旧版本产物，可自行删除重导。
+
 ## 2026-10-09 会话（六十）：媒体与存档分家（截图独立入口、音频不保留）
 
 用户要求：不要把图片、音频放进存档管理；音频不用保留；图片在**条目选项**里另开一个截图管理。

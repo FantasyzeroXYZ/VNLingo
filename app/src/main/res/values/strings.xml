@@ -627,6 +627,7 @@
     <string name="save_export_format_tyranor">Tyranor 模式</string>
     <string name="save_export_format_tyranor_summary">Tyranor 原生存档格式</string>
     <string name="save_error_resolve_game_dir">无法解析游戏本地目录</string>
+    <string name="save_error_save_dir_is_game_root">存档目录被解析为游戏根目录（%1$s），已停止存档管理以免把整个游戏当成存档</string>
     <string name="save_error_krkr_sdl3_external_unavailable">KRKR SDL3 应用独立存储目录不可用</string>
     <string name="save_location_krkr_sdl3_scoped">KRKR SDL3 独立存档目录</string>
     <string name="save_error_app_internal_unavailable">应用内部存储目录不可用</string>
@@ -641,6 +642,8 @@
     <string name="save_location_engine_game_dir">%1$s 游戏内存档目录</string>
     <string name="save_location_engine_no_file_interface">%1$s 没有标准文件存档接口</string>
     <string name="save_location_artemis_game_dir">Artemis 游戏目录存档</string>
+    <string name="save_location_artemis_dat">Artemis 存档（游戏目录内 *.dat，媒体与资源不计入）</string>
+    <string name="save_location_artemis_savedata">Artemis 存档目录（savedata/）</string>
     <string name="save_location_unknown_unsupported">未知引擎不支持存档管理</string>
     <string name="save_error_no_exportable_files">暂未发现可导出的存档文件</string>
     <string name="save_error_create_export_zip">无法创建导出压缩包</string>
