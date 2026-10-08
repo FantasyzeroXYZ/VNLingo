@@ -378,6 +378,40 @@ KAGParserEx 游戏大概率无效，且 §3.3-D 记录的「注册前不可写 /
 - 性能：反向映射 42387 项一次构建在 200ms 内完成，之后读侧无锁；
   `ft state` 2s 一条、`ft char`/`ft glyph` 500 次一条，未见 ANR/卡顿。
 
+## 6.5.6 B5 零风险探测（用户选择「先做零风险探测」，已完成）
+
+新增 `kr_extract_probe` 全局开关（默认关；`EngineSettingsStore.KEY_KR_EXTRACT_PROBE`），
+开启后向 patch.tjs overlay 追加**纯 ASCII 只读探针**（`krExtractProbeScript()`，
+不替换任何类），输出经 `Debug.message` → logcat（tag `cocos2d-x debug info`）。
+
+探测结论（tsukikage 真机，逐条为实测日志）：
+
+| 事实 | 证据 |
+|---|---|
+| patch.tjs 阶段 `global.KAGParser` 已存在、`global.KAGParserEx` 不存在 | `[probe] KAGParserPresent=1`；V4 `KAGParser=1 KAGParserEx=0` |
+| `System.addContinuousHandler` 与 `Timer` 都存在 | V4 `addContinuousHandler=1 Timer=1` |
+| **`System.addContinuousHandler` 非致命**（推翻「延迟手段本身致命」的旧结论——致命的是 `Timer`） | V4 handler 连续跑满 901 帧、V5 跑满 1800 帧，游戏正常渲染/可点击 |
+| `global.KAGParser` 在 patch.tjs 之后**第 1 帧**被换掉（KAG 的 Config/Init 阶段） | V8/V9 `swapped frames=1` |
+| 换掉之后 `global.KAGParserEx` **仍不是全局**（类没有暴露成全局名） | V9 `swapToEx=threw`（缺失全局访问抛异常） |
+| 探针可安全注入并回滚：关闭 pref 后 overlay 即不再生成 | `KRKR patch overlay disabled target=null overlay=null`，控制台恢复 632 行基线 |
+
+TJS 方言事实（本内核，踩坑，供后续脚本避雷）：
+
+- **不支持 `for (var k in obj)` 与 `in` 运算符**（均直接 syntax error，整份 patch.tjs
+  不执行 → 游戏引导失败）；
+- **访问不存在的全局会抛异常**，且 TJS 会把异常连同**反汇编转储**打进控制台
+  （单次约 2 万行日志，足以把 logcat 冲掉）——所以「轮询某个尚未注册的全局」
+  不能靠 try/catch 试错，只能比较**已存在**的对象（如 `global.KAGParser` 是否被换）；
+- 探测/注入脚本必须**纯 ASCII**（Kirikiroid2 按内容探测 patch.tjs 编码，
+  混入 UTF-8 日文会毁掉后续 SJIS 脚本解码）。
+
+**据此得到的可行修复路线（下一步，尚未实施）**：patch.tjs 阶段
+`System.addContinuousHandler` 注册一个逐帧钩子，在第 1 帧检测到
+`global.KAGParser` 被替换后，**立即包一层**（子类化新的 `global.KAGParser`，
+沿用 `krExtractEmitterScriptV8` 的 `getNextTag` 缓冲逻辑）——这样既避开了
+「注册前不可写」的引导期崩溃（不在 patch.tjs 顶层替换），也不使用致命的 Timer。
+该步骤会真正替换解析器类，属「可能崩游戏、可回滚」的实验，需用户单独确认。
+
 # 7. 需要用户提供的材料
 
 | 材料 | 用途 |

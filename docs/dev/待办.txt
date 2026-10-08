@@ -158,12 +158,17 @@
       实测；其它官方 revision 内核（V2-V6）块布局/树偏移可能不同，需实测微调
 
 - [ ] KRKR 文本提取：非 FT 渲染游戏（tsukikage 类）的通道（方案 §3.3-D/B5，
-      2026-10-08 会话四十五定判据）——该类游戏（KAGParserEx +
-      textrender/layerExDraw/PreRenderFontEx）正文渲染**完全不经 libgame.so 的
-      FreeType 与 cocos2d Label**（真机计数全程冻结，对照 kazurauta 正常）。
-      剩余可选路线：①TJS 发射器扩展到 KAGParserEx（需处理「注册前不可写」，
-      可能崩游戏、需可回滚）②带钩内核（krkr2-main 源码级，工作量大）。
-      推进前需用户确认可接受的实验窗口
+      2026-10-08 会话四十五）——该类游戏（KAGParserEx + textrender/layerExDraw/
+      PreRenderFontEx）正文渲染**完全不经 libgame.so 的 FreeType 与 cocos2d Label**
+      （真机计数全程冻结，对照 kazurauta 正常）。
+      **零风险探测已完成**（`kr_extract_probe` 开关 + 只读探针，默认关）：
+      patch.tjs 阶段只有 `KAGParser`；`global.KAGParser` 在之后**第 1 帧**被换掉，
+      换掉后 `KAGParserEx` 仍不是全局名；`System.addContinuousHandler` 存在且
+      **非致命**（901/1800 帧实测正常），是唯一可用的延迟手段（Timer 才致命）。
+      下一步（未实施，需用户确认「可能崩游戏、可回滚」）：patch.tjs 注册
+      continuous handler → 第 1 帧检测到 `global.KAGParser` 被替换后立即子类化
+      当前值并写回（复用 v8 的 getNextTag 缓冲），即把发射器从「顶层替换」改为
+      「换类瞬间包装」。备选：带钩内核（krkr2-main 源码级，工作量大）
 - [ ] 提取状态可见性（低优先）：钩子武装成功但该游戏无字符流时，面板/引擎设置
       目前无任何提示，用户只会看到空句栏；可考虑把 native 通道计数（诊断开关下）
       汇总成一行状态展示

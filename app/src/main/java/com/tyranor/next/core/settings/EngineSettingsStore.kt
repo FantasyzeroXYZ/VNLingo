@@ -455,6 +455,18 @@ object EngineSettingsStore {
     fun getKrTextSource(c: Context): String =
         if (isKrExtractTjs(c)) KR_TEXT_SOURCE_ENGINE else KR_TEXT_SOURCE_HOOK
 
+    /**
+     * KRKR 解析器层只读探针（默认关，实验用）：随 patch.tjs overlay 注入纯 ASCII 诊断块，
+     * 只做 globals/System API 探测与「KAGParserEx 何时注册」的延迟观测，**不替换任何类**。
+     * 输出走 Debug.message → Kirikiroid2 控制台 → logcat（tag `cocos2d-x debug info`），
+     * 不经 Label 钩子的 CJK 过滤。用于判断 Ex 类游戏能否走解析器层提取。
+     */
+    const val KEY_KR_EXTRACT_PROBE = "kr_extract_probe"
+    fun isKrExtractProbe(c: Context): Boolean =
+        prefs(c).getBoolean(KEY_KR_EXTRACT_PROBE, false)
+    fun setKrExtractProbe(c: Context, b: Boolean) =
+        prefs(c).edit().putBoolean(KEY_KR_EXTRACT_PROBE, b).apply()
+
     fun getKrPatchOverlayMode(c: Context): String =
         normalizeKrPatchOverlayMode(prefs(c).getString(KEY_KR_PATCH_OVERLAY_MODE, KR_PATCH_OVERLAY_AUTO))
     fun setKrPatchOverlayMode(c: Context, v: String) =

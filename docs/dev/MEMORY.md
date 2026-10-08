@@ -580,3 +580,33 @@
    （前者 if 只包住操作卡片，后者设置页早有开关）。执行前先按 HEAD 核对一遍，
    别照抄方案里的行号/结论。
 
+## 实测踩坑（2026-10-08 会话四十五之二：Kirikiroid2 里 TJS 探针怎么写）
+
+用 `kr_extract_probe`（默认关）向 patch.tjs overlay 注入纯 ASCII 探针实测得到：
+
+1. **`for (var k in obj)` 与 `in` 运算符都不被这个 TJS 支持**——两者都直接
+   syntax error，而 patch.tjs 是**整份编译**的：一处语法错误 = 整个 patch 不执行
+   → 游戏引导失败（表现为控制台只有 `Syntax error at line N`、随后卡死）。
+   改脚本时先用「编号构造 + 读错误行号」的方式二分，别一次写完。
+2. **访问不存在的全局会抛异常**，而且 TJS 会把异常连同**反汇编转储**（单次约
+   2 万行）打进控制台 → 足以把 logcat 冲爆、把之前的探针输出挤掉。
+   所以「轮询尚未注册的全局」不能用 try/catch 试错；只能比较**已存在**的对象
+   （例：记下 `global.KAGParser` 原值，逐帧比 `===`），或用一次性探测。
+3. **`System.addContinuousHandler` 存在且非致命**，是 krkr2 里唯一可用的延迟手段：
+   实测连续跑满 901 / 1800 帧，游戏照常渲染、照常响应点击（旧结论
+   「延迟手段本身致命」应限定为 **Timer**：Timer 在 Initialize 阶段实例化会段错误）。
+   移除用 `System.removeContinuousHandler(fn)`（找不到就 try/catch 吞掉）。
+4. **KAG 在 patch.tjs 之后第 1 帧就把 `global.KAGParser` 换掉**（Config/Init 阶段，
+   实测 `swapped frames=1`），但换掉后 `global.KAGParserEx` **仍不是全局名**
+   （类没有暴露成全局；访问会抛）。⇒ 想包装解析器类，「注册前不可写」的窗口只有
+   ~1 帧，且拿不到 Ex 的全局名，只能**在检测到 `global.KAGParser` 被替换的那一帧
+   子类化当前值并写回**（这也是避开引导期崩溃的唯一时机）。
+5. **探针输出通道**：`Debug.message` 的输出在 logcat 里是 tag
+   `cocos2d-x debug info`（完整文本、不受 Label 钩子 CJK 过滤影响），
+   所以纯 ASCII 探针照样可读；而 `NativeBridge: krkr text raw` 只截前 24 字符，
+   不适合读长行。
+6. **可回滚性要实测**：关闭 `kr_extract_probe` 后 overlay 不再生成
+   （`KRKR patch overlay disabled target=null overlay=null`）、控制台恢复 632 行基线；
+   探针注入时 overlay 会把游戏自己的 patch.tjs 内容作为 base 一起写回
+   （`baseBytes` 含 `cleanup.bytes`），不要让它把游戏 patch 整份替换掉。
+

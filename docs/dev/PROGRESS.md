@@ -38,8 +38,23 @@
 - **产物**：`krkr_extract_hook.cpp` / `krkr_bridge.cpp` / `NativeBridge.kt` /
   `KirikiroidLauncherBaseActivity.java` / `SettingsScreen.kt` /
   `PerGameSettingsScreen.kt` / 三 locale strings；方案文档新增 §6.5 执行记录。
-- **未完成**：B5（TJS 发射器 / 解析器层通道）待用户确认是否接受可能崩游戏的
-  实验窗口；本游戏用的 `KAGParserEx` 还需额外处理（现有发射器只包装 KAGParser）。
+- **B5 零风险探测（用户选「先做零风险探测」，已完成）**：新增 `kr_extract_probe`
+  全局开关（默认关），开启后向 patch.tjs overlay 追加纯 ASCII **只读**探针
+  （不替换任何类），输出走 `Debug.message` → logcat（tag `cocos2d-x debug info`）。
+  实测结论：
+  - patch.tjs 阶段 `global.KAGParser` 已存在、`global.KAGParserEx` **不存在**；
+  - `System.addContinuousHandler` 存在且**非致命**（连续跑满 901/1800 帧游戏正常）
+    ——推翻旧结论「延迟手段本身致命」：致命的是 `Timer`；
+  - `global.KAGParser` 在 patch.tjs 之后**第 1 帧**被换掉，但换掉后
+    `global.KAGParserEx` 仍不是全局名（类未暴露为全局）。
+  - TJS 方言坑：不支持 `for (var k in obj)` 与 `in`；访问不存在的全局会抛异常并
+    打出约 2 万行反汇编转储（不能靠 try/catch 轮询未注册全局）；探针必须纯 ASCII。
+  - 关闭 pref 后 overlay 不再生成（`KRKR patch overlay disabled`），控制台恢复
+    632 行基线——**可安全回滚**。
+- **B5 下一步（未实施，需用户确认）**：patch.tjs 阶段注册 continuous handler，
+  第 1 帧检测到 `global.KAGParser` 被替换后**立即子类化包装**（复用 v8 的
+  `getNextTag` 缓冲逻辑）——避开引导期崩溃、不用 Timer；该步会真正替换解析器类，
+  属可能崩游戏的实验。
 
 ## 2026-10-08 会话（四十四）：查词性能优化 B1–B4 实施 + 真机实测
 

@@ -818,7 +818,8 @@ object EngineLauncher {
         val forceFont = settings.krForceDefaultFont
         val patchOverlay = prepareKrPatchOverlay(
             context, engineRoot, settings.krPatchOverlayMode,
-            settings.krTextSource == EngineSettingsStore.KR_TEXT_SOURCE_ENGINE)
+            settings.krTextSource == EngineSettingsStore.KR_TEXT_SOURCE_ENGINE,
+            EngineSettingsStore.isKrExtractProbe(context))
         val steamConfigOverlay = prepareKrSteamConfigOverlay(context, engineRoot, settings.krPatchOverlayMode)
         return Intent(context, activity).apply {
             // KR2 引擎把 path 视为“启动条目”，gamedir = path 的父目录。
@@ -1337,6 +1338,7 @@ object EngineLauncher {
         engineRoot: String,
         mode: String,
         includeExtractTjs: Boolean = false,
+        includeExtractProbe: Boolean = false,
     ): KrPatchOverlay? {
         val root = File(engineRoot)
         if (!root.isDirectory || engineRoot.startsWith("content://")) return null
@@ -1357,8 +1359,16 @@ object EngineLauncher {
             // [KRKR-EXTRACT] TJS 发射器（设置开启时）：包一层 KAGParser 把对白打向
             // 控制台，由 krkr_extract_hook 的 Label::setString 钩子回收（见方案文档）
             if (includeExtractTjs) append(krExtractEmitterScriptV8())
+            // [KRKR-EXTRACT] 解析器层只读探针（kr_extract_probe，默认关）
+            if (includeExtractProbe) append(krExtractProbeScript())
         }
-        val baseBytes = if (force || includeSteamStub) cleanup?.bytes ?: ByteArray(0) else ByteArray(0)
+        // 探针/Steam 桩注入时必须保留游戏自己的 patch.tjs 内容（base 取清理后的原文），
+        // 否则 overlay 会把游戏 patch 整份替换掉，改变游戏引导行为。
+        val baseBytes = if (force || includeSteamStub || includeExtractProbe) {
+            cleanup?.bytes ?: ByteArray(0)
+        } else {
+            ByteArray(0)
+        }
         val patchCharset = detectKrPatchCharset(baseBytes)
         val additions = additionsText.toByteArray(patchCharset)
         if (additions.isEmpty()) return null
@@ -1549,6 +1559,59 @@ object EngineLauncher {
         |}
         |// KAGPARSER_ASSIGN_DISABLED_BISECT
         |try { Debug.message("[TNEXTv7b-loaded-noassign]"); } catch(e) {}
+                |
+    """.trimMargin()
+
+    /**
+     * [KRKR-EXTRACT] 解析器层**只读探针**（设置 `kr_extract_probe` 开启时随 patch.tjs
+     * overlay 注入；默认关）。用途：判断 Ex 类游戏（KAGParserEx，如 tsukikage）能否走
+     * 解析器层提取——只观测、不替换任何类、不改变游戏逻辑：
+     * 1. patch.tjs 阶段 `global.KAGParser` / `global.KAGParserEx` 是否已存在；
+     * 2. `System.addContinuousHandler` 与 `Timer` 是否可用（Timer 在 krkr2 1.3.9
+     *    的 Initialize 阶段会段错误，这里只探测存在性、不实例化）；
+     * 3. 若 continuous handler 可用，逐帧等待 KAGParserEx 注册并打印帧数与成员名，
+     *    得到「注册前不可写」的可延迟窗口大小（上限 900 帧后放弃并移除 handler）。
+     *
+     * 全部 try/catch 包裹，且必须保持**纯 ASCII**：Kirikiroid2 按内容探测 patch.tjs
+     * 编码，混入 UTF-8 日文会改变探测结果并殃及后续 SJIS 脚本解码。
+     * 输出走 Debug.message → 控制台 → logcat（tag `cocos2d-x debug info`）。
+     */
+    private fun krExtractProbeScript(): String = """
+        |
+        |
+        |// TYRANOR_NEXT_KRKR_EXTRACT_PROBE_V9
+        |global.__tnOrig = null;
+        |try { global.__tnOrig = global.KAGParser; } catch(e) {}
+        |function tnTick() {
+        |  global.__tnFrames = global.__tnFrames + 1;
+        |  if (global.__tnDone) return;
+        |  var f = global.__tnFrames;
+        |  if (f == 600) { try { Debug.message("[probe] t600"); } catch(e) {} }
+        |  if (f == 1800) { try { Debug.message("[probe] t1800"); } catch(e) {} }
+        |  if (f > 5400) {
+        |    global.__tnDone = true;
+        |    try { Debug.message("[probe] giveup frames=" + f); } catch(e) {}
+        |    try { System.removeContinuousHandler(tnTick); } catch(e) {}
+        |    return;
+        |  }
+        |  var same = true;
+        |  try { same = (global.KAGParser === global.__tnOrig); } catch(e) { same = true; }
+        |  if (same) return;
+        |  global.__tnDone = true;
+        |  try { Debug.message("[probe] swapped frames=" + f); } catch(e) {}
+        |  try { Debug.message("[probe] swapToEx=" + (!(global.KAGParserEx === void))); } catch(e) { try { Debug.message("[probe] swapToEx=threw"); } catch(e2) {} }
+        |  try { System.removeContinuousHandler(tnTick); } catch(e) {}
+        |}
+        |try { Debug.message("[probe] patch.tjs executed"); } catch(e) {}
+        |try { Debug.message("[probe] KAGParserPresent=" + (!(global.KAGParser === void))); } catch(e) {}
+        |try {
+        |  global.__tnFrames = 0;
+        |  global.__tnDone = false;
+        |  System.addContinuousHandler(tnTick);
+        |  Debug.message("[probe] continuous handler installed");
+        |} catch(e) {
+        |  try { Debug.message("[probe] handler setup failed"); } catch(e2) {}
+        |}
                 |
     """.trimMargin()
 
