@@ -41,27 +41,17 @@
       下载（GET+导入）全通过，全程零独立配置 ✓
 
 ## 未完成 / 遗留
-- [ ] 剧情文本框手柄链路复刻（方案见 docs/剧情文本框手柄链路复刻方案.md，2026-10-08
-      对照 web game text 的 gamepad.ts / dict-gamepad.ts / gamepad-block.ts /
-      background.ts:gamepadBlockMain 后定）：参考链路四段=① 关闭态只认 RB 呼出
-      （且不写其它键边沿状态，防吞游戏按键）② 面板打开后覆写游戏侧
-      navigator.getGamepads 返回全 null（MAIN world 注入）实现**焦点独占**：
-      游戏读不到任何按键，扩展自己在 isolated world 仍读真实手柄 ③ 面板内全量
-      路由为 dict:gamepad 语义动作（sdUp/Down 换行、sdLeft/Right **选词**、
-      sdConfirm **查词**、sdFlashcard **词卡**、sdSentenceCard 句卡、
-      sdTranslate **翻译**、sdScrollUp/Down 滚动、sdExit 两步退出）④ 键盘与手柄
-      共用同一语义动作表。本项目现状：②③ 已有等价实现但**硬编码**且 Artemis 宿主
-      **按键顺序错误**（virtualMouse.handleKey 在 panel.handleKey 之前 →
-      ArtemisLauncherBaseActivity:403/211，面板打开时手柄信号会漏进游戏）；
-      ① 呼出键硬编码 RB；摇杆轴无面板侧判定。安卓侧没有「覆写游戏读手柄函数」的
-      对应物，须按宿主输入路径分三层：手段 A 按键与轴事件全吞（顺序修正）/手段 B
-      native 焦点迁移（复用 Artemis 已有 setKeepNativeFocused，面板展开时 native
-      失焦）/手段 C 输入设备级兜底（仅当 B 仍泄漏）。六批：P1 顺序修正+呼出键动作化
-      →P2 PanelActionBindings（13 动作，默认值与现状逐键一致）+ handleKey 改查表
-      →P3 手段 A/B（含摇杆前置消费）→P4 并入快捷键方案快照 + 手柄设置页「面板动作」
-      捕获式绑定区→P5 手段 C 兜底验证→P6 三引擎真机验收。约束：关闭态只处理呼出键；
-      音量键继续放行；未自定义时逐键行为不得回归；prefs 需 MODE_MULTI_PROCESS；
-      面板展开时摇杆不得驱动虚拟鼠标光标
+- [x] 剧情文本框手柄链路复刻（方案见 docs/dev/剧情文本框手柄链路复刻方案.md，2026-10-09 完成
+      P1–P4 + P6）：呼出键动作化（`PanelActionBindings.PANEL_TOGGLE`，默认 RB）＋关闭态只碰呼出键；
+      15 个面板动作表 + `handleKey` 查表分发（默认值与旧行为逐键一致）；三宿主按键/轴事件
+      面板展开时全吞（新增 `panel.handleMotion`）；Artemis 宿主改为面板优先并新增面板键捕获窗
+      + 展开时持焦切换；手柄设置页新增「面板动作」捕获式绑定区（三语言）。
+      真机验收：ONS（ESG-13556）与 KRKR（Kazura Uta）**通过**——RB 呼出、动作日志逐条命中、
+      面板展开时连发未绑定键前后截图哈希相同（游戏零响应）、BACK 走 exit 关闭。
+      遗留：① Artemis 按键**完全不经 Java**（键盘源与手柄源都试过，连虚拟鼠标可聚焦捕获窗也
+      收不到；该内核还缺 `injectHostTouch`）→ 面板只能触摸打开，要支持手柄需改内核；
+      ② 摇杆/轴事件无法用 adb 注入，仅代码级保证（宿主已前置消费）。
+      ③ 方案 P4 的「并入快捷键方案快照」待「快捷键管理」功能落地时一并纳入（当前仓库无该机制）。
 - [ ] 词汇处理完整移植（方案见 docs/词汇处理完整移植方案.md，2026-10-08 对照 TrackReader
       packages/domain/src/yomitan 后定）：现状已具备——词形还原引擎（conditions/transforms/
       递归收敛/入口条件全量激活/结果缓存，OnsDeinflector 185-244）、日语全量 439 条规则、
