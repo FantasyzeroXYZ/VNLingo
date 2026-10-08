@@ -934,9 +934,15 @@
    `adb shell am start -n com.tyranor.next/com.tyranor.next.ui.game.GameShortcutActivity --es extra_shortcut_id game_<sha256(游戏uri)>`
    （`GameShortcutManager.shortcutId` = `"game_" + sha256(uri)`；uri 用 `adb exec-out run-as … cat databases/game_library.db` 拉库后查）。
    这条路径稳、可复现，是后续所有游戏内验收的首选入口。
-9. **Artemis 的输入是 NativeActivity 直读**：面板**收起**时按键完全到不了 Java（「手柄呼出面板」
-   在 Artemis 上不成立，除非让键捕获窗常驻持焦并转发未消费键——属于影响全体玩家的改动，需先与
-   用户确认）。给 Artemis 做按键相关功能时，先确认「面板当时是否已经开着」。
+9. **Artemis 的输入是 NativeActivity 直读，按键完全不经 Java**（2026-10-09 两轮实测，比原注释更彻底）：
+   `input keyevent`（键盘源）与 `input gamepad keyevent`（手柄源）在 Artemis 上都**收不到任何
+   Java 侧回调**——连「虚拟鼠标模式」的可聚焦光标捕获窗也不接收；因此方案 §3.2 的
+   A/B/C 三种 Android 手段都无从生效。该内核还缺 `injectHostTouch` 符号（`UnsatisfiedLinkError`），
+   虚拟鼠标的点击也不可用。**结论：Artemis 面板只能触摸打开**；要给 Artemis 加手柄快捷键，
+   必须改内核（native → Java 回调），不是应用层能解决的。
+10. **注入手柄事件用 `adb shell input gamepad keyevent <code>`**（`input` 支持
+   dpad/keyboard/mouse/gamepad/joystick… 源前缀）；排查「手柄键到底进了谁」时，键盘源与手柄源
+   各发一次对比，能区分「事件没到」与「到了但没人处理」。
 5. **「存档目录 = 游戏根」的引擎必须用白名单，不能只排资源包**（2026-10-09 修复）：
    Artemis 游戏根里除了本体的 `root.pfs/movie/system`，还有**我们自己写进去的**
    `screenshots/`、`extract/`、`artemis_extract/voice/`（提取面板与内核），
