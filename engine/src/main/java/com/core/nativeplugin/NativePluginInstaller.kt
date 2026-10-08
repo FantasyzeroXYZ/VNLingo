@@ -14,13 +14,17 @@ data class NativePluginImportResult(
     val success: Boolean,
     val code: String,
     val zipSha256: String? = null,
+    /** 是否通过了期望哈希校验（未配置期望哈希时只能做结构校验，为 false）。 */
+    val verified: Boolean = true,
 )
 
 /**
  * Imports native engine plugins from user-selected zip files.
  *
- * The importer verifies only the whole zip SHA-256 against the expected hash configured by
- * the app, then performs structural checks and zip-slip protection before replacing current.
+ * 校验策略：配置了期望 zip SHA-256 时严格比对整包哈希；未配置（本仓库当前未随
+ * manifest 提供哈希、也没有下载通道）时退化为**仅结构校验**（目录/必备 so/清单），
+ * 供用户本地导入自备插件 zip 恢复运行时，结果里 verified=false 由 UI 提示。
+ * 两种路径都做 zip-slip 防护与替换前暂存校验。
  */
 object NativePluginInstaller {
     private const val TAG = "NativePluginInstaller"
@@ -85,7 +89,6 @@ object NativePluginInstaller {
         if (uri == null) return NativePluginImportResult(false, "uri_missing")
         val appContext = context.applicationContext
         val expected = expectedShaProvider()
-            ?: return NativePluginImportResult(false, "expected_sha256_missing")
         val actual = try {
             calculateSha256(appContext, uri)
         } catch (error: IOException) {
@@ -98,7 +101,9 @@ object NativePluginInstaller {
             Log.w(TAG, "Invalid $engineName plugin zip uri", error)
             return NativePluginImportResult(false, "read_failed")
         }
-        if (!expected.equals(actual, ignoreCase = true)) {
+        // 配置了期望哈希就严格比对；未配置则只做结构校验（见类注释）
+        val verified = expected != null && expected.equals(actual, ignoreCase = true)
+        if (expected != null && !verified) {
             return NativePluginImportResult(false, "sha256_mismatch", actual)
         }
 
@@ -108,14 +113,14 @@ object NativePluginInstaller {
         try {
             unzipSafely(appContext, uri, staging)
             if (!validator(staging)) {
-                return NativePluginImportResult(false, "invalid_structure", actual)
+                return NativePluginImportResult(false, "invalid_structure", actual, verified)
             }
             hardenInstalledFiles(staging)
             val manifest = NativePluginManager.parseManifest(staging)
             val pluginVersion = manifest?.optInt("pluginVersion", 1) ?: 1
             val bridgeAbi = manifest?.optInt("bridgeAbi", defaultBridgeAbi) ?: defaultBridgeAbi
             if (!replaceCurrent(staging, root, currentDirProvider())) {
-                return NativePluginImportResult(false, "replace_failed", actual)
+                return NativePluginImportResult(false, "replace_failed", actual, verified)
             }
             recorder(
                 appContext,
@@ -124,7 +129,7 @@ object NativePluginInstaller {
                 bridgeAbi,
                 System.currentTimeMillis(),
             )
-            return NativePluginImportResult(true, "ok", actual)
+            return NativePluginImportResult(true, if (verified) "ok" else "ok_unverified", actual, verified)
         } catch (error: ZipRejectedException) {
             Log.w(TAG, "Rejected $engineName plugin zip", error)
             return NativePluginImportResult(false, "zip_rejected", actual)

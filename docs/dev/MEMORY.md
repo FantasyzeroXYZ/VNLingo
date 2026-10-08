@@ -1,7 +1,7 @@
 # VNLingo MEMORY — AI 会话记忆（环境、踩坑、决策、续作指南）
 
 > 供后续 AI 会话快速接手。配合 `PROGRESS.md`（进度，同目录）与 `docs/guide/游戏内提取制卡功能方案.md`（提取功能线方案）阅读。
-> 更新时间：2026-10-05
+> 更新时间：2026-10-08
 
 ## 本机环境事实
 
@@ -457,3 +457,94 @@
    无语音行未实测，跨游戏验证时先看这批日志核键名。
 5. **说话人/正文 native 配对**：400ms 窗 + 短行(≤48B) 判说话人，合并单次上行；
    420ms 兜底线程 flush 独立行。分条上行会让 facade 历史多出说话人碎片条目。
+
+## 实测踩坑（2026-10-08 会话三新增：查词性能与真机基准方法）
+
+1. **`entries` 表没有 reading 索引是查词慢的根因**（会话四十三定位）：
+   `migrate()` 只建了 `idx_entries_term`（单列，实际没用）与
+   `idx_entries_dict_term`。查询 `dict_id IN (1) AND reading = ?` 在 SQLite 3.28
+   （Android 11）上**不会**走 skip-scan（无 `sqlite_stat1` 统计），退化为按
+   `dict_id` 单列扫描该索引 + `ORDER BY pop DESC` 临时 B 树。面板
+   `tryMatchCandidate` 对每个候选都查一次 reading，21 字句子 200 - 600 次查询 →
+   真机实测整句扫描 2345 ms，补 `(reading, dict_id)` 索引后 22.7 ms。
+   **结论：词条表按 TrackReader `db.ts` 的做法建 term / reading / dictionaryId
+   三个索引；导入后跑一次 ANALYZE。** 顺手记：单列 `idx_entries_term` 无用可删。
+2. **安卓代码的性能可以在真机上直接量，不用装 APK**：`d8 --min-api 30` 把编译产物
+   打成 dex → `adb push` 到 `/data/local/tmp` → `adb shell "CLASSPATH=/data/local/tmp/x.dex
+   app_process /system/bin <主类>"`。此时用的是**设备 ART 与设备 libsqlite.so**
+   （SQLite 版本 3.28.0），比桌面 JVM 估算准得多；`android.util.Log` 等框架类由
+   设备的 bootclasspath 提供，`org.json` 也直接可用。要点：类要有 package 声明
+   （无包名的 .class 在 ART 上会 ClassNotFoundException）；私有嵌套类无法跨包引用，
+   用反射 shim 注入测试数据。
+3. **Windows PowerShell 的 `>` 重定向会毁二进制**：本机把 stdout 当文本编码成
+   UTF-16LE（文件头 `ff fe`），`adb exec-out ... > file` 拉下来的数据库必然
+   "file is not a database"。改用 `cmd /c "adb exec-out ... > file"` 或
+   [System.IO.FileStream] 直写。
+4. **真机拉应用私有数据库**：`cmd /c "adb exec-out ""run-as com.tyranor.next cat
+   databases/ons_dict.db"" > x.db"`。应用 shell 用户不能执行 /data/local/tmp 里的
+   原生二进制，但 `shell` 用户可读写执行该目录——所以测库要用**副本**
+   （`cp` 到 /data/local/tmp），不要试图原地改应用私有库。
+5. **词典查询计划随规模变化**：6.7 万词条时无 reading 索引的退化扫描约 4 ms/次
+   （66k 索引页基本驻留 2 MB 页缓存），50 万词条时同一查询 71 ms/次、整句扫描 46 秒。
+   小词典上的「还行」会掩盖索引缺口，性能用例必须带一个大词典（生成脚本见
+   `.tmp/perf/gen_big_dict.py`）。
+
+## 实测踩坑（2026-10-08 会话四新增：查词性能 B1–B4 实施）
+
+1. **补索引必须另开一条连接，否则「后台线程」名存实亡**：`CREATE INDEX` 与查询
+   共用同一个 `SQLiteDatabase` 时，DDL 的写事务会把同连接的查询一起堵住。
+   做法：`db()` 打开时只探测 `sqlite_master`，词条数 ≤ 10 万同步建
+   （6.7 万 = 297 ms，可接受），超过则 `openOrCreateDatabase` 新开连接 +
+   `busy_timeout` 后在后台建，主连接照常查词；完成状态用静态
+   `isReadingIndexBuilding()` 暴露给 UI 轮询。注意建索引期间别处写库会等
+   busy_timeout（5 s），大词典导入要避开这一窗口。
+2. **DDL 要先用 sqlite_master 探测**：`CREATE INDEX IF NOT EXISTS` 与
+   `DROP INDEX IF EXISTS` 每次执行都算一次 schema 写事务（跨进程打开时更容易
+   撞锁），先 `SELECT 1 FROM sqlite_master WHERE name=?` 再决定更省事。
+   `ANALYZE` 无结果行，可以 `execSQL`；`PRAGMA` 有结果行，必须 `rawQuery`。
+3. **批量 IN 改写要保住命中优先级**：把「原形 term → 原形 reading → 各还原形
+   term → reading」的串行查询改成批量时，**不能只用一张「命中键 → 结果」的表**——
+   同一个还原形既可能 term 命中也可能 reading 命中，必须 term / reading 各查一次
+   （两张 map），再按原顺序取用；`maxGroups` 上限与 gloss 合并语义照旧
+   （超出上限只并释义、不新增组）。正确性用整句全候选新旧路径逐一对照兜底
+   （真机 41/41 一致）。
+4. **建索引后记得 ANALYZE**：没有 `sqlite_stat1` 时 SQLite 3.28 对
+   `dict_id IN (...) AND reading = ?` 不会自己选 skip-scan；建索引 + ANALYZE 后
+   计划稳定落到 `idx_entries_reading (reading=? AND dict_id=?)`。
+5. **性能证据链要能一键复现**：`.tmp/perf/droid/perf/Probe5.java` 在**同一份库**上
+   对照「旧串行 / 新批量」×「有 / 无索引」四组，编译方式 = `javac`（classpath =
+   `android.jar` + `json.jar`）→ `d8 --min-api 30` → `app_process`
+   （见上一节第 2 条）。改完立刻出数字：无索引 374 ms → 有索引 5.9 ms，
+   同库旧串行路径 603 ms / 9.7 ms。
+6. **应用内的性能日志要落在 DiagLog 而不是临时打点**：面板查词现在记
+   `hit: <词> groups=N in Mms` / `miss in Mms`，真机日志（`files/diag/diag.log`，
+   `run-as` 可读）实测 8–31 ms/次，后续回归直接看数值，不必再搭基准。
+
+## 实测踩坑（2026-10-08 会话四之二：游玩统计注入与运行时恢复）
+
+1. **`play_sessions.game_title` 不是游戏名**：`PlaySessionLifecycle` 取的是
+   `activity.title`，引擎宿主 Activity 上等于应用名（全部记录都是「VNLingo」）。
+   按 title 聚合/展示会把所有游戏并成一条；**展示名要用 game_uri 路径推导**
+   （`.../game/<引擎>/<游戏目录>/...` 取游戏目录段；旧 JSON 数据源的键是游戏根
+   目录绝对路径，同一套推导可用）。要修生命周期侧就得引入「路径 → 库内标题」
+   查询，暂未做。
+2. **engine 引不到 app 的注入模式可复用**：`OnsSaveCloud.setWebDavCredentials`
+   之后，AI 助手统计走同一招 `OnsAgentDialog.setPlayStatsProvider`（静态
+   provider + 接口，`TyranorNextApplication.onCreate` 注入）。引擎子进程也会跑
+   Application.onCreate，因此注入在游戏进程同样生效；provider 调用要 try/catch，
+   引擎线程不能因数据源异常死掉。
+3. **LLM 工具「有定义没接线」是隐蔽桩**：`get_play_stats` 之前既没有工具条目、
+   `get_game_info` 也从不调用 `getPlayStats()`——只看 `ToolHost` 实现会以为
+   「只差数据源」。加工具时同时补 `buildTools()` 条目与 `executeTool` 分支。
+4. **原生运行时的真实恢复通道**：插件 zip 随 APK 打包在
+   `assets/nativeplugins/<engineId>.zip`，`EnginePluginBootstrap` 只认这个来源
+   （无下载通道、manifest 也没配期望哈希）。所以「卸载后恢复」的正确实现 =
+   `markRestored` + `provisionIfNeeded` 重新解压内置 zip（离线可用），
+   而不是去找网络下载。本地 zip 导入要用 `NativePluginInstaller`，其整包
+   SHA-256 校验在未配置期望哈希时会必然失败——已放宽为「无期望哈希则仅结构
+   校验」并在 UI/结果里标注 `verified=false`。
+5. **MIUI DocumentsUI 的文件列表不吃 `adb input tap`**：抽屉、视图切换、Chip
+   都能点，列表项（网格/列表都试过）点不动；`input swipe x y x y 60` 模拟点按
+   同样无效，D-pad 只移动焦点且会误入目录。**需要选文件的自动化请改用模拟器
+   （Pixel_6，历史会话里 SAF 选文件成功过）或无障碍服务**，别在真机上耗时间。
+

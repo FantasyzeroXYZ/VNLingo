@@ -2,7 +2,90 @@
 
 > 本文件由 AI 会话维护，记录本仓库功能线的实施进度。配合 `MEMORY.md`（环境/踩坑/决策，同目录）与
 > `docs/说明/游戏内提取制卡功能方案.md`（提取功能线方案）阅读。
-> 更新时间：2026-10-06
+> 更新时间：2026-10-08
+
+## 2026-10-08 会话（四十四）：查词性能优化 B1–B4 实施 + 真机实测
+
+- **B1 索引**：`OnsDictStore.migrate()` 补 `idx_entries_reading(reading, dict_id)`
+  （老库启动即自动补建，无需重导）；删掉实际未被任何查询使用的单列
+  `idx_entries_term`；导入收尾与建索引后各跑一次 `ANALYZE`（此前 `sqlite_stat1`
+  为空，规划器只能「碰巧」选对计划）。真机存量 66545 词条库首次打开
+  **同步建索引 297 ms**（日志 `reading index ready (inline): 297ms`），
+  库文件 31.08 MB → 31.17 MB。
+- **B2 收窄与缓存**：面板读音查询收窄为「含假名且长度 > 1」；`OnsDeinflector`
+  加 512 条 LRU 还原缓存（同一句反复点选重复率高）；`OnsDictStore` 查询范围
+  （scope）加 3s TTL 缓存，本进程词典增删/启停/切当前即时失效；连接参数补
+  `PRAGMA cache_size = -16384`（16 MB）与 `temp_store = MEMORY`。
+- **B3 批量 IN 查询**：新增 `batchTermLookup` / `batchReadingLookup`——一次
+  `IN` 取回「原形 + 全部还原形」，面板 `tryMatchCandidate` 由
+  「1 + 1 + 2N 次串行查询」降为「term、reading 各一次」；命中优先级
+  （原形 term → 原形 reading → 各还原形 term/reading）保持不变，单值路径与批量
+  共用同一 SQL 与分行实现，避免两套逻辑走偏。
+- **B4 后台建索引**：存量库词条数 > 10 万时**另开一条连接**在后台建索引
+  （同连接做 DDL 会把查询一起堵住，「后台」名存实亡）；主连接照常查词，
+  状态经 `isReadingIndexBuilding()` 暴露，词典页显示「正在优化词典库索引…」；
+  导入路径复用既有 Progress 回调提示。
+- **真机实测（红米 K40 / Android 11 / SQLite 3.28 / 真实 6.7 万词条库，
+  新增 `.tmp/perf/droid/perf/Probe5.java` 同库四组对照）**：
+  - 面板整句逐字扫描：无索引 374.6 / 350.8 ms → 补索引 **5.88 / 5.72 ms**
+    （同一份库上的旧串行路径：无索引 603 / 537 ms、有索引 9.7 / 7.3 ms）；
+  - 查询计划：`SCAN TABLE entries + USE TEMP B-TREE FOR ORDER BY` →
+    `SEARCH TABLE entries USING INDEX idx_entries_reading (reading=? AND dict_id=?)`；
+  - 正确性：整句 41 个候选逐一对照新旧路径，**命中零不一致**；
+  - 应用内端到端（真机 Kazura Uta / KRKR，点选查词）：`dict.log`
+    实测 **8–31 ms/次**（`hit: かえした groups=5 in 28ms`、`続く in 8ms` 等），
+    释义卡与词形还原命中（見て → る）与优化前一致。
+- 面板查词补耗时日志（`hit: <词> groups=N in Mms` / `miss in Mms`），后续回归可直接看数值。
+- 设备 `/data/local/tmp` 测试产物按方案清理：794 MB → 80 MB（保留
+  `bench5.dex` + deinflect assets + `s_app.db`/`s_idx.db` 供复测）。
+- **AI 助手「游玩统计」工具落地**（原为写死桩）：`OnsAgentEngine` 新增
+  `get_play_stats` 工具（原 `get_game_info` 只返回游戏名、从未调用统计）；
+  `OnsAgentDialog.setPlayStatsProvider` 注入数据源（照 OnsSaveCloud 凭据注入
+  模式，engine 不反向依赖 app）；app 侧新增 `AgentPlayStats.describe`，合并
+  会话制 `PlaySessionTracker` + 旧 `play_time.json` 双数据源，输出当前游戏累计/
+  状态、全部累计与本周、时长排行、最近游玩。真机取 play_sessions.db 复刻聚合
+  校验输出（当前游戏 53 分钟/状态进行中、全部 6.5 小时、排行与最近记录正确）。
+  附带发现：`play_sessions.game_title` 实际记的是 Activity 标题（=应用名
+  「VNLingo」），不能当游戏名用——展示名统一由 game_uri 路径推导
+  （`.../game/<引擎>/<游戏目录>/...`）。
+- **运行时「导入 zip」+「从内置资源恢复」入口**（原两条恢复通道零调用方，
+  卸载后实际无从恢复）：`NativeRuntimeManageCard` 新增两键；`NativePluginInstaller`
+  在有期望哈希时严格校验、未配置时期望哈希路径退化为仅结构校验
+  （结果 `verified` 标记，UI 提示未做哈希校验）。真机端到端：卸载 ONS 运行时 →
+  卡片转「未安装」→「从内置资源恢复」→ 重新解压 APK assets 插件（日志
+  `provisioned native plugin: ons`）→ 状态回到「已启用」，插件文件齐全；
+  「导入 zip」按钮拉起系统文件选择器已验证。注：MIUI 文件列表对 `adb input tap`
+  不响应，选中文件那一步未在自动化中走完（逻辑为既有实现 + 上述放宽）。
+- 待办余项：`WEB_RPGMV_V1`（Web 注入资源包）仍无 UI 入口、状态恒「已集成」
+  （GameRuntimeHost/WebRuntimeAssets 为 engine 内部 API，需先定入口再接线）。
+
+## 2026-10-08 会话（四十三）：查词性能定位与优化方案（真机实测）
+
+- **用户反馈**：查词搜索很慢。本轮只做定位与方案，不改代码。
+- **定位方法**：在真机上跑仓库内未修改的 `OnsDictStore` / `OnsDeinflector` 源码
+  （编译为 DEX 后 `app_process` 运行，动用设备 ART 与 `libsqlite.so`），另写原生
+  C 基准复刻 SQL 查询计划；对照组用同一份库的副本切换 schema 实现 A/B。
+- **根因**：`entries` 表**没有 reading 索引**，而面板 `tryMatchCandidate` 对每个候选
+  依次做 term → reading → 还原候选 term/reading，其中 reading 查询全部退化为
+  「按 `idx_entries_dict_term(dict_id=?)` 单列顺序扫描 + `ORDER BY pop DESC` 临时 B 树」。
+  一个 21 字符句子约 63 个候选、累计 200 - 600 次查询，于是秒级起步。
+- **真机实测（红米 K40 / Android 11 / SQLite 3.28.0 / 明鏡日汉双解辞典 66545 条）**：
+  - 面板逐字扫描整句：**2345 ms**（无索引）→ **22.7 ms**（补 `(reading,dict_id)` 索引）
+  - 词典页 `search()`：7.4 ms → 8.1 ms（词典页本来就只用几十次查询，不是主要受害者）
+  - 50 万词条合成库：整句扫描 **46379 ms** → 25.6 ms；`reading = ?` 单查 71 ms → 0.011 ms
+  - 排除项：`OnsDeinflector` 逐前缀 20 层合计 **0.43 ms**、单次 `searchTermExact`
+    0.17 ms（含 `buildScope` 0.086 ms）、裸 SQL 0.09 ms —— 算法与语句本身都不慢
+- **与 TrackReader 对比**（`packages/domain/src/yomitan`）：参考实现的 `db.ts` 对词条表
+  **同时建 term / reading / dictionaryId 三个索引**，并有 `batchSearchTerms` 一次事务批量
+  查询、`skipReading = scope !== 'ja'` 收窄读音查询、词典元数据常驻内存过滤；
+  VNLingo 缺 reading 索引、逐候选串行查询、`buildScope()` 每次现查数据库。
+  zh/vi 规则数据已同步（两侧都是无 transforms，仅预处理），无缺口。
+- **方案已落盘**：`docs/dev/查词性能优化方案.md`（根因、实测数据、差异对照、
+  P0 - P2 优化项、验收标准、实施顺序），待办已挂分四批的执行条目：
+  B1 补索引 + ANALYZE（P0，老库启动自动补建，无需重导）／B2 reading 收窄 + 缓存 +
+  PRAGMA／B3 候选批量 IN 查询／B4 首启后台建索引 + 进度提示。
+- 性能验证工具在 `.tmp/perf/`（真机 `Probe4` A/B 可直接复现）；设备
+  `/data/local/tmp` 下留有测试产物约 1 GB，待清理。
 
 ## 2026-10-07 会话（四十）：RinneMobile 功能引入批次一 + 遗漏入口补齐
 

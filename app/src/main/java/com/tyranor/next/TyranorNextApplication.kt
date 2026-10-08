@@ -33,6 +33,11 @@ class TyranorNextApplication : Application(), DefaultLifecycleObserver, Configur
             if (!manager.isConfigured) null
             else manager.config.let { arrayOf(it.serverUrl, it.username, it.password) }
         }
+        // AI 助手「游玩统计」工具数据源（PlaySessionTracker 在 app 模块，
+        // engine 不反向依赖 app，同样此处注入）
+        com.core.ons.OnsAgentDialog.setPlayStatsProvider { gameName ->
+            com.tyranor.next.core.play.AgentPlayStats.describe(this, gameName)
+        }
         // 共享 prefs 文件更名（yukihub_prefs → tyranor_prefs）：所有进程（含引擎子进程）
         // 启动最早时机一次性迁移，必须先于任何 EngineSettingsStore/引擎偏好读取。
         PrefsRenameMigration.migrate(this)

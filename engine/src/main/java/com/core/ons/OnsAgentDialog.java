@@ -29,6 +29,23 @@ public final class OnsAgentDialog {
     private static final int COLOR_STATUS = 0xFF94A3B8;
     private static final int BG_PANEL = 0xE6181818;
     private static final int BG_INPUT = 0xFF1E293B;
+    private static final String TAG = "OnsAgentDialog";
+
+    /**
+     * 游玩统计数据源：engine 引不到 app（PlaySessionTracker 在 app 模块），
+     * 由 app 启动时注入（同 OnsSaveCloud 凭据注入模式，避免反向依赖）。
+     */
+    public interface PlayStatsProvider {
+        /** @param gameName 当前游戏显示名（可空）；返回多行统计文本，空串视为无记录。 */
+        String describe(String gameName);
+    }
+
+    private static volatile PlayStatsProvider playStatsProvider;
+
+    /** app 启动时注入（TyranorNextApplication）。 */
+    public static void setPlayStatsProvider(PlayStatsProvider provider) {
+        playStatsProvider = provider;
+    }
 
     private OnsAgentDialog() {
     }
@@ -236,7 +253,15 @@ public final class OnsAgentDialog {
 
             @Override
             public String getPlayStats() {
-                return "游玩统计功能开发中";
+                PlayStatsProvider provider = playStatsProvider;
+                if (provider == null) return "游玩统计不可用（未注入数据源）";
+                try {
+                    String text = provider.describe(panel.getGameDisplayName());
+                    return (text == null || text.isEmpty()) ? "暂无游玩记录" : text;
+                } catch (Throwable t) {
+                    android.util.Log.w(TAG, "play stats provider failed", t);
+                    return "游玩统计读取失败：" + t;
+                }
             }
 
             @Override

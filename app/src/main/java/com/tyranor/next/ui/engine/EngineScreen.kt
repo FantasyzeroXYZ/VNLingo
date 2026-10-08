@@ -1,6 +1,8 @@
 package com.tyranor.next.ui.engine
 
 import androidx.annotation.StringRes
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.core.LinearEasing
 import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.animation.core.tween
@@ -43,6 +45,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -59,10 +62,13 @@ import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.compose.LifecycleEventEffect
 import com.tyranor.next.R
 import com.core.engine.runtime.GameRuntime
+import com.core.nativeplugin.NativePluginImportResult
 import com.core.nativeplugin.NativePluginInstallState
+import com.core.nativeplugin.NativePluginInstaller
 import com.tyranor.next.core.engine.EngineType
 import com.tyranor.next.core.engine.external.ExternalEngineLauncher
 import com.tyranor.next.core.engine.external.ExternalEngineModuleRegistry
+import com.tyranor.next.core.engine.plugin.EnginePluginBootstrap
 import com.tyranor.next.core.game.launch.EngineLauncher
 import com.tyranor.next.core.settings.AppSettingsStore
 import com.tyranor.next.core.settings.EngineSettingsStore
@@ -89,7 +95,11 @@ import top.yukonga.miuix.kmp.basic.Card as MiuixCard
 import top.yukonga.miuix.kmp.basic.TabRow
 import top.yukonga.miuix.kmp.basic.TabRowDefaults
 import androidx.compose.ui.graphics.Color
+import android.net.Uri
 import android.widget.Toast
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 
 /** 引擎页：列表行展示已集成的游戏引擎；行点击直达该引擎设置（合并原引擎设置入口列表）。 */
 @Composable
@@ -399,16 +409,21 @@ private fun EngineRow(
 }
 
 /**
- * 运行时管理卡片（KRKR/ONS/Artemis 引擎设置页顶部）：安装状态 + 启用开关 + 卸载。
+ * 运行时管理卡片（KRKR/ONS/Artemis 引擎设置页顶部）：安装状态 + 启用开关 + 卸载 +
+ * 本地导入 zip / 从内置资源恢复。
  * 启停/卸载即 [GameRuntime.setEnabled]/[GameRuntime.uninstall]（卸载删除实体并标记
- * removed，引导期不再自动还原）；未安装时提示回引擎列表重新下载（行尾状态图标）。
+ * removed，引导期不再自动还原）；恢复走「导入 zip」（[NativePluginInstaller]）
+ * 或「从内置资源恢复」（重新解压 APK assets 内插件 zip），不再只依赖下载通道。
  */
 @Composable
 internal fun NativeRuntimeManageCard(engine: EngineType) {
     val context = LocalContext.current
+    val scope = rememberCoroutineScope()
     val runtime = nativeRuntimeByEngine[engine] ?: return
     var state by remember { mutableStateOf(runtime.installState(context)) }
     var confirmUninstall by remember { mutableStateOf(false) }
+    var confirmImport by remember { mutableStateOf<Uri?>(null) }
+    var busy by remember { mutableStateOf(false) }
     LifecycleEventEffect(Lifecycle.Event.ON_RESUME) {
         state = runtime.installState(context)
     }
@@ -419,6 +434,61 @@ internal fun NativeRuntimeManageCard(engine: EngineType) {
         NativePluginInstallState.INSTALLED_ENABLED -> R.string.engine_runtime_enabled
         NativePluginInstallState.INSTALLED_DISABLED -> R.string.engine_runtime_disabled
         else -> R.string.engine_runtime_not_installed
+    }
+
+    // 本地插件 zip 导入：校验通过才替换当前运行时文件
+    val importPicker = rememberLauncherForActivityResult(
+        ActivityResultContracts.OpenDocument(),
+    ) { uri ->
+        if (uri != null) confirmImport = uri
+    }
+
+    fun importZip(uri: Uri) {
+        if (busy) return
+        busy = true
+        scope.launch {
+            val result = withContext(Dispatchers.IO) {
+                when (engine) {
+                    EngineType.KIRIKIRI -> NativePluginInstaller.importKirikiroid2(context, uri)
+                    EngineType.ONS -> NativePluginInstaller.importOns(context, uri)
+                    EngineType.ARTEMIS -> NativePluginInstaller.importArtemis(context, uri)
+                    else -> NativePluginImportResult(false, "unsupported_engine")
+                }
+            }
+            busy = false
+            state = runtime.installState(context)
+            val message = when {
+                result.success && result.verified ->
+                    context.getString(R.string.engine_runtime_import_ok, engine.displayName)
+                result.success ->
+                    context.getString(R.string.engine_runtime_import_unverified, engine.displayName)
+                else ->
+                    context.getString(R.string.engine_runtime_import_failed, result.code)
+            }
+            Toast.makeText(context, message, Toast.LENGTH_SHORT).show()
+        }
+    }
+
+    fun restoreFromBuiltin() {
+        if (busy) return
+        busy = true
+        scope.launch {
+            val ok = withContext(Dispatchers.IO) {
+                EnginePluginBootstrap.markRestored(context, runtime.id)
+                EnginePluginBootstrap.provisionIfNeeded(context)
+                runtime.installState(context) != NativePluginInstallState.NOT_INSTALLED
+            }
+            busy = false
+            state = runtime.installState(context)
+            Toast.makeText(
+                context,
+                context.getString(
+                    if (ok) R.string.engine_runtime_restore_ok else R.string.engine_runtime_restore_failed,
+                    engine.displayName,
+                ),
+                Toast.LENGTH_SHORT,
+            ).show()
+        }
     }
 
     MiuixCard(
@@ -470,15 +540,59 @@ internal fun NativeRuntimeManageCard(engine: EngineType) {
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     modifier = Modifier.padding(top = 6.dp),
                 )
-            } else {
-                TextButton(onClick = { confirmUninstall = true }) {
-                    Text(
-                        stringResource(R.string.engine_runtime_action_uninstall),
-                        color = MaterialTheme.colorScheme.error,
-                    )
+            }
+            // 恢复通道：本地导入 zip / 从 APK 内置资源重新解压（后者离线可用）
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                TextButton(
+                    enabled = !busy,
+                    onClick = { importPicker.launch(arrayOf("application/zip", "*/*")) },
+                ) {
+                    Text(stringResource(R.string.engine_runtime_action_import_zip))
+                }
+                TextButton(enabled = !busy, onClick = { restoreFromBuiltin() }) {
+                    Text(stringResource(R.string.engine_runtime_action_restore_builtin))
+                }
+                if (installed) {
+                    TextButton(enabled = !busy, onClick = { confirmUninstall = true }) {
+                        Text(
+                            stringResource(R.string.engine_runtime_action_uninstall),
+                            color = MaterialTheme.colorScheme.error,
+                        )
+                    }
                 }
             }
         }
+    }
+
+    if (confirmImport != null) {
+        AppAlertDialog(
+            onDismissRequest = { confirmImport = null },
+            title = {
+                Text(
+                    stringResource(R.string.engine_runtime_action_import_zip),
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.Bold,
+                )
+            },
+            text = {
+                Text(stringResource(R.string.engine_runtime_import_confirm, engine.displayName))
+            },
+            confirmButton = {
+                TextButton(onClick = {
+                    val uri = confirmImport
+                    confirmImport = null
+                    if (uri != null) importZip(uri)
+                }) { Text(stringResource(R.string.common_confirm)) }
+            },
+            dismissButton = {
+                TextButton(onClick = { confirmImport = null }) {
+                    Text(stringResource(R.string.common_cancel))
+                }
+            },
+        )
     }
 
     if (confirmUninstall) {

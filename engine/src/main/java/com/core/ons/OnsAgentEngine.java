@@ -58,7 +58,9 @@ public final class OnsAgentEngine {
         tools.put(tool("get_current_text",
                 "获取当前游戏画面上的对话文本", new JSONObject()));
         tools.put(tool("get_game_info",
-                "获取当前游戏名称和游玩统计", new JSONObject()));
+                "获取当前游戏名称", new JSONObject()));
+        tools.put(tool("get_play_stats",
+                "获取游玩统计：当前游戏累计时长、最近游玩记录、全部游戏总时长", new JSONObject()));
         tools.put(tool("lookup_word",
                 "查询词典，返回词条、读音和释义",
                 new JSONObject().put("type", "object")
@@ -206,6 +208,8 @@ public final class OnsAgentEngine {
                     return text.isEmpty() ? "（当前无对话文本）" : text;
                 case "get_game_info":
                     return "游戏: " + host.getGameName();
+                case "get_play_stats":
+                    return host.getPlayStats();
                 case "lookup_word": {
                     String word = args.optString("word", "");
                     if (word.isEmpty()) return "缺少 word 参数";

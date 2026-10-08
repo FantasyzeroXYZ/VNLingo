@@ -99,6 +99,7 @@
     <string name="engine_ons_extract_def_none">見つかりませんでした</string>
     <string name="engine_ons_extract_dict_none">辞書未導入（「🔍 辞書」から Yomichan zip または MDX jsonl を導入）</string>
     <string name="engine_ons_extract_dict_importing">辞書を導入中…</string>
+    <string name="engine_ons_dict_index_building">辞書インデックスを最適化中…（大きな辞書は初回にバックグラウンド実行、検索は可能）</string>
     <string name="engine_ons_extract_dict_imported">辞書を導入しました：%1$s（%2$d 件）</string>
     <string name="engine_ons_extract_word_added">単語カードを Anki に追加しました</string>
     <string name="engine_ons_extract_translating">🌐 翻訳中…</string>

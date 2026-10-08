@@ -99,6 +99,7 @@
     <string name="engine_ons_extract_def_none">未查到该词</string>
     <string name="engine_ons_extract_dict_none">未导入词典（点「🔍 词典」导入 Yomichan zip 或 MDX jsonl）</string>
     <string name="engine_ons_extract_dict_importing">正在导入词典…</string>
+    <string name="engine_ons_dict_index_building">正在优化词典库索引…（首次启动大词典时后台进行，可正常查词）</string>
     <string name="engine_ons_extract_dict_imported">词典已导入：%1$s（%2$d 条）</string>
     <string name="engine_ons_extract_word_added">词卡已添加到 Anki</string>
     <string name="engine_ons_extract_translating">🌐 正在翻译…</string>

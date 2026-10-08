@@ -1265,12 +1265,15 @@ public class OnsExtractPanel {
                     main.post(() -> toast(R.string.engine_ons_extract_dict_none));
                     return;
                 }
+                final long scanStart = System.currentTimeMillis();
                 final boolean deinflect = OnsDictStore.isDeinflectEnabled(activity);
                 ScanHit hit = isCjkText(text)
                         ? scanByChar(text, startPos, requestId, deinflect)
                         : scanByWordTwoPhase(text, startPos, requestId, deinflect);
                 if (requestId != dictRequestId) return;
+                final long scanMs = System.currentTimeMillis() - scanStart;
                 if (hit == null) {
+                    com.core.diag.DiagLog.debug("dict", "miss in " + scanMs + "ms len=" + text.length());
                     // 已加载词典但未命中 ≠ 未导入词典：两句文案分开，避免误判成库为空
                     boolean noDict = !OnsDictStore.get().hasDictionary();
                     main.post(() -> toast(noDict
@@ -1283,7 +1286,7 @@ public class OnsExtractPanel {
                 matchedRange = hit.range;
                 matchedText = hit.matched;
                 com.core.diag.DiagLog.debug("dict", "hit: " + hit.matched
-                        + " groups=" + hit.groups.size());
+                        + " groups=" + hit.groups.size() + " in " + scanMs + "ms");
                 main.post(this::refresh);
             } catch (Throwable t) {
                 Log.w(TAG, "dict scan failed", t);
@@ -1303,32 +1306,83 @@ public class OnsExtractPanel {
         }
     }
 
-    /** 词典查一个候选：返回实际命中（matchedTerm 可能短于候选——递减前缀或
-     *  还原原形），null=未命中。词形还原开关由词典设置统一控制。 */
-    private OnsDictStore.Match searchMatch(String cand, boolean deinflect) {
-        return OnsDictStore.get().searchMatched(cand, 5, deinflect);
+    // ---- 通用候选匹配器（TrackReader tryMatchCandidate 对齐）----
+    //  ① 精确 term → ② 精确 reading（仅含假名候选）→ ③ 词形还原→term
+    //  → ④ 词形还原→reading。matchedText = 候选全文（高亮面），命中词条形
+    //  走 deinflectedTerm/卡片标题。递减由扫描循环驱动，此处不做前缀缩短。
+
+    private static final class CandidateMatch {
+        final String matchedText;
+        final List<OnsDictStore.Group> groups;
+        final String deinflectedTerm;   // 还原原形（非还原命中为 null）
+
+        CandidateMatch(String matchedText, List<OnsDictStore.Group> groups, String deinflectedTerm) {
+            this.matchedText = matchedText;
+            this.groups = groups;
+            this.deinflectedTerm = deinflectedTerm;
+        }
     }
 
-    /** 由命中词形推出句内高亮面：命中词是候选前缀 → 只亮命中的前缀（用户规则：
-     *  高亮只盖匹配到的词）；命中词是还原原形（非候选子串）→ 亮整个候选面。 */
-    private static String hitSurface(String cand, OnsDictStore.Match m) {
-        if (cand.startsWith(m.matchedTerm)) return m.matchedTerm;
-        return cand;
+    /** 候选含假名才查读音（TrackReader skipReading = scope!==ja 的无 scope 替代）。 */
+    private static boolean hasKana(String s) {
+        for (int i = 0; i < s.length(); i++) {
+            char c = s.charAt(i);
+            if ((c >= 0x3041 && c <= 0x309F) || (c >= 0x30A1 && c <= 0x30FF)) return true;
+        }
+        return false;
     }
 
-    /** CJK 逐字递减扫描：从 startPos 起逐次缩短尾部长度，首个命中即返回。
-     *  requestId 过期（新一轮点选/翻句）立即中止。 */
+    private CandidateMatch tryMatchCandidate(String cand, boolean deinflect) {
+        if (isRejectable(cand)) return null;
+        // B2 收窄：不含假名不查读音（TrackReader skipReading 的无 scope 替代）；
+        // 单字候选也不查——假名单字几乎没有词典价值，却占扫描层数的大头。
+        boolean tryReading = cand.length() > 1 && hasKana(cand);
+        List<String> keys = new ArrayList<>();
+        keys.add(cand);
+        if (deinflect) {
+            for (String root : OnsDeinflector.deinflect(cand)) {
+                if (!root.equals(cand) && !keys.contains(root)) keys.add(root);
+            }
+        }
+        // B3：原形 + 全部还原形合并成一次 IN 查询（term 列、reading 列各一次），
+        // 替代原来的逐候选逐形串行查询（每次都有游标/JNI 往返）。
+        // 命中优先级保持原语义：①term(cand) ②reading(cand) ③term(root) ④reading(root)
+        OnsDictStore store = OnsDictStore.get();
+        java.util.Map<String, List<OnsDictStore.Group>> termHits = store.batchTermLookup(keys, 5);
+        List<OnsDictStore.Group> g = termHits.get(cand);
+        if (g != null && !g.isEmpty()) return new CandidateMatch(cand, g, null);
+        java.util.Map<String, List<OnsDictStore.Group>> readingHits =
+                java.util.Collections.emptyMap();
+        if (tryReading) {
+            readingHits = store.batchReadingLookup(keys, 5);
+            g = readingHits.get(cand);
+            if (g != null && !g.isEmpty()) return new CandidateMatch(cand, g, null);
+        }
+        if (deinflect) {
+            for (int i = 1; i < keys.size(); i++) {
+                String root = keys.get(i);
+                g = termHits.get(root);
+                if (g != null && !g.isEmpty()) return new CandidateMatch(cand, g, root);
+                if (tryReading) {
+                    g = readingHits.get(root);
+                    if (g != null && !g.isEmpty()) return new CandidateMatch(cand, g, root);
+                }
+            }
+        }
+        return null;
+    }
+
+    /** CJK 逐字递减扫描（TrackReader _decrementalScanByChar）：从 startPos 起逐次
+     *  缩短尾部长度，首个命中即返回。requestId 过期（新一轮点选/翻句）立即中止。 */
     private ScanHit scanByChar(String text, int startPos, int requestId, boolean deinflect) {
-        final int maxLen = Math.min(text.length() - startPos, 40);
+        final int maxLen = text.length() - startPos;
         for (int len = maxLen; len >= 1; len--) {
             if (requestId != dictRequestId) return null;
             String cand = text.substring(startPos, startPos + len);
-            if (isRejectable(cand)) continue;
-            OnsDictStore.Match m = searchMatch(cand, deinflect);
-            if (m != null && !m.groups.isEmpty()) {
-                String surface = hitSurface(cand, m);
-                return new ScanHit(surface, new int[]{startPos, startPos + surface.length()},
-                        m.groups);
+            CandidateMatch m = tryMatchCandidate(cand, deinflect);
+            if (m != null) {
+                return new ScanHit(m.matchedText,
+                        new int[]{startPos, startPos + m.matchedText.length()}, m.groups);
             }
         }
         return null;
@@ -1337,8 +1391,8 @@ public class OnsExtractPanel {
     /**
      * 空格分词语言两阶段扫描（TrackReader _decrementalScanByWordTwoPhase）：
      * 阶段一：首词词形还原，构建「原句 + 还原句」车队；
-     * 阶段二：每辆车做纯精确词递减扫描（首词起到尾词止）。
-     * 高亮映射按命中词形的词数折算回原句——只亮匹配到的词。
+     * 阶段二：每辆车做纯精确 term 递减扫描（无还原、无读音——还原只发生在阶段一）。
+     * 命中映射回原文词跨度（首词 1:1 替换，词数对齐），matchedText = 原文面。
      */
     private ScanHit scanByWordTwoPhase(String text, int startPos, int requestId, boolean deinflect) {
         java.util.List<int[]> origSpans = buildWordSpans(text);
@@ -1368,17 +1422,13 @@ public class OnsExtractPanel {
                 if (requestId != dictRequestId) return null;
                 String cand = vehicle.substring(vSpans.get(vi)[0], vSpans.get(e)[1]);
                 if (isRejectable(cand)) continue;
-                OnsDictStore.Match m = searchMatch(cand, deinflect);
-                if (m != null && !m.groups.isEmpty()) {
-                    // 命中词形的词数折算回原句词跨度（命中可能只是候选前缀——
-                    // 递减命中的短语条目），高亮只盖匹配到的那些词
-                    int words = 1;
-                    for (int k = 0; k < m.matchedTerm.length(); k++) {
-                        if (Character.isWhitespace(m.matchedTerm.charAt(k))) words++;
-                    }
-                    int endIdx = Math.min(startIdx + words - 1, origSpans.size() - 1);
-                    int[] range = {origSpans.get(startIdx)[0], origSpans.get(endIdx)[1]};
-                    return new ScanHit(text.substring(range[0], range[1]), range, m.groups);
+                // 纯精确 term（tryMatchTermOnly）
+                List<OnsDictStore.Group> g = OnsDictStore.get().searchTermExact(cand, 5);
+                if (!g.isEmpty()) {
+                    // 还原句与原句首词 1:1 替换、词数对齐：按车辆词序折回原句
+                    int origEndIdx = Math.min(e, origSpans.size() - 1);
+                    int[] range = {origSpans.get(startIdx)[0], origSpans.get(origEndIdx)[1]};
+                    return new ScanHit(text.substring(range[0], range[1]), range, g);
                 }
             }
         }

@@ -41,14 +41,32 @@
       下载（GET+导入）全通过，全程零独立配置 ✓
 
 ## 未完成 / 遗留
-- [ ] AI 助手游玩统计工具是桩：OnsAgentDialog.getPlayStats 写死返回
-      「游玩统计功能开发中」，而 PlaySessionTracker 数据层已完整——断在
-      engine 引不到 app（照 OnsSaveCloud 凭据注入模式给 OnsAgentDialog
-      注入统计数据源即可，工作量小）
-- [ ] 插件 zip 本地导入无 UI：GameRuntimeHost.installFromZip /
-      WebRuntimeAssets.installFromZip 有实现零调用方，原生运行时卸载后只剩
-      「重新下载」一条恢复路；接入点 = 引擎页或运行时管理卡加「导入 zip」
-      （WEB_RPGMV_V1 宿主未接 WebRuntimeAssets、状态恒「已集成」是同源欠账）
+- [x] 查词性能优化（方案见 docs/查词性能优化方案.md，2026-10-08 真机实测定位）：
+      B1（P0）migrate 补 (reading,dict_id) 索引 + 删无用单列索引 + 导入/建索引后
+      ANALYZE（老库启动自动补建，66545 条实测 297ms，无需重导）；B2（P1）读音
+      查询收窄（含假名且非单字）+ deinflect LRU 缓存 + scope 3s 缓存 +
+      PRAGMA cache_size/temp_store；B3（P1）候选批量 IN（batchTermLookup /
+      batchReadingLookup，一次取回原形+全部还原形，优先级与原串行一致）；
+      B4（P2）>10 万条另开连接后台建索引 + 词典页「正在优化词典库索引…」提示。
+      真机实测（红米 K40 / 6.7 万真实库 / Probe5 四组对照）：整句逐字扫描
+      374.6ms（无索引）→ 5.88ms（补索引）；旧串行同库 603ms / 9.7ms；41 个
+      候选新旧路径零不一致；应用内（Kazura Uta / KRKR）点选查词 8–31ms/次
+      （DiagLog `hit: … in Nms`）。设备 /data/local/tmp 测试产物已清理
+      （794MB → 80MB，保留 bench5.dex + assets + s_app/s_idx.db 供复测）；
+      验证工具 .tmp/perf（Probe5 为优化后版本，A/B 可直接复现）
+- [x] AI 助手游玩统计工具（2026-10-08 会话四十四）：新增 `get_play_stats` 工具
+      （原 `get_game_info` 从未调用统计）+ `OnsAgentDialog.setPlayStatsProvider`
+      注入（照 OnsSaveCloud 凭据模式）+ app 侧 `AgentPlayStats`（会话制 +
+      旧 JSON 双数据源：当前游戏累计/状态、全部+本周、排行、最近游玩）。
+      附带修认知：`play_sessions.game_title` 存的是 Activity 标题（应用名），
+      展示名改由 game_uri 路径推导
+- [x] 运行时恢复通道（2026-10-08 会话四十四）：引擎设置页运行时卡新增
+      「导入 zip」（NativePluginInstaller，未配置期望哈希时退化为结构校验）
+      与「从内置资源恢复」（EnginePluginBootstrap 重新解压 APK assets 插件 zip）。
+      真机实测：卸载 ONS → 「从内置资源恢复」→ 已启用（文件齐全）
+- [ ] WEB_RPGMV_V1（Web 注入资源包）仍无 UI 入口、状态恒「已集成」：
+      GameRuntimeHost/WebRuntimeAssets 是 engine 内部 API，先定入口（引擎页
+      Web 行？）再接线，并把「已集成」改成真实状态查询
 - [ ] main 落后 feat/extract-suite 103+ 提交：功能分支已推远端（b884e97），
       稳定后合并回 main（merge 或 PR），保持 main 可发布
 - [ ] KRKR 对白完整还原（说话人行带重绘链）——多行页「只出末段」已由连续页

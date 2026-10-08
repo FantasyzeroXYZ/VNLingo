@@ -61,39 +61,64 @@ public final class OnsDictStore {
         return INSTANCE;
     }
 
+    private static final String DB_NAME = "ons_dict.db";
+    /** 词条 reading 索引（对齐 TrackReader db.ts 的 reading 索引；B1 补建）。 */
+    private static final String IDX_READING = "idx_entries_reading";
+    /** 单列 term 索引已被 (dict_id, term) 完全覆盖，实际未被任何查询使用（B1 附带项）。 */
+    private static final String IDX_TERM_UNUSED = "idx_entries_term";
+    /** 建索引的行数阈值：不超过则同步建（6.7 万条约 0.2s）；超过则后台另开
+     *  连接建，避免存量 50 万词条库首次进游戏卡在打开词典库（B4）。 */
+    private static final int INDEX_INLINE_MAX_ROWS = 100_000;
+
     private SQLiteDatabase db;
     private volatile String dictName = "";
     private volatile int entryCount;
     private volatile long currentDictId = -1;
+    private volatile Context appContext;
+    /** 查询范围缓存（B2）：词典增删/启停/切换当前时失效。 */
+    private volatile List<Long> scopeCache;
+    private volatile long scopeCacheAt;
+    /** 范围缓存有效期：扫描内数百次查询共用一份，跨进程词典变更最多滞后一个 TTL。 */
+    private static final long SCOPE_CACHE_TTL_MS = 3000;
+    private static volatile boolean readingIndexReady;
+    private static volatile boolean readingIndexBuilding;
+    private static volatile long readingIndexBuildMs = -1;
 
     private OnsDictStore() {
+    }
+
+    /** reading 索引是否已就绪（词典页用于「正在优化词典库」提示，B4）。 */
+    public static boolean isReadingIndexReady() {
+        return readingIndexReady;
+    }
+
+    /** 是否正在后台补建 reading 索引（词典页提示用，B4）。 */
+    public static boolean isReadingIndexBuilding() {
+        return readingIndexBuilding;
+    }
+
+    /** 最近一次建索引耗时（ms；-1 = 本次进程尚未建过）。 */
+    public static long getReadingIndexBuildMs() {
+        return readingIndexBuildMs;
     }
 
     private synchronized SQLiteDatabase db(Context context) {
         if (db == null) {
             if (context == null) return null;
-            db = context.getApplicationContext()
-                    .openOrCreateDatabase("ons_dict.db", Context.MODE_PRIVATE, null);
+            appContext = context.getApplicationContext();
+            db = appContext.openOrCreateDatabase(DB_NAME, Context.MODE_PRIVATE, null);
             // 跨进程争用兜底：词典库被主进程（词典页导入/删除）与游戏进程
             // （面板查词）同时访问，默认忙等 0 会直接 SQLITE_BUSY 报错，
             // 给 5s 忙等窗口让短写事务自然让路。
             // PRAGMA 带结果行，必须 rawQuery（execSQL 会抛 "Queries can be
             // performed using query or rawQuery only"）
-            Cursor busy = null;
-            try {
-                busy = db.rawQuery("PRAGMA busy_timeout = 5000", null);
-                if (busy.moveToFirst()) {
-                    Log.i(TAG, "busy_timeout = " + busy.getInt(0));
-                }
-            } catch (Throwable t) {
-                Log.w(TAG, "busy_timeout pragma failed", t);
-            } finally {
-                if (busy != null) busy.close();
-            }
+            tune(db);
             migrate(db);
             Cursor c = db.rawQuery("SELECT COUNT(*) FROM entries", null);
             if (c.moveToFirst()) entryCount = c.getInt(0);
             c.close();
+            // B1/B4：存量库无 reading 索引则补建（小库同步、大库后台）
+            ensureReadingIndex(db);
             Log.i(TAG, "db opened: entries=" + entryCount + " process=" + android.os.Process.myPid());
             c = db.rawQuery("SELECT value FROM kv WHERE name='dict_name'", null);
             if (c.moveToFirst()) dictName = c.getString(0);
@@ -108,6 +133,105 @@ public final class OnsDictStore {
             c.close();
         }
         return db;
+    }
+
+    /** 连接参数（PRAGMA 带结果行必须 rawQuery，execSQL 会抛异常）。 */
+    private static void tune(SQLiteDatabase database) {
+        // B2：默认页缓存约 2MB，真实 6.7 万词条库的索引页就有数 MB，
+        // 大词典下索引页/数据页互相换出——提升到 16MB（负值 = KB），
+        // 临时排序/临时表放内存（ORDER BY pop 的临时 B 树受益）
+        pragma(database, "PRAGMA busy_timeout = 5000");
+        pragma(database, "PRAGMA cache_size = -16384");
+        pragma(database, "PRAGMA temp_store = MEMORY");
+    }
+
+    private static void pragma(SQLiteDatabase database, String sql) {
+        Cursor c = null;
+        try {
+            c = database.rawQuery(sql, null);
+            if (c.moveToFirst()) Log.i(TAG, sql.trim() + " -> " + c.getInt(0));
+        } catch (Throwable t) {
+            Log.w(TAG, "pragma failed: " + sql, t);
+        } finally {
+            if (c != null) c.close();
+        }
+    }
+
+    private static boolean hasIndex(SQLiteDatabase database, String name) {
+        Cursor c = null;
+        try {
+            c = database.rawQuery(
+                    "SELECT 1 FROM sqlite_master WHERE type='index' AND name=?",
+                    new String[]{name});
+            return c.moveToFirst();
+        } catch (Throwable t) {
+            Log.w(TAG, "index probe failed for " + name, t);
+            return false;
+        } finally {
+            if (c != null) c.close();
+        }
+    }
+
+    /**
+     * B1/B4：存量库补建 reading 索引。已有则秒过；小库同步建（6.7 万条约 0.2s）；
+     * 大库后台另开一条连接建——建索引期间主连接仍可查询，首次进游戏不卡在打开词典库。
+     */
+    private void ensureReadingIndex(SQLiteDatabase database) {
+        if (readingIndexReady) return;
+        if (hasIndex(database, IDX_READING)) {
+            readingIndexReady = true;
+            return;
+        }
+        if (readingIndexBuilding) return;
+        if (entryCount <= INDEX_INLINE_MAX_ROWS) {
+            buildReadingIndex(database, "inline");
+            return;
+        }
+        final Context ctx = appContext;
+        if (ctx == null) return;    // 无 context 的只读路径：留给下次带 context 的打开
+        readingIndexBuilding = true;
+        Thread worker = new Thread(() -> {
+            SQLiteDatabase bg = null;
+            try {
+                bg = ctx.openOrCreateDatabase(DB_NAME, Context.MODE_PRIVATE, null);
+                tune(bg);
+                buildReadingIndex(bg, "background");
+            } catch (Throwable t) {
+                Log.w(TAG, "background index build failed", t);
+            } finally {
+                if (bg != null) bg.close();
+                readingIndexBuilding = false;
+            }
+        }, "ons-dict-index");
+        worker.setDaemon(true);
+        worker.start();
+        Log.i(TAG, "reading index build scheduled (entries=" + entryCount + ")");
+    }
+
+    private void buildReadingIndex(SQLiteDatabase database, String how) {
+        long start = System.currentTimeMillis();
+        try {
+            // (reading, dict_id)：reading = ? + dict_id IN (...) 的查询计划从
+            // 「按 dict_id 单列扫描 + ORDER BY 临时 B 树」变为索引区间扫描
+            database.execSQL("CREATE INDEX IF NOT EXISTS " + IDX_READING
+                    + " ON entries(reading, dict_id)");
+            readingIndexReady = true;
+            readingIndexBuildMs = System.currentTimeMillis() - start;
+            Log.i(TAG, "reading index ready (" + how + "): " + readingIndexBuildMs
+                    + "ms entries=" + entryCount);
+            analyze(database);
+        } catch (Throwable t) {
+            Log.w(TAG, "reading index build failed (" + how + ")", t);
+        }
+    }
+
+    /** B1：刷新查询规划统计（sqlite_stat1 为空时规划器「碰巧」选对计划）。 */
+    private static void analyze(SQLiteDatabase database) {
+        try {
+            database.execSQL("ANALYZE");
+        } catch (Throwable t) {
+            Log.w(TAG, "ANALYZE failed", t);
+        }
     }
 
     /** v1（单表 + kv 名字）→ v2（dicts 表 + entries.dict_id）一次性迁移。 */
@@ -130,8 +254,13 @@ public final class OnsDictStore {
         if (!hasDictId) {
             database.execSQL("ALTER TABLE entries ADD COLUMN dict_id INTEGER NOT NULL DEFAULT 1");
         }
-        database.execSQL("CREATE INDEX IF NOT EXISTS idx_entries_term ON entries(term)");
         database.execSQL("CREATE INDEX IF NOT EXISTS idx_entries_dict_term ON entries(dict_id, term)");
+        // 单列 term 索引被 (dict_id, term) 覆盖、无查询使用（B1 附带项）：删掉省体积。
+        // 先探存在性：无索引时空 DROP 也是 DDL，避免每次启动都写一次 schema。
+        if (hasIndex(database, IDX_TERM_UNUSED)) {
+            database.execSQL("DROP INDEX IF EXISTS " + IDX_TERM_UNUSED);
+            Log.i(TAG, "dropped unused index " + IDX_TERM_UNUSED);
+        }
         Cursor v = database.rawQuery(
                 "SELECT count(*) FROM sqlite_master WHERE type='table' AND name='entries'", null);
         boolean hasEntries = v.moveToFirst() && v.getInt(0) > 0;
@@ -222,6 +351,7 @@ public final class OnsDictStore {
         if (database == null) return;
         database.execSQL("UPDATE dicts SET enabled=? WHERE id=?",
                 new Object[]{enabled ? 1 : 0, id});
+        scopeCache = null;
     }
 
     /** 设为当前词典（查词首选）；写入 kv 供下次启动恢复。 */
@@ -231,6 +361,7 @@ public final class OnsDictStore {
         database.execSQL("INSERT OR REPLACE INTO kv(name, value) VALUES('current_dict', ?)",
                 new Object[]{String.valueOf(id)});
         currentDictId = id;
+        scopeCache = null;
     }
 
     /** 删除词典（词条与元信息一并清除）；返回是否删除了当前词典。 */
@@ -254,6 +385,7 @@ public final class OnsDictStore {
         Cursor c = database.rawQuery("SELECT COUNT(*) FROM entries", null);
         if (c.moveToFirst()) entryCount = c.getInt(0);
         c.close();
+        scopeCache = null;
         return wasCurrent;
     }
 
@@ -304,6 +436,18 @@ public final class OnsDictStore {
             }
         }
         entryCount = total;
+        scopeCache = null;
+        // B1：导入后确保 reading 索引存在（导入期间若还没有索引，批量建比逐条维护快）
+        // 并跑一次 ANALYZE，让多词典 IN 查询的规划器有统计可依据
+        if (!readingIndexReady) {
+            if (hasIndex(database, IDX_READING)) {
+                readingIndexReady = true;
+            } else {
+                if (progress != null) progress.onProgress("正在优化词典库索引…");
+                buildReadingIndex(database, "import");
+            }
+        }
+        analyze(database);
         return total;
     }
 
@@ -564,6 +708,28 @@ public final class OnsDictStore {
         if (q.length() > 20) q = q.substring(0, 20);
         SQLiteDatabase database = db(null);
         if (database == null) return null;
+        List<Long> scope = queryScope(database);
+        for (int len = q.length(); len >= 1; len--) {
+            String prefix = q.substring(0, len);
+            List<Group> groups = exactLookup(database, scope, prefix, maxGroups);
+            if (!groups.isEmpty()) return new Match(prefix, groups);
+            if (!deinflect) continue;
+            for (String candidate : OnsDeinflector.deinflect(prefix)) {
+                groups = exactLookup(database, scope, candidate, maxGroups);
+                if (!groups.isEmpty()) return new Match(candidate, groups);
+            }
+        }
+        return null;
+    }
+
+    /** 当前词典优先、其余启用词典兜底的查询范围（TrackReader current-scope 模型）。
+     *  B2：一次扫描会发数百次查询，每次现查 dicts 子查询（0.086ms/次）——结果带
+     *  短 TTL 缓存；词典增删/启停/切当前（本进程）立即失效，跨进程变更最多滞后
+     *  一个 TTL 生效。 */
+    private List<Long> buildScope(SQLiteDatabase database) {
+        long now = System.currentTimeMillis();
+        List<Long> cached = scopeCache;
+        if (cached != null && now - scopeCacheAt < SCOPE_CACHE_TTL_MS) return cached;
         List<Long> scope = new ArrayList<>();
         if (currentDictId > 0) scope.add(currentDictId);
         Cursor c = null;
@@ -578,15 +744,71 @@ public final class OnsDictStore {
         } finally {
             if (c != null) c.close();
         }
-        if (scope.isEmpty()) scope.add(-1L); // 无词典：快速空路径
-        for (int len = q.length(); len >= 1; len--) {
-            String prefix = q.substring(0, len);
-            List<Group> groups = exactLookup(database, scope, prefix, maxGroups);
-            if (!groups.isEmpty()) return new Match(prefix, groups);
-            if (!deinflect) continue;
-            for (String candidate : OnsDeinflector.deinflect(prefix)) {
-                groups = exactLookup(database, scope, candidate, maxGroups);
-                if (!groups.isEmpty()) return new Match(candidate, groups);
+        scopeCache = scope;
+        scopeCacheAt = now;
+        return scope;
+    }
+
+    /** 查询范围；无词典时给 [-1] 快速空路径（返回单例，禁止再改写）。 */
+    private List<Long> queryScope(SQLiteDatabase database) {
+        List<Long> scope = buildScope(database);
+        return scope.isEmpty() ? java.util.Collections.singletonList(-1L) : scope;
+    }
+
+    // ---- 精确查询（TrackReader searchByTerm / searchByReading：无递减、无还原——
+    //      递减由扫描循环驱动，见 OnsExtractPanel.scanByChar）----
+
+    /** 精确 term 匹配（searchByTerm）。 */
+    public List<Group> searchTermExact(String term, int maxGroups) {
+        if (term == null || term.isEmpty()) return new ArrayList<>();
+        SQLiteDatabase database = db(null);
+        if (database == null) return new ArrayList<>();
+        return exactLookup(database, queryScope(database), term, maxGroups);
+    }
+
+    /** 精确 reading 匹配（searchByReading，仅日语词典有读音索引价值）。 */
+    public List<Group> searchReadingExact(String reading, int maxGroups) {
+        List<Group> groups = new ArrayList<>();
+        if (reading == null || reading.isEmpty()) return groups;
+        SQLiteDatabase database = db(null);
+        if (database == null) return groups;
+        return columnLookup(database, queryScope(database), COL_READING, reading, maxGroups);
+    }
+
+    /**
+     * B3 批量 term 查询（TrackReader batchSearchTerms 对齐）：一次 IN 查询取回
+     * 全部候选（原形 + 全部还原形）的命中行，再在内存里按优先级取用。
+     * 逐候选串行时每次都有游标/JNI 往返（约 0.2ms/次 × 数百次），批量化消掉大头。
+     *
+     * @return 命中键（term）→ 该键的释义组；未命中的键不在表里
+     */
+    public java.util.Map<String, List<Group>> batchTermLookup(List<String> terms, int maxGroups) {
+        if (terms == null || terms.isEmpty()) return new java.util.HashMap<>();
+        SQLiteDatabase database = db(null);
+        if (database == null) return new java.util.HashMap<>();
+        return batchColumnLookup(database, queryScope(database), COL_TERM, terms, maxGroups);
+    }
+
+    /** B3 批量 reading 查询（同 batchTermLookup，命中列换成 reading）。 */
+    public java.util.Map<String, List<Group>> batchReadingLookup(List<String> readings, int maxGroups) {
+        if (readings == null || readings.isEmpty()) return new java.util.HashMap<>();
+        SQLiteDatabase database = db(null);
+        if (database == null) return new java.util.HashMap<>();
+        return batchColumnLookup(database, queryScope(database), COL_READING, readings, maxGroups);
+    }
+
+    /** TrackReader searchTermWithDeinflect：①精确 term ②词形还原→term。 */
+    public Match searchTermWithDeinflect(String term, int maxGroups, boolean deinflect) {
+        if (term == null) return null;
+        String q = term.trim();
+        if (q.isEmpty()) return null;
+        List<Group> g = searchTermExact(q, maxGroups);
+        if (!g.isEmpty()) return new Match(q, g);
+        if (deinflect) {
+            for (String root : OnsDeinflector.deinflect(q)) {
+                if (root.equals(q)) continue;
+                g = searchTermExact(root, maxGroups);
+                if (!g.isEmpty()) return new Match(root, g);
             }
         }
         return null;
@@ -615,28 +837,66 @@ public final class OnsDictStore {
         } catch (Throwable ignored) { }
     }
 
+    // ---- 精确查询内核（term / reading 两列共用一套 SQL 与分行逻辑）----
+
+    private static final String COL_TERM = "term";
+    private static final String COL_READING = "reading";
+
+    /** 单值精确查询（列表包装给批量实现，避免两套 SQL 走偏）。 */
     private List<Group> exactLookup(SQLiteDatabase database, List<Long> scope,
                                     String term, int maxGroups) {
-        List<Group> groups = new ArrayList<>();
-        StringBuilder filter = new StringBuilder();
-        String[] args = new String[scope.size() + 2];
-        for (int i = 0; i < scope.size(); i++) {
-            if (i > 0) filter.append(",");
-            filter.append("?");
-            args[i] = String.valueOf(scope.get(i));
+        return columnLookup(database, scope, COL_TERM, term, maxGroups);
+    }
+
+    private List<Group> columnLookup(SQLiteDatabase database, List<Long> scope,
+                                     String column, String value, int maxGroups) {
+        List<Group> groups = batchColumnLookup(database, scope, column,
+                java.util.Collections.singletonList(value), maxGroups).get(value);
+        return groups == null ? new ArrayList<>() : groups;
+    }
+
+    /**
+     * column（term 或 reading，仅内部常量）IN (values) 一次取回，按命中键分组。
+     * 行序 pop DESC；每组最多 maxGroups 个 (term, reading) 组，超出后只把
+     * 释义并进已收集的组（不再新增组）。
+     */
+    private java.util.Map<String, List<Group>> batchColumnLookup(
+            SQLiteDatabase database, List<Long> scope, String column,
+            List<String> values, int maxGroups) {
+        java.util.Map<String, List<Group>> out = new java.util.HashMap<>();
+        if (values == null || values.isEmpty()) return out;
+        boolean byTerm = COL_TERM.equals(column);
+        StringBuilder scopeFilter = new StringBuilder();
+        StringBuilder valueFilter = new StringBuilder();
+        String[] args = new String[scope.size() + values.size() + 1];
+        int i = 0;
+        for (Long id : scope) {
+            if (i > 0) scopeFilter.append(',');
+            scopeFilter.append('?');
+            args[i++] = String.valueOf(id);
         }
-        args[scope.size()] = term;
-        args[scope.size() + 1] = String.valueOf(maxGroups * 3);
+        for (String v : values) {
+            if (valueFilter.length() > 0) valueFilter.append(',');
+            valueFilter.append('?');
+            args[i++] = v;
+        }
+        args[i] = String.valueOf(maxGroups * 3 * Math.max(1, values.size()));
         Cursor c = null;
         try {
             c = database.rawQuery(
                     "SELECT term, reading, gloss, pop FROM entries WHERE dict_id IN ("
-                            + filter + ") AND term = ? "
+                            + scopeFilter + ") AND " + column + " IN (" + valueFilter + ") "
                             + "ORDER BY pop DESC LIMIT ?",
                     args);
-            while (c.moveToNext() && groups.size() < maxGroups) {
+            while (c.moveToNext()) {
                 String t = c.getString(0);
                 String r = c.getString(1);
+                String key = byTerm ? t : r;
+                List<Group> groups = out.get(key);
+                if (groups == null) {
+                    groups = new ArrayList<>();
+                    out.put(key, groups);
+                }
                 Group g = null;
                 for (Group existing : groups) {
                     if (existing.term.equals(t) && existing.reading.equals(r)) {
@@ -645,6 +905,7 @@ public final class OnsDictStore {
                     }
                 }
                 if (g == null) {
+                    if (groups.size() >= maxGroups) continue;
                     g = new Group();
                     g.term = t;
                     g.reading = r;
@@ -654,10 +915,10 @@ public final class OnsDictStore {
                 if (gloss != null && !gloss.isEmpty()) g.glosses.add(gloss);
             }
         } catch (Throwable t) {
-            Log.w(TAG, "exactLookup failed for " + term, t);
+            Log.w(TAG, column + " lookup failed for " + values, t);
         } finally {
             if (c != null) c.close();
         }
-        return groups;
+        return out;
     }
 }

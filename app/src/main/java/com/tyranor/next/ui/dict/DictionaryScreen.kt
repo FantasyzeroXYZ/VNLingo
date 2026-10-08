@@ -84,6 +84,17 @@ fun DictionaryScreen(modifier: Modifier = Modifier) {
 
     var dicts by remember { mutableStateOf(OnsDictStore.get().listDicts(context)) }
 
+    // B4：大词典存量库首次打开会在后台另开连接补建 reading 索引（不阻塞查词），
+    // 这里轮询状态给出「正在优化词典库索引」提示；建完自动消失
+    var indexBuilding by remember { mutableStateOf(false) }
+    LaunchedEffect(dictsVersion) {
+        indexBuilding = OnsDictStore.isReadingIndexBuilding()
+        while (indexBuilding) {
+            kotlinx.coroutines.delay(1000)
+            indexBuilding = OnsDictStore.isReadingIndexBuilding()
+        }
+    }
+
     val hasDict = remember(dictsVersion) { OnsDictStore.get().hasDictionary() }
     val dictName = remember(dictsVersion) { OnsDictStore.get().getDictName() }
     val entryCount = remember(dictsVersion) { OnsDictStore.get().getEntryCount() }
@@ -120,7 +131,9 @@ fun DictionaryScreen(modifier: Modifier = Modifier) {
         }
     }
 
-    // 防抖搜索：SQLite 查询（最长前缀 + 词形还原）走 IO 线程；query 变化自动取消上一轮
+    // 防抖搜索：走 IO 线程；query 变化自动取消上一轮。
+    // TrackReader searchTermWithDeinflect 语义：①精确 term ②词形还原→term；
+    // 都未命中再退 searchByPrefix 式前缀浏览（词典浏览体验保留）
     LaunchedEffect(query, dictsVersion) {
         if (query.isBlank()) {
             results = emptyList()
@@ -131,9 +144,11 @@ fun DictionaryScreen(modifier: Modifier = Modifier) {
         delay(250)
         val found = withContext(Dispatchers.IO) {
             runCatching {
-                val m = OnsDictStore.get().searchMatched(
-                    query.trim(), 20, OnsDictStore.isDeinflectEnabled(context))
-                m?.groups ?: emptyList()
+                val q = query.trim()
+                val m = OnsDictStore.get().searchTermWithDeinflect(
+                    q, 20, OnsDictStore.isDeinflectEnabled(context))
+                m?.groups
+                    ?: OnsDictStore.get().search(q, 20)
             }.getOrDefault(emptyList())
         }
         results = found
@@ -198,6 +213,14 @@ fun DictionaryScreen(modifier: Modifier = Modifier) {
                             },
                         )
                     }
+                }
+                if (indexBuilding) {
+                    Text(
+                        stringResource(EngineR.string.engine_ons_dict_index_building),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.primary,
+                        modifier = Modifier.padding(top = 8.dp, start = 4.dp),
+                    )
                 }
                 if (!results.isEmpty()) {
                     Row(

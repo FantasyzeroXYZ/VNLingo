@@ -40,11 +40,14 @@ public final class OnsDeinflector {
 
     private static volatile boolean sLoaded = false;
 
+    private static final String[] LANGUAGES = {"ja", "en", "ko", "zh", "vi"};
+
     // ---- 数据模型 ----
 
+    /** 变换规则（yomitan suffixInflection：suffix 活用尾 → removeSuffix 还原串）。 */
     private static final class Rule {
-        final String suffix;        // 要匹配的后缀（活用形）
-        final String removeSuffix;  // 还原后追加的串
+        final String suffix;
+        final String removeSuffix;
         final String[] conditionsIn;
         final String[] conditionsOut;
 
@@ -56,6 +59,7 @@ public final class OnsDeinflector {
         }
     }
 
+    /** 还原结果：候选原形 + 还原深度（越浅越优先）。 */
     private static final class DeinflectionResult {
         final String term;
         final int score;
@@ -66,20 +70,62 @@ public final class OnsDeinflector {
         }
     }
 
-    private static final Map<String, JSONObject> sConditions = new HashMap<>();
-    private static final List<Rule> sRules = new ArrayList<>();
-    private static final List<String> sEntryConds = new ArrayList<>();
+    // ---- 每语言注册表（TrackReader registry 模式）----
+
+    /** 单语言规则集：conditions 字典 + 变换规则 + 词典形条件集合。 */
+    private static final class LangRules {
+        final String language;
+        final Map<String, JSONObject> conditions = new HashMap<>();
+        final List<Rule> rules = new ArrayList<>();
+        final Set<String> entryConds = new HashSet<>();
+        final boolean ja;
+
+        LangRules(String language) {
+            this.language = language;
+            this.ja = "ja".equals(language);
+        }
+    }
+
+    private static final Map<String, LangRules> sLangs = new HashMap<>();
+
+    /**
+     * 还原结果 LRU 缓存（B2）：游戏内点选同一句时同一候选会被反复还原
+     * （递减扫描每层都调 deinflect），词典页输入防抖也常重复。
+     * 值列表只读——调用方一律只遍历（见 OnsDictStore / OnsExtractPanel）。
+     */
+    private static final int CACHE_MAX = 512;
+    private static final Map<String, List<String>> sCache =
+            java.util.Collections.synchronizedMap(
+                    new java.util.LinkedHashMap<String, List<String>>(64, 0.75f, true) {
+                        @Override
+                        protected boolean removeEldestEntry(Map.Entry<String, List<String>> eldest) {
+                            return size() > CACHE_MAX;
+                        }
+                    });
 
     private OnsDeinflector() {
     }
 
     // ---- 初始化 ----
 
-    /** 载入规则数据（幂等；需 Context 读 assets，面板构造时调用一次）。 */
+    /** 载入全部语言规则（幂等；需 Context 读 assets，面板构造时调用一次）。 */
     public static synchronized void init(Context context) {
         if (sLoaded) return;
+        StringBuilder summary = new StringBuilder();
+        for (String lang : LANGUAGES) {
+            LangRules lr = new LangRules(lang);
+            loadLanguage(context, "deinflect_" + lang + ".json", lr);
+            sLangs.put(lang, lr);
+            summary.append(lang).append('=').append(lr.rules.size()).append(' ');
+        }
+        sLoaded = true;
+        sCache.clear();
+        Log.i(TAG, "loaded: " + summary);
+    }
+
+    private static boolean loadLanguage(Context context, String asset, LangRules lr) {
         try {
-            InputStream in = context.getAssets().open("deinflect_ja.json");
+            InputStream in = context.getAssets().open(asset);
             ByteArrayOutputStream bos = new ByteArrayOutputStream();
             byte[] buf = new byte[8192];
             int n;
@@ -92,8 +138,8 @@ public final class OnsDeinflector {
                 java.util.Iterator<String> it = conds.keys();
                 while (it.hasNext()) {
                     String key = it.next();
-                    sConditions.put(key, conds.optJSONObject(key));
-                    sEntryConds.add(key);
+                    lr.conditions.put(key, conds.optJSONObject(key));
+                    lr.entryConds.add(key);
                 }
             }
 
@@ -108,7 +154,7 @@ public final class OnsDeinflector {
                     if (rules == null) continue;
                     for (int i = 0; i < rules.length(); i++) {
                         JSONObject r = rules.optJSONObject(i);
-                        if (r != null) sRules.add(new Rule(
+                        if (r != null) lr.rules.add(new Rule(
                                 r.optString("suffix", ""),
                                 r.optString("removeSuffix", ""),
                                 toStringArray(r.optJSONArray("conditionsIn")),
@@ -116,11 +162,10 @@ public final class OnsDeinflector {
                     }
                 }
             }
-            sLoaded = true;
-            Log.i(TAG, "loaded: " + sConditions.size() + " conditions, "
-                    + sRules.size() + " rules");
+            return true;
         } catch (Throwable t) {
-            Log.w(TAG, "load failed (查词将只按原文精确匹配)", t);
+            Log.w(TAG, "load failed for " + asset + " (该语言将只按原文精确匹配)", t);
+            return false;
         }
     }
 
@@ -131,42 +176,47 @@ public final class OnsDeinflector {
         return out;
     }
 
-    // ---- 对外接口（保持既有契约：候选原形列表，按深度升序）----
+    // ---- 对外接口（保持既有契约：候选原形列表，按还原深度升序）----
 
     /**
      * 词形还原：返回词典原形候选（去重、按还原深度升序）。
-     * 未初始化/无结果返回空列表。ASCII 输入走英文规则（内置），其余走 ja 规则。
+     * 未初始化/无结果返回空列表。语言按文字脚本分派（见类注释）。
      */
     public static List<String> deinflect(String query) {
         List<String> out = new ArrayList<>();
         if (query == null || query.isEmpty()) return out;
-        if (isAsciiWord(query)) {
-            out.addAll(deinflectEn(query));
-            return out;
+        if (sLoaded) {
+            List<String> cached = sCache.get(query);
+            if (cached != null) return cached;
         }
-        if (!sLoaded) return out;
+        LangRules lang = selectLang(query);
+        if (lang == null || lang.rules.isEmpty()) return out;
 
-        // 预处理管线（ja/preprocessors.ts 同序）生成变体，逐变体还原；
-        // 自匹配（term === 变体且深度 0）由精确搜索覆盖，跳过
         Map<String, DeinflectionResult> all = new HashMap<>();
-        for (String variant : preprocess(query)) {
-            Map<String, DeinflectionResult> seen = new HashMap<>();
-            recurse(variant, new HashSet<>(sEntryConds), 0, seen);
-            for (DeinflectionResult r : seen.values()) {
-                if (r.term.equals(variant) && r.score == 0) continue;
-                DeinflectionResult existing = all.get(r.term);
-                if (existing == null || existing.score > r.score) {
-                    all.put(r.term, r);
+        if (lang.ja) {
+            // 预处理管线（ja/preprocessors.ts 同序）生成变体，逐变体还原；
+            // 自匹配（term === 变体且深度 0）由精确搜索覆盖，跳过
+            for (String variant : preprocess(query)) {
+                Map<String, DeinflectionResult> seen = new HashMap<>();
+                recurse(variant, lang.entryConds, 0, seen, lang);
+                for (DeinflectionResult r : seen.values()) {
+                    if (r.term.equals(variant) && r.score == 0) continue;
+                    DeinflectionResult existing = all.get(r.term);
+                    if (existing == null || existing.score > r.score) {
+                        all.put(r.term, r);
+                    }
                 }
             }
+        } else {
+            recurse(query, lang.entryConds, 0, all, lang);
         }
-        List<String> jaOut = new ArrayList<>(all.keySet());
-        java.util.Collections.sort(jaOut);
-        return jaOut;
+        out.addAll(all.keySet());
+        java.util.Collections.sort(out);
+        if (sLoaded) sCache.put(query, out);
+        return out;
     }
 
-    // ---- 英文词形还原（内置规则，无需资产；错误原形只会查空无害）----
-
+    /** ASCII 判定：英文规则（deinflect_en.json）与其它语言规则的分派依据之一。 */
     private static boolean isAsciiWord(String s) {
         for (int i = 0; i < s.length(); i++) {
             if (s.charAt(i) > 0x7F) return false;
@@ -174,204 +224,27 @@ public final class OnsDeinflector {
         return true;
     }
 
-    private static boolean isVowel(char c) {
-        return c == 'a' || c == 'e' || c == 'i' || c == 'o' || c == 'u';
-    }
-
-    /** 不规则变化表（屈折形 → 原形），覆盖常用动词/形容词/名词。 */
-    private static final java.util.Map<String, String[]> EN_IRREGULAR = new HashMap<>();
-    static {
-        EN_IRREGULAR.put("went", new String[]{"go"});
-        EN_IRREGULAR.put("gone", new String[]{"go"});
-        EN_IRREGULAR.put("was", new String[]{"be"});
-        EN_IRREGULAR.put("were", new String[]{"be"});
-        EN_IRREGULAR.put("been", new String[]{"be"});
-        EN_IRREGULAR.put("being", new String[]{"be"});
-        EN_IRREGULAR.put("am", new String[]{"be"});
-        EN_IRREGULAR.put("is", new String[]{"be"});
-        EN_IRREGULAR.put("are", new String[]{"be"});
-        EN_IRREGULAR.put("had", new String[]{"have"});
-        EN_IRREGULAR.put("has", new String[]{"have"});
-        EN_IRREGULAR.put("did", new String[]{"do"});
-        EN_IRREGULAR.put("does", new String[]{"do"});
-        EN_IRREGULAR.put("done", new String[]{"do"});
-        EN_IRREGULAR.put("made", new String[]{"make"});
-        EN_IRREGULAR.put("said", new String[]{"say"});
-        EN_IRREGULAR.put("got", new String[]{"get"});
-        EN_IRREGULAR.put("gotten", new String[]{"get"});
-        EN_IRREGULAR.put("took", new String[]{"take"});
-        EN_IRREGULAR.put("taken", new String[]{"take"});
-        EN_IRREGULAR.put("came", new String[]{"come"});
-        EN_IRREGULAR.put("saw", new String[]{"see"});
-        EN_IRREGULAR.put("seen", new String[]{"see"});
-        EN_IRREGULAR.put("knew", new String[]{"know"});
-        EN_IRREGULAR.put("known", new String[]{"know"});
-        EN_IRREGULAR.put("thought", new String[]{"think"});
-        EN_IRREGULAR.put("found", new String[]{"find"});
-        EN_IRREGULAR.put("gave", new String[]{"give"});
-        EN_IRREGULAR.put("given", new String[]{"give"});
-        EN_IRREGULAR.put("told", new String[]{"tell"});
-        EN_IRREGULAR.put("felt", new String[]{"feel"});
-        EN_IRREGULAR.put("left", new String[]{"leave"});
-        EN_IRREGULAR.put("brought", new String[]{"bring"});
-        EN_IRREGULAR.put("began", new String[]{"begin"});
-        EN_IRREGULAR.put("begun", new String[]{"begin"});
-        EN_IRREGULAR.put("kept", new String[]{"keep"});
-        EN_IRREGULAR.put("held", new String[]{"hold"});
-        EN_IRREGULAR.put("wrote", new String[]{"write"});
-        EN_IRREGULAR.put("written", new String[]{"write"});
-        EN_IRREGULAR.put("stood", new String[]{"stand"});
-        EN_IRREGULAR.put("heard", new String[]{"hear"});
-        EN_IRREGULAR.put("meant", new String[]{"mean"});
-        EN_IRREGULAR.put("met", new String[]{"meet"});
-        EN_IRREGULAR.put("ran", new String[]{"run"});
-        EN_IRREGULAR.put("paid", new String[]{"pay"});
-        EN_IRREGULAR.put("sat", new String[]{"sit"});
-        EN_IRREGULAR.put("lost", new String[]{"lose"});
-        EN_IRREGULAR.put("fell", new String[]{"fall"});
-        EN_IRREGULAR.put("sent", new String[]{"send"});
-        EN_IRREGULAR.put("built", new String[]{"build"});
-        EN_IRREGULAR.put("understood", new String[]{"understand"});
-        EN_IRREGULAR.put("drew", new String[]{"draw"});
-        EN_IRREGULAR.put("drawn", new String[]{"draw"});
-        EN_IRREGULAR.put("broke", new String[]{"break"});
-        EN_IRREGULAR.put("broken", new String[]{"break"});
-        EN_IRREGULAR.put("spoke", new String[]{"speak"});
-        EN_IRREGULAR.put("spoken", new String[]{"speak"});
-        EN_IRREGULAR.put("drove", new String[]{"drive"});
-        EN_IRREGULAR.put("driven", new String[]{"drive"});
-        EN_IRREGULAR.put("ate", new String[]{"eat"});
-        EN_IRREGULAR.put("eaten", new String[]{"eat"});
-        EN_IRREGULAR.put("drank", new String[]{"drink"});
-        EN_IRREGULAR.put("drunk", new String[]{"drink"});
-        EN_IRREGULAR.put("sang", new String[]{"sing"});
-        EN_IRREGULAR.put("sung", new String[]{"sing"});
-        EN_IRREGULAR.put("swam", new String[]{"swim"});
-        EN_IRREGULAR.put("swum", new String[]{"swim"});
-        EN_IRREGULAR.put("blew", new String[]{"blow"});
-        EN_IRREGULAR.put("blown", new String[]{"blow"});
-        EN_IRREGULAR.put("flew", new String[]{"fly"});
-        EN_IRREGULAR.put("flown", new String[]{"fly"});
-        EN_IRREGULAR.put("grew", new String[]{"grow"});
-        EN_IRREGULAR.put("grown", new String[]{"grow"});
-        EN_IRREGULAR.put("threw", new String[]{"throw"});
-        EN_IRREGULAR.put("thrown", new String[]{"throw"});
-        EN_IRREGULAR.put("wore", new String[]{"wear"});
-        EN_IRREGULAR.put("worn", new String[]{"wear"});
-        EN_IRREGULAR.put("won", new String[]{"win"});
-        EN_IRREGULAR.put("woke", new String[]{"wake"});
-        EN_IRREGULAR.put("woken", new String[]{"wake"});
-        EN_IRREGULAR.put("rode", new String[]{"ride"});
-        EN_IRREGULAR.put("ridden", new String[]{"ride"});
-        EN_IRREGULAR.put("rose", new String[]{"rise"});
-        EN_IRREGULAR.put("risen", new String[]{"rise"});
-        EN_IRREGULAR.put("chose", new String[]{"choose"});
-        EN_IRREGULAR.put("chosen", new String[]{"choose"});
-        EN_IRREGULAR.put("hid", new String[]{"hide"});
-        EN_IRREGULAR.put("hidden", new String[]{"hide"});
-        EN_IRREGULAR.put("led", new String[]{"lead"});
-        EN_IRREGULAR.put("taught", new String[]{"teach"});
-        EN_IRREGULAR.put("caught", new String[]{"catch"});
-        EN_IRREGULAR.put("fought", new String[]{"fight"});
-        EN_IRREGULAR.put("bought", new String[]{"buy"});
-        EN_IRREGULAR.put("sought", new String[]{"seek"});
-        EN_IRREGULAR.put("sold", new String[]{"sell"});
-        EN_IRREGULAR.put("spent", new String[]{"spend"});
-        EN_IRREGULAR.put("lent", new String[]{"lend"});
-        EN_IRREGULAR.put("bent", new String[]{"bend"});
-        EN_IRREGULAR.put("slept", new String[]{"sleep"});
-        EN_IRREGULAR.put("crept", new String[]{"creep"});
-        EN_IRREGULAR.put("swept", new String[]{"sweep"});
-        EN_IRREGULAR.put("wept", new String[]{"weep"});
-        EN_IRREGULAR.put("bit", new String[]{"bite"});
-        EN_IRREGULAR.put("bitten", new String[]{"bite"});
-        EN_IRREGULAR.put("lay", new String[]{"lie"});
-        EN_IRREGULAR.put("lain", new String[]{"lie"});
-        EN_IRREGULAR.put("laid", new String[]{"lay"});
-        EN_IRREGULAR.put("better", new String[]{"good", "well"});
-        EN_IRREGULAR.put("best", new String[]{"good", "well"});
-        EN_IRREGULAR.put("worse", new String[]{"bad", "badly"});
-        EN_IRREGULAR.put("worst", new String[]{"bad", "badly"});
-        EN_IRREGULAR.put("more", new String[]{"much", "many"});
-        EN_IRREGULAR.put("most", new String[]{"much", "many"});
-        EN_IRREGULAR.put("less", new String[]{"little"});
-        EN_IRREGULAR.put("least", new String[]{"little"});
-        EN_IRREGULAR.put("farther", new String[]{"far"});
-        EN_IRREGULAR.put("further", new String[]{"far"});
-        EN_IRREGULAR.put("older", new String[]{"old"});
-        EN_IRREGULAR.put("oldest", new String[]{"old"});
-    }
-
-    /**
-     * 英文词形还原：不规则表 + 后缀规则（复数/动词变化/比较级/副词）。
-     * 返回原形候选；错误原形只会精确查询落空，无害。
-     */
-    public static List<String> deinflectEn(String word) {
-        java.util.LinkedHashSet<String> out = new java.util.LinkedHashSet<>();
-        String w = word.trim();
-        int n = w.length();
-        if (n < 2) return new ArrayList<>(out);
-        String low = w.toLowerCase(java.util.Locale.ROOT);
-        String[] irr = EN_IRREGULAR.get(low);
-        if (irr != null) out.addAll(java.util.Arrays.asList(irr));
-
-        // 复数：-ies→y、-ves→f/fe、-es、-s
-        if (low.endsWith("ies") && n > 4) out.add(w.substring(0, n - 3) + "y");
-        if (low.endsWith("ves") && n > 4) {
-            out.add(w.substring(0, n - 3) + "f");
-            out.add(w.substring(0, n - 3) + "fe");
-        }
-        if (low.endsWith("es") && n > 3) out.add(w.substring(0, n - 2));
-        if (low.endsWith("s") && n > 2 && !low.endsWith("ss") && !low.endsWith("us")) {
-            out.add(w.substring(0, n - 1));
-        }
-        // 动词 -ing：原样基 / +e / 双写辅音还原
-        if (low.endsWith("ing") && n > 5) {
-            String b = w.substring(0, n - 3);
-            out.add(b);
-            out.add(b + "e");
-            if (b.length() > 2 && b.charAt(b.length() - 1) == b.charAt(b.length() - 2)
-                    && !isVowel(b.charAt(b.length() - 1))) {
-                out.add(b.substring(0, b.length() - 1));
+    /** 语言分派：假名→ja、谚文→ko、汉字→ja（zh 规则集为空，语义无损）、其余→en。 */
+    private static LangRules selectLang(String s) {
+        for (int i = 0; i < s.length(); i++) {
+            int cp = s.codePointAt(i);
+            if ((cp >= 0x3041 && cp <= 0x30FF) || (cp >= 0x31F0 && cp <= 0x31FF)
+                    || (cp >= 0x4E00 && cp <= 0x9FFF) || (cp >= 0x3400 && cp <= 0x4DBF)) {
+                return sLangs.get("ja");
+            }
+            if ((cp >= 0xAC00 && cp <= 0xD7AF) || (cp >= 0x1100 && cp <= 0x11FF)) {
+                return sLangs.get("ko");
             }
         }
-        // 动词 -ed：-ied→y、-d（love）、-ed（need）、双写还原（stopped）
-        if (low.endsWith("ied") && n > 4) out.add(w.substring(0, n - 3) + "y");
-        if (low.endsWith("ed") && n > 4) {
-            out.add(w.substring(0, n - 1));
-            String b = w.substring(0, n - 2);
-            out.add(b);
-            if (b.length() > 2 && b.charAt(b.length() - 1) == b.charAt(b.length() - 2)
-                    && !isVowel(b.charAt(b.length() - 1))) {
-                out.add(b.substring(0, b.length() - 1));
-            }
-        }
-        // 比较级/最高级：-ier/-iest→y、-er/-est（含 +e 与双写还原）
-        if (low.endsWith("ier") && n > 4) out.add(w.substring(0, n - 3) + "y");
-        if (low.endsWith("iest") && n > 5) out.add(w.substring(0, n - 4) + "y");
-        if (low.endsWith("er") && n > 4) {
-            out.add(w.substring(0, n - 1));
-            out.add(w.substring(0, n - 2));
-        }
-        if (low.endsWith("est") && n > 5) {
-            out.add(w.substring(0, n - 2));
-            out.add(w.substring(0, n - 3));
-        }
-        // 副词 -ly：去 ly；-ily→y
-        if (low.endsWith("ily") && n > 5) out.add(w.substring(0, n - 3) + "y");
-        if (low.endsWith("ly") && n > 4) out.add(w.substring(0, n - 2));
-
-        out.remove(w);
-        out.remove(low.equals(w) ? "" : w.toLowerCase(java.util.Locale.ROOT));
-        return new ArrayList<>(out);
+        return sLangs.get("en");
     }
 
     // ---- 递归还原引擎（transform-engine.ts 对齐）----
 
     private static void recurse(String text, Set<String> currentConds, int depth,
-                                Map<String, DeinflectionResult> seen) {
+                                Map<String, DeinflectionResult> seen, LangRules lang) {
         if (depth > MAX_DEPTH) return;
-        for (Rule rule : sRules) {
+        for (Rule rule : lang.rules) {
             // 条件检查：conditionsIn 非空时须与当前条件集有交集
             if (rule.conditionsIn.length > 0) {
                 boolean ok = false;
@@ -392,43 +265,44 @@ public final class OnsDeinflector {
             if (candidate.equals(text)) continue;
 
             // 出口条件展开（子条件递归；isDictionaryForm 条件不展开）
-            for (String cond : expandConditions(java.util.Arrays.asList(rule.conditionsOut))) {
-                if (isDictionaryForm(cond)) {
+            for (String cond : expandConditions(java.util.Arrays.asList(rule.conditionsOut), lang)) {
+                if (isDictionaryForm(cond, lang)) {
                     String key = candidate + "|" + cond;
                     DeinflectionResult existing = seen.get(key);
                     if (existing == null || existing.score > depth + 1) {
                         seen.put(key, new DeinflectionResult(candidate, depth + 1));
                     }
                 }
-                recurse(candidate,
-                        new HashSet<>(java.util.Collections.singletonList(cond)),
-                        depth + 1, seen);
+                Set<String> next = new HashSet<>();
+                next.add(cond);
+                recurse(candidate, next, depth + 1, seen, lang);
             }
         }
     }
 
-    private static boolean isDictionaryForm(String cond) {
-        JSONObject def = sConditions.get(cond);
+    private static boolean isDictionaryForm(String cond, LangRules lang) {
+        JSONObject def = lang.conditions.get(cond);
         return def != null && def.optBoolean("isDictionaryForm", false);
     }
 
     /** 条件名递归展开子条件（isDictionaryForm 条件不展开）。 */
-    private static List<String> expandConditions(List<String> condNames) {
+    private static List<String> expandConditions(List<String> condNames, LangRules lang) {
         List<String> result = new ArrayList<>();
         for (String name : condNames) {
-            JSONObject def = sConditions.get(name);
+            JSONObject def = lang.conditions.get(name);
             JSONArray sub = def == null ? null : def.optJSONArray("subConditions");
             boolean isDictForm = def != null && def.optBoolean("isDictionaryForm", false);
             if (def != null && sub != null && sub.length() > 0 && !isDictForm) {
                 List<String> subList = new ArrayList<>();
                 for (int i = 0; i < sub.length(); i++) subList.add(sub.optString(i, ""));
-                result.addAll(expandConditions(subList));
+                result.addAll(expandConditions(subList, lang));
             } else {
                 result.add(name);
             }
         }
         return result;
     }
+
 
     // ---- 预处理管线（japanese-util.ts 对齐）----
 
