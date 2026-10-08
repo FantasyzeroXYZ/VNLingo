@@ -67,8 +67,9 @@
 - [ ] WEB_RPGMV_V1（Web 注入资源包）仍无 UI 入口、状态恒「已集成」：
       GameRuntimeHost/WebRuntimeAssets 是 engine 内部 API，先定入口（引擎页
       Web 行？）再接线，并把「已集成」改成真实状态查询
-- [ ] main 落后 feat/extract-suite 103+ 提交：功能分支已推远端（b884e97），
-      稳定后合并回 main（merge 或 PR），保持 main 可发布
+- [ ] main 落后 feat/extract-suite 118 提交：功能分支已推远端（2026-10-08 已推到
+      fe35c92，GitHub 直连可用），稳定后合并回 main（merge 或 PR），保持 main
+      可发布
 - [ ] KRKR 对白完整还原（说话人行带重绘链）——多行页「只出末段」已由连续页
       累积显示解决（2026-10-06 会话二十四：点击+新文本才翻页，否则拼接显示，
       模拟器实测三行页完整）；剩余=说话人行重绘链重复段（候选机制兜底）。
@@ -135,9 +136,9 @@
 - [x] 设置页弹窗入口 ctx 解包统一 findActivity；词典设置跳 Tab 改用
       MainTabs.TAB_DICT 常量（原写死索引 1，tab 顺序变化会错位）
 
-- [ ] 推送欠账：feat/extract-suite b9de2c6（Artemis 官方内核 CommandPrint
-      提取）本地已提交，2026-10-08 GitHub 直连不可达未推；网络恢复后
-      `git push origin feat/extract-suite`
+- [x] 推送欠账（2026-10-08 会话四十四了结）：GitHub 直连恢复，
+      `git push origin feat/extract-suite` 成功（1e235da..fe35c92，远端已确认
+      fe35c92；本仓库 remote.origin.fetch 只映射 main，查远端请用 git ls-remote）
 - [ ] Artemis 官方内核语音配对实测：CommandVoice 钩子已就位（块参数树取
       语音文件名 + 首 8 调用键值日志），Girl's Blossom 序章无语音行未触发；
       到有语音的章节看 "CommandVoice arg" 日志核键名，必要时按实际键名收窄
