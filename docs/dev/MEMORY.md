@@ -610,3 +610,29 @@
    探针注入时 overlay 会把游戏自己的 patch.tjs 内容作为 base 一起写回
    （`baseBytes` 含 `cleanup.bytes`），不要让它把游戏 patch 整份替换掉。
 
+## 实测踩坑（2026-10-08 会话四十五之三：TJS 里怎么「包装」一个插件解析器类）
+
+针对 tsukikage（KAGParserEx）实测出的可用/不可用手段（脚本标识
+`TYRANOR_NEXT_KRKR_EXTRACT_WRAP_V*`，脚本在 `EngineLauncher.krExtractProbeScript()`）：
+
+1. **TJS2 不允许在函数体内声明类**：`function f() { class X extends KAGParser {} }`
+   在运行期抛异常（不是语法错误，编译能过）→「第 1 帧临时声明子类」这条路直接封死，
+   必须在顶层声明。
+2. **顶层子类可以合法声明，但它绑定的是声明时刻的基类**（patch.tjs 阶段 = 换类前的
+   旧 KAGParser）。所以正确做法 = 顶层声明 + **第 1 帧写回** `global.KAGParser`
+   （实测 `assignClass=ok`，游戏正常运行、对白照常显示）。
+3. **换后的类方法可读可写**：`global.KAGParser.getNextTag` 能读出函数对象，也能被
+   赋成自己的函数（实测 `readMethod=ok` / `writeMethod=ok`），替换后的函数**会以
+   实例为 `this` 被调用**。
+4. **但「调用原方法」四种约定全失败**（`&(orig incontextof this)`、`orig.call(this)`、
+   裸 `orig()`、临时把类槽还原成原方法再 `this.getNextTag()`）——所以「方法级包装 +
+   转发」在 TJS2 层做不到；能做的是**整类替换**（子类用 `super.getNextTag()` 转发，
+   `super` 只在类体内可用）。
+5. **异常转储会冲爆 logcat**：被替换的方法里一旦每次调用都抛，TJS 每次抛都打整套
+   反汇编（单次约 2 万行），16 MB ring buffer 里的探针标记会被挤掉——排查时要
+   在失败后**立刻停手**（`__tnAllFailed` 守卫）并在洪水前抓一份日志。
+6. **换类后必须验证游戏本体**：本轮包装成功后游戏照常出对白
+   （「俺こと卯月誠一が交わした、大切な契約の言葉。」），说明该游戏即使退化成
+   普通 KAGParser 语义也能跑；但**文本重建仍偏碎**（推进 10 次只到 1 条
+   `krkr text: のものもの`），下一轮要按 Ex 的实际 tag 形态重做切分。
+

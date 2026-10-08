@@ -456,10 +456,13 @@ object EngineSettingsStore {
         if (isKrExtractTjs(c)) KR_TEXT_SOURCE_ENGINE else KR_TEXT_SOURCE_HOOK
 
     /**
-     * KRKR 解析器层只读探针（默认关，实验用）：随 patch.tjs overlay 注入纯 ASCII 诊断块，
-     * 只做 globals/System API 探测与「KAGParserEx 何时注册」的延迟观测，**不替换任何类**。
-     * 输出走 Debug.message → Kirikiroid2 控制台 → logcat（tag `cocos2d-x debug info`），
-     * 不经 Label 钩子的 CJK 过滤。用于判断 Ex 类游戏能否走解析器层提取。
+     * KRKR 解析器层实验开关（默认关，实验性、**可能崩游戏、可回滚**）：
+     * 开启后随 patch.tjs overlay 注入纯 ASCII 的「换类瞬间包装」脚本——
+     * patch.tjs 阶段注册 `System.addContinuousHandler`（Timer 在 krkr2 上会段错误，
+     * 不能用），第 1 帧检测到 `global.KAGParser` 被插件类替换时，用顶层子类写回。
+     * 输出经 `[TNEXT]` → 控制台 → Label 钩子 → 提取桥。
+     * 实测（tsukikage）：包装成功、游戏正常运行并出对白、文本能到达提取桥，
+     * 但按标签切分的文本仍偏碎（重建逻辑待完善）。
      */
     const val KEY_KR_EXTRACT_PROBE = "kr_extract_probe"
     fun isKrExtractProbe(c: Context): Boolean =

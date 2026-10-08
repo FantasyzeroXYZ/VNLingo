@@ -1563,34 +1563,93 @@ object EngineLauncher {
     """.trimMargin()
 
     /**
-     * [KRKR-EXTRACT] 解析器层**只读探针**（设置 `kr_extract_probe` 开启时随 patch.tjs
-     * overlay 注入；默认关）。用途：判断 Ex 类游戏（KAGParserEx，如 tsukikage）能否走
-     * 解析器层提取——只观测、不替换任何类、不改变游戏逻辑：
-     * 1. patch.tjs 阶段 `global.KAGParser` / `global.KAGParserEx` 是否已存在；
-     * 2. `System.addContinuousHandler` 与 `Timer` 是否可用（Timer 在 krkr2 1.3.9
-     *    的 Initialize 阶段会段错误，这里只探测存在性、不实例化）；
-     * 3. 若 continuous handler 可用，逐帧等待 KAGParserEx 注册并打印帧数与成员名，
-     *    得到「注册前不可写」的可延迟窗口大小（上限 900 帧后放弃并移除 handler）。
+     * [KRKR-EXTRACT] 解析器层**换类瞬间包装**（设置 `kr_extract_probe` 开启时随
+     * patch.tjs overlay 注入；默认关，属实验特性，**可能崩游戏、可回滚**）。
      *
-     * 全部 try/catch 包裹，且必须保持**纯 ASCII**：Kirikiroid2 按内容探测 patch.tjs
-     * 编码，混入 UTF-8 日文会改变探测结果并殃及后续 SJIS 脚本解码。
-     * 输出走 Debug.message → 控制台 → logcat（tag `cocos2d-x debug info`）。
+     * 背景（2026-10-08 会话四十五真机探测）：KAG 在 patch.tjs 之后**第 1 帧**就把
+     * `global.KAGParser` 换成插件类（Ex 游戏换 KAGParserEx），换掉后该类并不暴露为
+     * 全局名。因此「顶层替换」必然早于注册（旧实现的引导期崩溃根因），而 Timer 延迟
+     * 在 Initialize 阶段会段错误。可用手段只剩 `System.addContinuousHandler`
+     * （实测非致命，连续 1800 帧无异常）。
+     *
+     * 做法：patch.tjs 阶段记下 `global.KAGParser` 原值并注册逐帧 handler；在检测到
+     * 该值被替换的那一帧，**在函数体内**声明 `class TnWrapP extends KAGParser`
+     * （TJS 的 extends 在声明语句执行时求值，此刻解析到的是换后的新类）并写回
+     * `global.KAGParser`。getNextTag 复用 v8 的 ch 缓冲逻辑，命中 `[TNEXT]` 前缀
+     * 经控制台 → Label 钩子 → NativeBridge.onKrxtText 进提取桥。
+     *
+     * 必须保持**纯 ASCII**（Kirikiroid2 按内容探测 patch.tjs 编码）；全部 try/catch
+     * 包裹；失败只放弃提取，不影响游戏的其余部分。
      */
     private fun krExtractProbeScript(): String = """
         |
         |
-        |// TYRANOR_NEXT_KRKR_EXTRACT_PROBE_V9
+        |// TYRANOR_NEXT_KRKR_EXTRACT_WRAP_V4
         |global.__tnOrig = null;
+        |global.__tnOrigMethod = null;
         |try { global.__tnOrig = global.KAGParser; } catch(e) {}
+        |function tnEmit(s) {
+        |  try { Debug.message("[TNEXT]" + s); } catch(e) { try { Debug.notice("[TNEXT]" + s); } catch(e2) {} }
+        |}
+        |class TnWrapP extends KAGParser {
+        |  var tnBuf = "";
+        |  function tnFlush() {
+        |    if (tnBuf == "") return;
+        |    var s = tnBuf;
+        |    tnBuf = "";
+        |    tnEmit(s);
+        |  }
+        |  function getNextTag() {
+        |    var d = super.getNextTag();
+        |    if (d === void) { tnFlush(); return d; }
+        |    var tn = d.tagname;
+        |    if (tn == "ch") {
+        |      tnBuf += d.text;
+        |    } else {
+        |      if (tn == "r") { tnBuf += " "; }
+        |      tnFlush();
+        |    }
+        |    return d;
+        |  }
+        |}
+        |function tnPatchedGetNextTag() {
+        |  if (global.__tnAllFailed) return null;
+        |  var d = null;
+        |  var ok = false;
+        |  try {
+        |    global.KAGParser.getNextTag = global.__tnOrigMethod;
+        |    d = this.getNextTag();
+        |    ok = true;
+        |  } catch(e) {
+        |    ok = false;
+        |  }
+        |  try { global.KAGParser.getNextTag = tnPatchedGetNextTag; } catch(e) {}
+        |  if (!ok) {
+        |    if (!global.__tnAllFailed) {
+        |      global.__tnAllFailed = true;
+        |      try { Debug.message("[probe] callViaInstanceFailed"); } catch(e2) {}
+        |    }
+        |    return null;
+        |  }
+        |  if (d === void) return d;
+        |  var hb = global.__tnHookBuf;
+        |  var tn = d.tagname;
+        |  if (tn == "ch") {
+        |    global.__tnHookBuf = hb + d.text;
+        |  } else {
+        |    if (tn == "r") { global.__tnHookBuf = hb + " "; }
+        |    if (global.__tnHookBuf != "") { tnEmit(global.__tnHookBuf); global.__tnHookBuf = ""; }
+        |  }
+        |  return d;
+        |}
         |function tnTick() {
         |  global.__tnFrames = global.__tnFrames + 1;
         |  if (global.__tnDone) return;
         |  var f = global.__tnFrames;
         |  if (f == 600) { try { Debug.message("[probe] t600"); } catch(e) {} }
-        |  if (f == 1800) { try { Debug.message("[probe] t1800"); } catch(e) {} }
         |  if (f > 5400) {
         |    global.__tnDone = true;
-        |    try { Debug.message("[probe] giveup frames=" + f); } catch(e) {}
+        |    try { Debug.message("[probe] wrapGiveup frames=" + f); } catch(e) {}
         |    try { System.removeContinuousHandler(tnTick); } catch(e) {}
         |    return;
         |  }
@@ -1599,19 +1658,23 @@ object EngineLauncher {
         |  if (same) return;
         |  global.__tnDone = true;
         |  try { Debug.message("[probe] swapped frames=" + f); } catch(e) {}
-        |  try { Debug.message("[probe] swapToEx=" + (!(global.KAGParserEx === void))); } catch(e) { try { Debug.message("[probe] swapToEx=threw"); } catch(e2) {} }
+        |  global.__tnHookBuf = "";
+        |  try { global.KAGParser = TnWrapP; Debug.message("[probe] assignClass=ok"); } catch(e) { try { Debug.message("[probe] assignClass=threw"); } catch(e2) {} }
         |  try { System.removeContinuousHandler(tnTick); } catch(e) {}
         |}
         |try { Debug.message("[probe] patch.tjs executed"); } catch(e) {}
-        |try { Debug.message("[probe] KAGParserPresent=" + (!(global.KAGParser === void))); } catch(e) {}
         |try {
         |  global.__tnFrames = 0;
         |  global.__tnDone = false;
         |  System.addContinuousHandler(tnTick);
-        |  Debug.message("[probe] continuous handler installed");
+        |  Debug.message("[probe] wrap handler installed");
         |} catch(e) {
-        |  try { Debug.message("[probe] handler setup failed"); } catch(e2) {}
+        |  try { Debug.message("[probe] wrap handler failed"); } catch(e2) {}
         |}
+        |class TnTopP extends KAGParser {
+        |  function tnPing() { return 1; }
+        |}
+        |try { Debug.message("[probe] topClass=ok"); } catch(e) {}
                 |
     """.trimMargin()
 

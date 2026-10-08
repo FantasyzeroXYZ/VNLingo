@@ -161,14 +161,19 @@
       2026-10-08 会话四十五）——该类游戏（KAGParserEx + textrender/layerExDraw/
       PreRenderFontEx）正文渲染**完全不经 libgame.so 的 FreeType 与 cocos2d Label**
       （真机计数全程冻结，对照 kazurauta 正常）。
-      **零风险探测已完成**（`kr_extract_probe` 开关 + 只读探针，默认关）：
+       **零风险探测已完成**（`kr_extract_probe` 开关 + 只读探针，默认关）：
       patch.tjs 阶段只有 `KAGParser`；`global.KAGParser` 在之后**第 1 帧**被换掉，
       换掉后 `KAGParserEx` 仍不是全局名；`System.addContinuousHandler` 存在且
       **非致命**（901/1800 帧实测正常），是唯一可用的延迟手段（Timer 才致命）。
-      下一步（未实施，需用户确认「可能崩游戏、可回滚」）：patch.tjs 注册
-      continuous handler → 第 1 帧检测到 `global.KAGParser` 被替换后立即子类化
-      当前值并写回（复用 v8 的 getNextTag 缓冲），即把发射器从「顶层替换」改为
-      「换类瞬间包装」。备选：带钩内核（krkr2-main 源码级，工作量大）
+      **换类瞬间包装已跑通（实验）**：顶层子类 + 第 1 帧写回 `global.KAGParser`
+      → 游戏正常运行并出对白，`[TNEXT]`→控制台→Label 钩子→提取桥**整链打通**
+      （真机收到 `krkr text: せいちせいちせいち` / `のものもの`）。
+      方法级包装不可行：TJS2 不允许函数体内声明类，且从被替换方法里调用原方法
+      的四种约定全抛（只能整类替换 + `super` 转发）。
+      **待做**：①按 KAGParserEx 实际 tag 形态重做文本重建/切分（当前偏碎且稀少，
+      推进 10 次仅 1 条）②把 `kr_extract_probe` 从实验开关提升为正式设置项
+      （与「文本输出方式」联动）并补 UI 说明 ③跨游戏验证（其它 Ex 游戏）
+      ④备选：带钩内核（krkr2-main 源码级，工作量大）
 - [ ] 提取状态可见性（低优先）：钩子武装成功但该游戏无字符流时，面板/引擎设置
       目前无任何提示，用户只会看到空句栏；可考虑把 native 通道计数（诊断开关下）
       汇总成一行状态展示

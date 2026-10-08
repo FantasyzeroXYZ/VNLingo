@@ -412,6 +412,32 @@ TJS 方言事实（本内核，踩坑，供后续脚本避雷）：
 「注册前不可写」的引导期崩溃（不在 patch.tjs 顶层替换），也不使用致命的 Timer。
 该步骤会真正替换解析器类，属「可能崩游戏、可回滚」的实验，需用户单独确认。
 
+## 6.5.7 B5 换类瞬间包装（用户确认后实施，实验已跑通）
+
+按 6.5.6 的路线实施（`kr_extract_probe` 开启时注入 `krExtractProbeScript()`，
+脚本标识 `TYRANOR_NEXT_KRKR_EXTRACT_WRAP_V*`），逐轮实测结论：
+
+| 尝试 | 结果 |
+|---|---|
+| 帧内声明子类（`function` 里 `class X extends KAGParser`） | ✗ `armDeclare=threw`——TJS2 不允许在函数体内声明类 |
+| 顶层声明子类（patch.tjs 阶段 `extends KAGParser`） | ✓ `topClass=ok`（合法；但此时基类是**换类前**的旧类） |
+| 第 1 帧给**换后**的类覆盖 `getNextTag` | ✓ `readMethod=ok` / `writeMethod=ok`（类方法可读可写） |
+| 从被替换的方法里调用原方法（`&(orig incontextof this)` / `orig.call(this)` / `orig()` / 临时还原类槽后 `this.getNextTag()`） | ✗ 四种调用约定全部抛异常（`modeFail` / `callViaInstanceFailed`） |
+| 第 1 帧把**顶层子类**写回 `global.KAGParser` | ✓ `assignClass=ok` |
+
+**跑通的结果**（tsukikage 真机）：包装后游戏**正常运行**并显示真实对白
+（截图「俺こと卯月誠一が交わした、大切な契約の言葉。」），
+提取桥收到文本：`NativeBridge: krkr text: せいちせいちせいち` / `のものもの`
+——即 `[TNEXT]` → 控制台 → Label 钩子 → `onKrkrText` → 提取桥的**整条链路打通**。
+
+**尚未完成**：文本仍**偏碎且稀少**（推进 10 次只到 1 条），原因是按标签切分的
+缓冲逻辑对 Ex 游戏的 tag 流不适用（`ch` 片段被反复累积成 `せいちせいちせいち`
+这种重复），需要按 KAGParserEx 的实际 tag 形态重做重建/切分；本轮只证明
+**hook 点可行、游戏不崩、通道可达**。
+
+实验开关默认关；真机验证后已把 `kr_extract_probe` 从 prefs 移除（回滚到默认行为，
+`KRKR patch overlay disabled`）。继续推进时把该 pref 置 true 即可复现。
+
 # 7. 需要用户提供的材料
 
 | 材料 | 用途 |

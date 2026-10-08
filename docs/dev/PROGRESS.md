@@ -51,10 +51,19 @@
     打出约 2 万行反汇编转储（不能靠 try/catch 轮询未注册全局）；探针必须纯 ASCII。
   - 关闭 pref 后 overlay 不再生成（`KRKR patch overlay disabled`），控制台恢复
     632 行基线——**可安全回滚**。
-- **B5 下一步（未实施，需用户确认）**：patch.tjs 阶段注册 continuous handler，
-  第 1 帧检测到 `global.KAGParser` 被替换后**立即子类化包装**（复用 v8 的
-  `getNextTag` 缓冲逻辑）——避开引导期崩溃、不用 Timer；该步会真正替换解析器类，
-  属可能崩游戏的实验。
+- **B5 换类瞬间包装（用户确认后实施，实验跑通）**：把探针升级为
+  `TYRANOR_NEXT_KRKR_EXTRACT_WRAP_V*`——patch.tjs 注册 continuous handler，
+  第 1 帧检测到 `global.KAGParser` 被替换时把**顶层子类**写回。逐轮实测：
+  - 帧内声明子类 ✗（TJS2 不允许函数体内声明类）；顶层子类 ✓；换后类的方法
+    **可读可写** ✓；但从被替换方法里调用原方法（`&(orig incontextof this)` /
+    `.call(this)` / `orig()` / 临时还原类槽后 `this.getNextTag()`）**四种约定全抛** ✗；
+  - 第 1 帧写回顶层子类 ✓ `assignClass=ok`：**游戏正常运行并显示真实对白**
+    （「俺こと卯月誠一が交わした、大切な契約の言葉。」），提取桥收到
+    `krkr text: せいちせいちせいち` / `のものもの`——整条通道（`[TNEXT]` → 控制台
+    → Label 钩子 → `onKrkrText` → 提取桥）**打通**；
+  - **未完成**：文本偏碎且稀少（推进 10 次仅 1 条），按标签切分的缓冲逻辑对 Ex 的
+    tag 流不适用，需按 KAGParserEx 实际 tag 形态重做重建/切分。
+  - 真机验证后已把 `kr_extract_probe` 从 prefs 移除，回滚到默认行为（overlay 不再生成）。
 
 ## 2026-10-08 会话（四十四）：查词性能优化 B1–B4 实施 + 真机实测
 
