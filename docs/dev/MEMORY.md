@@ -548,3 +548,35 @@
    同样无效，D-pad 只移动焦点且会误入目录。**需要选文件的自动化请改用模拟器
    （Pixel_6，历史会话里 SAF 选文件成功过）或无障碍服务**，别在真机上耗时间。
 
+## 实测踩坑（2026-10-08 会话四十五新增：KRKR 提取通道的真实覆盖面）
+
+1. **FT/Label 钩子只覆盖「一部分」KRKR 游戏，判据要看计数而不是看有没有报错**：
+   tsukikage no simulacre（KAGParserEx + 自带 textrender/layerExDraw/extNagano/
+   PreRenderFontEx）全套钩子都「武装成功」（Label 虚表 slot 173、FT 三个 GOT 槽
+   patched=1、反向映射 42387 项），但整局 **FT_Get_Char_Index / FT_Load_Glyph /
+   FT_Load_Char / FT_Get_Next_Char / Label::setString 调用计数完全冻结**——
+   标题菜单、18 禁告知、对白全都不走这些路径；对照组 kazurauta 进正片后计数
+   168→909 且 `ft line:` 正常。**「武装成功」≠「有字符流」，判失效先看计数器。**
+2. **诊断埋点要按「通道计数 + 原始链内容」两件套做，且计数打印不能被
+   「raw 为空就 continue」的早退挡住**：首版把 `ft state` 放在 `if (gRawBuf.empty())
+   continue;` 之后，清空后完全看不到计数是否还在涨，差点误判成「有字符流但推导
+   不产出」。计数器日志必须在任何早退之前打。
+3. **GOT 槽原值落在哪个库可以一眼定位 FreeType 归属**：`cat /proc/<pid>/maps`
+   （`run-as` 读自家进程即可）配合 `GOT hook ... original=0x...`，地址落在
+   libgame.so 段内即说明 FT_Get_Next_Char 解析到内核内静态链接的 FreeType；
+   `dlsym` 地址与槽原值一致才排除「第二份 FreeType」假设。
+4. **`FT_Load_Glyph(face, glyph_index)` 也能还原码点**：码点→字形的映射若在字体
+   装载期一次性完成，运行期只剩字形索引。做法 = 惰性建 `glyph_index → 码点`
+   反向表（对 BMP 逐码点问原 `FT_Get_Char_Index`，取首次命中；arms 上 4 万项
+   约 200ms 一次建成），构建后原子发布指针、读侧无锁；与 `FT_Get_Char_Index`
+   通道共用相邻去重入口，避免同一字符被喂两次。对「只走 Load_Glyph」的内核可用，
+   对完全不走 FT 的游戏（上面第 1 条）仍然无效。
+5. **真机游戏条目页的正确入口**：游戏卡片 → 底部弹窗 → `引擎设置`；两个并排按钮
+   的实际 bounds 用 `uiautomator dump` 拿（`引擎设置` 在 [554,1985][1036,2145]，
+   按截图缩放估坐标会点到左边的「存档管理」）。`EngineSettingsActivity`
+   **未导出**，`am start` 直拉会被 SecurityException 拒绝，只能走 UI 导航。
+6. **给下游 agent 的方案文档可能带过期假设**：本轮方案记的「SDL3 下单游戏开关被
+   `if (!isSdl3)` 隐藏」「`kr_extract_tjs` 无 UI 入口」都与 HEAD 代码不符
+   （前者 if 只包住操作卡片，后者设置页早有开关）。执行前先按 HEAD 核对一遍，
+   别照抄方案里的行号/结论。
+

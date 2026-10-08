@@ -35,6 +35,7 @@
 #include <pthread.h>
 #include <sys/mman.h>
 #include <unistd.h>
+#include <unordered_map>
 
 #define TAG "KrkrExtract"
 #define LOGI(...) __android_log_print(ANDROID_LOG_INFO, TAG, __VA_ARGS__)
@@ -77,6 +78,23 @@ jmethodID gOnTextMethod = nullptr;
 std::atomic<bool> gHookInstalled{false};
 // setString 同文本重复到达（同帧多次排版/relayout）：只在首次上行
 std::string gLastText;
+
+// ---- B1 诊断埋点开关（默认关；由 Java 侧按调试日志开关下发） ----
+// 复测协议见 docs/dev/KRKR提取失效与钩子开关方案.md §3.2：钩子武装成功但零字符流时，
+// 需要区分「钩子没被调用」「有字符流但页推导不产出」「上行被 Java 过滤」。埋点日志
+// 一律限频（ARM 转译下高频日志会拖死渲染线程并触发 ANR），且开关关闭时零开销。
+std::atomic<bool> gDiagEnabled{false};
+std::atomic<uint64_t> gFtCharCalls{0};
+std::atomic<uint64_t> gLabelCalls{0};
+
+extern "C" void krkr_set_extract_diag(bool enabled) {
+    gDiagEnabled.store(enabled, std::memory_order_relaxed);
+}
+
+static bool diagEnabled() { return gDiagEnabled.load(std::memory_order_relaxed); }
+
+// 首个 UTF-8 码点（诊断日志用：只打首码点与长度，避免中文全文刷屏/编码噪音）
+unsigned long ftUtf8FirstCode(const std::string& s);
 
 /** 旧 GNU COW std::string 读取：对象首字即 char* 数据指针（空串为静态共享实例，安全）。 */
 const char* cowData(const void* legacyString) {
@@ -131,6 +149,13 @@ void hookedLabelSetString(void* self, const void* legacyString) {
 
     const char* text = cowData(legacyString);
     if (text == nullptr || text[0] == '\0') return;
+    const uint64_t calls = gLabelCalls.fetch_add(1, std::memory_order_relaxed) + 1;
+    if (diagEnabled() && (calls <= 20 || calls % 200 == 0)) {
+        // 只打长度与首码点：全文会刷屏且可能带控制台噪音
+        const std::string probe(text);
+        LOGI("label set: calls=%llu len=%zu head=U+%04lX",
+             static_cast<unsigned long long>(calls), probe.size(), ftUtf8FirstCode(probe));
+    }
     // 同一文本重复 setString（同帧多次排版）只在首次上行；
     // 不同 Label 交替（人名/正文）文本不同，天然放行
     if (gLastText == text) return;
@@ -236,14 +261,25 @@ bool probeInlineHook(void* target) {
 // GOT 补丁即可拦截层文本渲染的每个字符码点（Unicode）。按停顿 300ms 切行累积。
 using FTLoadCharFn = unsigned long (*)(void* face, unsigned long code, int flags);
 FTLoadCharFn gOrigFTLoadChar = nullptr;
+// 实测（tsukikage）：对白渲染只经 FT_Load_Glyph(face, glyph_index)，码点→字形索引
+// 的映射在字体装载期一次性完成（FT_Get_Char_Index 只承载控制台文本）。故再补
+// FT_Load_Glyph 钩子 + 惰性反向映射（glyph_index → 码点）还原字符流。
+using FTLoadGlyphFn = int (*)(void* face, unsigned int glyphIndex, int loadFlags);
+FTLoadGlyphFn gOrigFTLoadGlyph = nullptr;
+using FTGetFirstCharFn = unsigned long (*)(void* face, unsigned int* agindex);
+FTGetFirstCharFn gOrigFTGetFirstChar = nullptr;
+using FTGetNextCharFn = unsigned long (*)(void* face, unsigned long charCode, unsigned int* agindex);
+FTGetNextCharFn gOrigFTGetNextChar = nullptr;
+std::atomic<uint64_t> gFtGlyphCalls{0};
+std::atomic<uint64_t> gFtNextCharCalls{0};
+// glyph_index → 码点（构建一次后只读；指针原子发布，读侧无锁）
+std::atomic<const std::unordered_map<unsigned int, unsigned long>*> gGlyphToCode{nullptr};
+
 std::mutex gLineMutex;
 std::chrono::steady_clock::time_point gLastCharAt;
 std::chrono::steady_clock::time_point gLastEmitAt = std::chrono::steady_clock::time_point::min();
 
-unsigned long hookedFTLoadChar(void* face, unsigned long code, int flags) {
-    const unsigned long err = gOrigFTLoadChar != nullptr ? gOrigFTLoadChar(face, code, flags) : 0;
-    return err;
-}
+void ftOnCode(unsigned long code);
 
 // 对白渲染的实际路径（krkr2-main FreeType.cpp:651/670 证实）：
 // FT_Get_Char_Index(face, unicode) → FT_Load_Glyph(face, index)——FT_Load_Char 从不被调用。
@@ -432,11 +468,35 @@ void flushTimerLoop() {
     while (gFlushThreadRunning.load(std::memory_order_relaxed)) {
         std::this_thread::sleep_for(std::chrono::milliseconds(400));
         std::string snap;
+        std::string rawCopy;
+        size_t rawSize = 0;
+        size_t knownSize = 0;
         {
             std::lock_guard<std::mutex> lock(gLineMutex);
-            if (gRawBuf.empty()) continue;
+            rawSize = gRawBuf.size();
+            knownSize = gKnown.size();
             snap = gRawBuf.size() > 512 ? gRawBuf.substr(gRawBuf.size() - 512) : gRawBuf;
+            if (diagEnabled() && rawSize > 0) {
+                // 尾部 120 字节：用于辨认到底哪些文本流经这条通道
+                rawCopy = gRawBuf.size() > 120 ? gRawBuf.substr(gRawBuf.size() - 120) : gRawBuf;
+            }
         }
+        if (diagEnabled()) {
+            // 2s 一条（400ms 轮询 ×5）：区分「完全没有字符流（raw=0）」与
+            // 「有字符流但页推导不产出（raw 增长、无 ft line）」。
+            // 必须在 raw 空判定之前打印：清空后仍需观察计数器是否仍在增长。
+            static uint64_t tick = 0;
+            if (++tick % 5 == 0) {
+                LOGI("ft state: raw=%zu known=%zu idx_calls=%llu glyph_calls=%llu nextchar=%llu label=%llu",
+                     rawSize, knownSize,
+                     static_cast<unsigned long long>(gFtCharCalls.load(std::memory_order_relaxed)),
+                     static_cast<unsigned long long>(gFtGlyphCalls.load(std::memory_order_relaxed)),
+                     static_cast<unsigned long long>(gFtNextCharCalls.load(std::memory_order_relaxed)),
+                     static_cast<unsigned long long>(gLabelCalls.load(std::memory_order_relaxed)));
+                if (!rawCopy.empty()) LOGI("ft raw: %s", rawCopy.c_str());
+            }
+        }
+        if (rawSize == 0) continue;
         const bool pageEnd = std::chrono::steady_clock::now() - gLastCharAt
                 > std::chrono::milliseconds(3000);
         {
@@ -485,39 +545,108 @@ std::string ftDerivePage(const std::string& raw) {
 // 原始链候选随页变更上行一次（面板候选切换用）：页变更时由
 // deriveAndMaybeEmitLocked 内附带；此处不再单独 flush。
 
+/**
+ * 码点入流唯一入口（FT_Get_Char_Index 与 FT_Load_Char 两条 GOT 通道共用）：
+ * gPrevCode 相邻去重保证同一字符被两条路径重复喂入时只算一次。
+ */
+void ftOnCode(unsigned long code) {
+    if (!gHookInstalled.load(std::memory_order_relaxed)) return;
+    if (code < 0x20 || code >= 0x110000 || code == gPrevCode) return;
+    const auto now = std::chrono::steady_clock::now();
+    std::lock_guard<std::mutex> lock(gLineMutex);
+    ftFeedCharLocked(code);
+    {
+        // raw 码点流累积（调试）
+        std::string ch;
+        if (code < 0x80) ch.push_back(static_cast<char>(code));
+        else if (code < 0x800) {
+            ch.push_back(static_cast<char>(0xC0 | (code >> 6)));
+            ch.push_back(static_cast<char>(0x80 | (code & 0x3F)));
+        } else if (code < 0x10000) {
+            ch.push_back(static_cast<char>(0xE0 | (code >> 12)));
+            ch.push_back(static_cast<char>(0x80 | ((code >> 6) & 0x3F)));
+            ch.push_back(static_cast<char>(0x80 | (code & 0x3F)));
+        } else {
+            ch.push_back(static_cast<char>(0xF0 | (code >> 18)));
+            ch.push_back(static_cast<char>(0x80 | ((code >> 12) & 0x3F)));
+            ch.push_back(static_cast<char>(0x80 | ((code >> 6) & 0x3F)));
+            ch.push_back(static_cast<char>(0x80 | (code & 0x3F)));
+        }
+        gRawBuf += ch;
+        if (gRawBuf.size() > 2048) gRawBuf.clear();
+    }
+    gLastCharAt = now;
+}
+
 unsigned long hookedFTGetCharIndex(void* face, unsigned long code) {
     const unsigned long idx = gOrigFTGetCharIndex != nullptr ? gOrigFTGetCharIndex(face, code) : 0;
-    if (gHookInstalled.load(std::memory_order_relaxed)
-            && code >= 0x20 && code < 0x110000 && code != gPrevCode) {
-        const auto now = std::chrono::steady_clock::now();
-        std::lock_guard<std::mutex> lock(gLineMutex);
-        ftFeedCharLocked(code);
-        {
-            // raw 码点流累积（调试）
-            const unsigned char* b = reinterpret_cast<const unsigned char*>(&code);
-            (void) b;
-            std::string ch;
-            if (code < 0x80) ch.push_back(static_cast<char>(code));
-            else if (code < 0x800) {
-                ch.push_back(static_cast<char>(0xC0 | (code >> 6)));
-                ch.push_back(static_cast<char>(0x80 | (code & 0x3F)));
-            } else if (code < 0x10000) {
-                ch.push_back(static_cast<char>(0xE0 | (code >> 12)));
-                ch.push_back(static_cast<char>(0x80 | ((code >> 6) & 0x3F)));
-                ch.push_back(static_cast<char>(0x80 | (code & 0x3F)));
-            } else {
-                ch.push_back(static_cast<char>(0xF0 | (code >> 18)));
-                ch.push_back(static_cast<char>(0x80 | ((code >> 12) & 0x3F)));
-                ch.push_back(static_cast<char>(0x80 | ((code >> 6) & 0x3F)));
-                ch.push_back(static_cast<char>(0x80 | (code & 0x3F)));
-            }
-            gRawBuf += ch;
-            if (gRawBuf.size() > 2048) gRawBuf.clear();
-        }
-        gLastCharAt = now;
+    const uint64_t calls = gFtCharCalls.fetch_add(1, std::memory_order_relaxed) + 1;
+    if (diagEnabled() && (calls <= 50 || calls % 500 == 0)) {
+        LOGI("ft char: calls=%llu code=U+%04lX idx=%lu",
+             static_cast<unsigned long long>(calls), code & 0x1FFFFFul, idx);
     }
+    ftOnCode(code);
     gPrevCode = code;
     return idx;
+}
+
+/** FT_Load_Char 兜底通道（部分内核/字体路径经 code 直接加载字形，不经 FT_Get_Char_Index）。 */
+unsigned long hookedFTLoadChar(void* face, unsigned long code, int flags) {
+    const unsigned long err = gOrigFTLoadChar != nullptr ? gOrigFTLoadChar(face, code, flags) : 0;
+    ftOnCode(code);
+    gPrevCode = code;
+    return err;
+}
+
+// ---- 反向映射：glyph_index → 码点（FT_Load_Glyph 通道的字形还原） ----
+// 映射在字体装载期由引擎自己建立（码点→字形），运行期只剩字形索引；
+// 这里用「让内核自己回答」的方式重建：对 BMP 区间逐码点问 gOrigFTGetCharIndex，
+// 取该字形索引的首次命中码点。65504 次 cmap 二分查找，一次性、毫秒级。
+std::mutex gGlyphMapMutex;
+unsigned gGlyphMapBuildAttempts = 0;
+
+void maybeBuildGlyphMap(void* face) {
+    if (gGlyphToCode.load(std::memory_order_acquire) != nullptr) return;
+    if (gOrigFTGetCharIndex == nullptr || face == nullptr) return;
+    std::lock_guard<std::mutex> lock(gGlyphMapMutex);
+    if (gGlyphToCode.load(std::memory_order_acquire) != nullptr) return;
+    if (gGlyphMapBuildAttempts >= 5) return;  // 字型表尚未就绪时不反复扫
+    ++gGlyphMapBuildAttempts;
+    auto* map = new std::unordered_map<unsigned int, unsigned long>();
+    map->reserve(8192);
+    for (unsigned long code = 0x20; code <= 0xFFFF; ++code) {
+        if (code >= 0xD800 && code <= 0xDFFF) continue;  // 代理区无效码点
+        const unsigned long index = gOrigFTGetCharIndex(face, code);
+        if (index == 0) continue;
+        map->emplace(static_cast<unsigned int>(index), code);
+    }
+    LOGI("ft glyph map built: face=%p entries=%zu attempts=%u", face, map->size(), gGlyphMapBuildAttempts);
+    if (!map->empty()) {
+        gGlyphToCode.store(map, std::memory_order_release);
+    }
+}
+
+int hookedFTLoadGlyph(void* face, unsigned int glyphIndex, int loadFlags) {
+    const int err = gOrigFTLoadGlyph != nullptr ? gOrigFTLoadGlyph(face, glyphIndex, loadFlags) : 0;
+    const uint64_t calls = gFtGlyphCalls.fetch_add(1, std::memory_order_relaxed) + 1;
+    if (diagEnabled() && (calls <= 20 || calls % 500 == 0)) {
+        LOGI("ft glyph: calls=%llu index=%u err=%d", static_cast<unsigned long long>(calls),
+             glyphIndex, err);
+    }
+    if (!gHookInstalled.load(std::memory_order_relaxed)) return err;
+    if (gGlyphToCode.load(std::memory_order_acquire) == nullptr) maybeBuildGlyphMap(face);
+    const auto* map = gGlyphToCode.load(std::memory_order_acquire);
+    if (map == nullptr) return err;
+    const auto it = map->find(glyphIndex);
+    if (it != map->end()) ftOnCode(it->second);
+    gPrevCode = it != map->end() ? it->second : gPrevCode;
+    return err;
+}
+
+/** FT_Get_First_Char / FT_Get_Next_Char：仅计数（判定「码点→字形映射在装载期完成」）。 */
+unsigned long hookedFTGetNextChar(void* face, unsigned long charCode, unsigned int* agindex) {
+    gFtNextCharCalls.fetch_add(1, std::memory_order_relaxed);
+    return gOrigFTGetNextChar != nullptr ? gOrigFTGetNextChar(face, charCode, agindex) : 0;
 }
 
 }  // namespace
@@ -605,19 +734,56 @@ extern "C" bool krkr_install_extract_hook(void* gameHandle, JNIEnv* env) {
 }
 
 /** FT 字符流钩子：GOT 补丁 FT_Get_Char_Index（对白渲染的 Unicode 必经点）。 */
+static bool gFtProbeInstalled = false;
+
 extern "C" bool krkr_install_ft_probe(void* gameHandle, const char* library) {
-    if (gameHandle == nullptr || library == nullptr || gOrigFTGetCharIndex != nullptr) return false;
+    if (gameHandle == nullptr || library == nullptr) return false;
+    if (gFtProbeInstalled) return true;
     void* orig = nullptr;
-    if (!krkr_bridge_got_hook(library, "FT_Get_Char_Index",
-                              reinterpret_cast<void*>(&hookedFTGetCharIndex), &orig)) {
-        LOGW("ft probe GOT hook failed");
+    const bool primary = krkr_bridge_got_hook(library, "FT_Get_Char_Index",
+                                              reinterpret_cast<void*>(&hookedFTGetCharIndex), &orig);
+    if (primary) {
+        gOrigFTGetCharIndex = reinterpret_cast<FTGetCharIndexFn>(orig);
+        if (diagEnabled()) {
+            // A2 判据：GOT 槽原值应与 dlsym 得到的内核导出地址一致；
+            // 不一致 = 该库另有一份静态 FreeType / 槽指向别的实现
+            LOGI("ft probe: FT_Get_Char_Index dlsym=%p got_original=%p",
+                 dlsym(gameHandle, "FT_Get_Char_Index"), orig);
+        }
+    } else {
+        LOGW("ft probe GOT hook failed (FT_Get_Char_Index)");
+    }
+    // 兜底通道 1：FT_Load_Glyph —— 实测 tsukikage 的对白只走这一条（码点→字形
+    // 映射在装载期完成），经反向映射还原码点。缺槽不致命（其他内核可能无此路径）。
+    void* origLoadGlyph = nullptr;
+    if (krkr_bridge_got_hook(library, "FT_Load_Glyph",
+                             reinterpret_cast<void*>(&hookedFTLoadGlyph), &origLoadGlyph)) {
+        gOrigFTLoadGlyph = reinterpret_cast<FTLoadGlyphFn>(origLoadGlyph);
+        LOGI("ft probe GOT hooked (FT_Load_Glyph dialogue path)");
+    }
+    // 兜底通道 2：FT_Load_Char（按码点直接加载字形的路径）。
+    void* origLoadChar = nullptr;
+    if (krkr_bridge_got_hook(library, "FT_Load_Char",
+                             reinterpret_cast<void*>(&hookedFTLoadChar), &origLoadChar)) {
+        gOrigFTLoadChar = reinterpret_cast<FTLoadCharFn>(origLoadChar);
+        LOGI("ft probe GOT hooked (FT_Load_Char fallback)");
+    }
+    // 诊断：字符集枚举计数（判定映射是否在装载期一次性完成）
+    void* origNextChar = nullptr;
+    if (krkr_bridge_got_hook(library, "FT_Get_Next_Char",
+                             reinterpret_cast<void*>(&hookedFTGetNextChar), &origNextChar)) {
+        gOrigFTGetNextChar = reinterpret_cast<FTGetNextCharFn>(origNextChar);
+    }
+    if (gOrigFTGetCharIndex == nullptr && gOrigFTLoadGlyph == nullptr && gOrigFTLoadChar == nullptr) {
         return false;
     }
-    gOrigFTGetCharIndex = reinterpret_cast<FTGetCharIndexFn>(orig);
+    gFtProbeInstalled = true;
     // 主动结算线程：进程生命周期常驻（detach），保证点击等待期面板也刷新
     if (!gFlushThreadRunning.exchange(true)) {
         std::thread(flushTimerLoop).detach();
     }
-    LOGI("ft probe GOT hooked (FT_Get_Char_Index)");
+    LOGI("ft probe GOT hooked (Get_Char_Index=%d Load_Glyph=%d Load_Char=%d)",
+         gOrigFTGetCharIndex != nullptr ? 1 : 0, gOrigFTLoadGlyph != nullptr ? 1 : 0,
+         gOrigFTLoadChar != nullptr ? 1 : 0);
     return true;
 }

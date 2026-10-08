@@ -32,6 +32,8 @@
     <string name="settings_tts">TTS</string>
     <string name="settings_dict_page">Dictionaries</string>
     <string name="settings_extract_hook">Text extraction hook</string>
+    <string name="settings_extract_hook_summary">When off, no native hook is armed: the panel stays but no text is produced (pure game mode)</string>
+    <string name="settings_extract_hook_unsupported">Text extraction is not supported by this kernel (krkrsdl3)</string>
     <string name="settings_kr_text_source">Text output</string>
     <string name="settings_kr_text_source_hook">Runtime text stream</string>
     <string name="settings_kr_text_source_engine">Engine output (TJS, experimental)</string>

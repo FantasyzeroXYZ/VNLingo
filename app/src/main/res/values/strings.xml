@@ -32,6 +32,8 @@
     <string name="settings_tts">TTS 设置</string>
     <string name="settings_dict_page">词典设置</string>
     <string name="settings_extract_hook">文本提取钩子</string>
+    <string name="settings_extract_hook_summary">关闭后不武装任何原生钩子：面板保留，但不再产出文本（纯游戏模式）</string>
+    <string name="settings_extract_hook_unsupported">该内核（krkrsdl3）暂不支持文本提取</string>
     <string name="settings_kr_text_source">文本输出方式</string>
     <string name="settings_kr_text_source_hook">运行时文本流</string>
     <string name="settings_kr_text_source_engine">引擎自身输出（TJS·实验性）</string>

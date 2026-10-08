@@ -446,8 +446,19 @@ fun PerGameSettingsScreen(game: ScanGame) {
                                     globalKrSkipStartupDialogs,
                                     krSkipStartupDialogs,
                                 ) { krSkipStartupDialogs = it }
-                                OverrideSwitch(stringResource(R.string.settings_extract_hook), globalKrExtractHook, krExtractHook) { krExtractHook = it }
-                                OverrideChoice(stringResource(R.string.settings_kr_text_source), krTextSourceMap, globalKrTextSource, krTextSource) { krTextSource = it }
+                                // krkrsdl3 内核无 cocos2d Label / FT 符号，不存在提取路径：
+                                // 原先静默隐藏会让用户以为「设置了却没用」，改为禁用态说明行
+                                if (isSdl3) {
+                                    Text(
+                                        stringResource(R.string.settings_extract_hook_unsupported),
+                                        style = MaterialTheme.typography.bodyMedium,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                        modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 10.dp),
+                                    )
+                                } else {
+                                    OverrideSwitch(stringResource(R.string.settings_extract_hook), globalKrExtractHook, krExtractHook) { krExtractHook = it }
+                                    OverrideChoice(stringResource(R.string.settings_kr_text_source), krTextSourceMap, globalKrTextSource, krTextSource) { krTextSource = it }
+                                }
                                 OverrideChoice(stringResource(R.string.engine_settings_engine_version), krVersionMap, globalKrVersion, krVersion) { krVersion = it }
                                 OverrideChoice(stringResource(R.string.engine_settings_engine_kernel), krKernelMap, globalKrKernel, krKernel) { krKernel = it }
                                 if (!isSdl3) {

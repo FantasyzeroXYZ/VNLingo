@@ -32,6 +32,8 @@ using GetScene = void* (*)();
 // krkr_extract_hook.cpp：Kirikiroid2 文本提取钩子（cocos2d Label::setString inline hook）
 extern "C" bool krkr_install_extract_hook(void* gameHandle, JNIEnv* env);
 extern "C" bool krkr_install_ft_probe(void* gameHandle, const char* library);
+// 提取链路诊断埋点开关（B1；默认关，Java 侧按调试日志开关下发）
+extern "C" void krkr_set_extract_diag(bool enabled);
 
 // Forward declaration so LegacyCowString's constructor can increment the
 // leak counter; the definition lives with the other globals below.
@@ -798,6 +800,14 @@ Java_bridge_NativeBridge_setExtractHookEnabled(JNIEnv*, jclass, jboolean enabled
     gExtractHookEnabled.store(enabled == JNI_TRUE, std::memory_order_relaxed);
 }
 
+// 提取链路诊断埋点开关（默认关）：复测时由 Java 侧按调试日志开关下发，
+// 打开后 krkr_extract_hook 输出 FT 码点计数 / Label 调用计数 / 页推导状态。
+extern "C" JNIEXPORT void JNICALL
+Java_bridge_NativeBridge_setExtractDiagEnabled(JNIEnv*, jclass, jboolean enabled) {
+    krkr_set_extract_diag(enabled == JNI_TRUE);
+    __android_log_print(ANDROID_LOG_INFO, kTag, "extract diag enabled=%d", enabled == JNI_TRUE ? 1 : 0);
+}
+
 extern "C" JNIEXPORT jboolean JNICALL
 Java_bridge_NativeBridge_initialize(JNIEnv* env, jclass, jstring gameLibrary) {
     const std::string library = takeString(env, gameLibrary);
@@ -973,6 +983,8 @@ extern "C" JNIEXPORT jint JNICALL JNI_OnLoad(JavaVM* vm, void*) {
              reinterpret_cast<void*>(Java_bridge_NativeBridge_initialize)},
             {const_cast<char*>("setExtractHookEnabled"), const_cast<char*>("(Z)V"),
              reinterpret_cast<void*>(Java_bridge_NativeBridge_setExtractHookEnabled)},
+            {const_cast<char*>("setExtractDiagEnabled"), const_cast<char*>("(Z)V"),
+             reinterpret_cast<void*>(Java_bridge_NativeBridge_setExtractDiagEnabled)},
             {const_cast<char*>("launch"), const_cast<char*>("(Ljava/lang/String;Ljava/lang/String;Z)Z"),
              reinterpret_cast<void*>(Java_bridge_NativeBridge_launch)},
             {const_cast<char*>("isLaunchSceneReady"), const_cast<char*>("(Ljava/lang/String;)Z"),

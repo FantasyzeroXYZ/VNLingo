@@ -941,6 +941,9 @@ internal fun EngineSettingsDetailScreen(kind: EngineSettingsKind) {
     var krSkipStartupDialogs by remember { mutableStateOf(EngineSettingsStore.isKrSkipStartupDialogs(ctx)) }
     var krPatchOverlayMode by remember { mutableStateOf(EngineSettingsStore.getKrPatchOverlayMode(ctx)) }
     var krExtractTjs by remember { mutableStateOf(EngineSettingsStore.isKrExtractTjs(ctx)) }
+    var krExtractHook by remember { mutableStateOf(EngineSettingsStore.isKrExtractHook(ctx)) }
+    var onsExtractHook by remember { mutableStateOf(EngineSettingsStore.isOnsExtractHook(ctx)) }
+    var artExtractHook by remember { mutableStateOf(EngineSettingsStore.isArtExtractHook(ctx)) }
     var krFont by remember { mutableStateOf(EngineSettingsStore.getKrDefaultFont(ctx)) }
     var krForceFont by remember { mutableStateOf(EngineSettingsStore.isKrForceDefaultFont(ctx)) }
     var krRenderer by remember { mutableStateOf(EngineSettingsStore.getKrRenderer(ctx)) }
@@ -1021,6 +1024,9 @@ internal fun EngineSettingsDetailScreen(kind: EngineSettingsKind) {
         EngineSettingsStore.setKrSkipStartupDialogs(ctx, krSkipStartupDialogs)
         EngineSettingsStore.setKrPatchOverlayMode(ctx, krPatchOverlayMode)
         EngineSettingsStore.setKrExtractTjs(ctx, krExtractTjs)
+        EngineSettingsStore.setKrExtractHook(ctx, krExtractHook)
+        EngineSettingsStore.setOnsExtractHook(ctx, onsExtractHook)
+        EngineSettingsStore.setArtExtractHook(ctx, artExtractHook)
         EngineSettingsStore.setKrDefaultFont(ctx, krFont)
         EngineSettingsStore.setKrForceDefaultFont(ctx, krForceFont)
         EngineSettingsStore.setKrRenderer(ctx, krRenderer)
@@ -1096,6 +1102,7 @@ internal fun EngineSettingsDetailScreen(kind: EngineSettingsKind) {
                 krVersion, krKernel, krScoped, krSkipStartupDialogs, krFont, krForceFont, krRenderer, krDrawThread,
                 krSwCompress, krOglCompress, krMem, krTexsize, krAccurate, krFps, isSdl3, krIs134126,
                 krVCursorScale, krMenuOpa, krPatchOverlayMode, krAnime4k, krExtractTjs,
+                krExtractHook, onsExtractHook, artExtractHook,
                 ons, artKernel, artVersion, artRotate, artPatch, artResolution, artSideCut, artSurfaceCache,
                 artFontCache, artPowerSaving, tyExternal, tyScoped, rpgMakerMod, rpgLegacyRenderer, rpgSaveInterop, rpgMvVersion, rpgMzVersion, rpg, renpyVersion, renpy, siglusLanguage, fbNls,
                 fvpNls, fvpSystemFont, fvpTextHidpi, fvpFont, fontLauncher, fvpFontLauncher, winlator, ppssppVersion, webShellPort,
@@ -1114,6 +1121,9 @@ internal fun EngineSettingsDetailScreen(kind: EngineSettingsKind) {
                 onKrSkipStartupDialogs = { krSkipStartupDialogs = it },
                 onKrPatchOverlayMode = { krPatchOverlayMode = it },
                 onKrExtractTjs = { krExtractTjs = it },
+                onKrExtractHook = { krExtractHook = it },
+                onOnsExtractHook = { onsExtractHook = it },
+                onArtExtractHook = { artExtractHook = it },
                 onKrForceFont = { krForceFont = it },
                 onKrRenderer = { krRenderer = it },
                 onKrDrawThread = { krDrawThread = it },
@@ -1203,6 +1213,7 @@ private fun LazyListPlaceholder(
     krMem: String, krTexsize: String, krAccurate: String, krFps: String, isSdl3: Boolean, krIs134126: Boolean,
     krVCursorScale: String, krMenuOpa: String, krPatchOverlayMode: String, krAnime4k: String,
     krExtractTjs: Boolean,
+    krExtractHook: Boolean, onsExtractHook: Boolean, artExtractHook: Boolean,
     ons: EngineSettingsStore.Ons, artKernel: String, artVersion: String, artRotate: Boolean, artPatch: String,
     artResolution: String, artSideCut: String, artSurfaceCache: String, artFontCache: String,
     artPowerSaving: String, tyExternal: Boolean, tyScoped: Boolean, rpgMakerMod: Boolean,
@@ -1221,6 +1232,7 @@ private fun LazyListPlaceholder(
     onKrSkipStartupDialogs: (Boolean) -> Unit,
     onKrPatchOverlayMode: (String) -> Unit,
     onKrExtractTjs: (Boolean) -> Unit,
+    onKrExtractHook: (Boolean) -> Unit, onOnsExtractHook: (Boolean) -> Unit, onArtExtractHook: (Boolean) -> Unit,
     onKrForceFont: (Boolean) -> Unit, onKrRenderer: (String) -> Unit, onKrDrawThread: (String) -> Unit,
     onKrSwCompress: (String) -> Unit, onKrOglCompress: (String) -> Unit, onKrMem: (String) -> Unit,
     onKrTexsize: (String) -> Unit, onKrAccurate: (String) -> Unit, onKrFps: (String) -> Unit,
@@ -1301,6 +1313,23 @@ private fun LazyListPlaceholder(
                     checked = krExtractTjs,
                     onCheckedChange = onKrExtractTjs,
                 )
+                // 全局默认提取钩子开关（原先只有三个零调用方的 setter，UI 无入口）：
+                // krkrsdl3 内核无 cocos2d Label / FT 符号，不存在提取路径，改为说明行
+                if (isSdl3) {
+                    Text(
+                        stringResource(R.string.settings_extract_hook_unsupported),
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MiuixTheme.colorScheme.onBackground,
+                        modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
+                    )
+                } else {
+                    SwitchPreference(
+                        title = stringResource(R.string.settings_extract_hook),
+                        summary = stringResource(R.string.settings_extract_hook_summary),
+                        checked = krExtractHook,
+                        onCheckedChange = onKrExtractHook,
+                    )
+                }
                 if (!isSdl3) {
                     DropdownRow(stringResource(R.string.engine_settings_krkr_patch_overlay), krPatchOverlayMap, krPatchOverlayMode, onKrPatchOverlayMode)
                 }
@@ -1376,6 +1405,12 @@ private fun LazyListPlaceholder(
         if (kind == EngineSettingsKind.ONS) item {
             EngineCard("ONS") {
                 SwitchPreference(title = stringResource(R.string.engine_settings_scoped_save_dir), checked = ons.scopedSaveDir, onCheckedChange = { b -> onOns(ons.copy(scopedSaveDir = b)) })
+                SwitchPreference(
+                    title = stringResource(R.string.settings_extract_hook),
+                    summary = stringResource(R.string.settings_extract_hook_summary),
+                    checked = onsExtractHook,
+                    onCheckedChange = onOnsExtractHook,
+                )
                 SwitchPreference(title = stringResource(R.string.engine_settings_fullscreen_stretch), checked = ons.stretchFull, onCheckedChange = { b -> onOns(ons.copy(stretchFull = b)) })
                 SwitchPreference(title = stringResource(R.string.engine_settings_ignore_cutout), checked = ons.ignoreCutout, onCheckedChange = { b -> onOns(ons.copy(ignoreCutout = b)) })
                 SwitchPreference(title = stringResource(R.string.engine_settings_disable_video), checked = ons.disableVideo, onCheckedChange = { b -> onOns(ons.copy(disableVideo = b)) })
@@ -1395,6 +1430,12 @@ private fun LazyListPlaceholder(
             EngineCard("Artemis") {
                 DropdownRow(stringResource(R.string.engine_settings_engine_kernel), artKernelSelect, artKernel, onArtKernel)
                 SwitchPreference(title = stringResource(R.string.engine_settings_rotate_screen), checked = artRotate, onCheckedChange = onArtRotate)
+                SwitchPreference(
+                    title = stringResource(R.string.settings_extract_hook),
+                    summary = stringResource(R.string.settings_extract_hook_summary),
+                    checked = artExtractHook,
+                    onCheckedChange = onArtExtractHook,
+                )
                 if (artKernel == EngineSettingsStore.ART_KERNEL_OFFICIAL) {
                     DropdownRow(stringResource(R.string.engine_settings_engine_version), artVersionMap, artVersion, onArtVersion)
                     DropdownRow(stringResource(R.string.engine_settings_auto_patch), artPatchMap, artPatch, onArtPatch)

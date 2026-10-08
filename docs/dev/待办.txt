@@ -41,6 +41,18 @@
       下载（GET+导入）全通过，全程零独立配置 ✓
 
 ## 未完成 / 遗留
+- [ ] KRKR 提取失效与钩子开关缺失（方案见 docs/KRKR提取失效与钩子开关方案.md，
+      2026-10-08 定位）：① tsukikage no simulacre 实测「钩子武装成功但零字符流」
+      （vtable slot=173 + FT_Get_Char_Index GOT 均 patched；全量 logcat 无 ft line、
+      无 NativeBridge krkr text）——方案给出 H1（对白不走 FT_Get_Char_Index，主嫌疑，
+      含 FT_Load_Glyph/第二份 FreeType 变体）/H2（一次性整页绘制致页推导恒空）/
+      H3（Java 前缀白名单过滤过严）/H4（TJS 通道因 KAGParserEx 注册前不可写被弃用）
+      四分支与判据表，先加诊断埋点复测再动手；② 全局「文本提取钩子」三个 setter
+      零调用方、设置页无入口（全局值恒 true），单游戏开关只在「游戏条目→该游戏
+      设置页」内、SDL3 内核下静默隐藏（libkrkrsdl3.so 无 cocos2d Label/
+      FT_Get_Char_Index 符号，当前无提取路径）。五批：B1 诊断埋点→B2 全局开关 UI
+      （含 KRKR 文本输出方式全局开关）→B3 按判据修钩子→B4 SDL3 禁用态说明
+      →B5 TJS 通道解锁探索
 - [x] 查词性能优化（方案见 docs/查词性能优化方案.md，2026-10-08 真机实测定位）：
       B1（P0）migrate 补 (reading,dict_id) 索引 + 删无用单列索引 + 导入/建索引后
       ANALYZE（老库启动自动补建，66545 条实测 297ms，无需重导）；B2（P1）读音
@@ -144,3 +156,14 @@
       到有语音的章节看 "CommandVoice arg" 日志核键名，必要时按实际键名收窄
 - [ ] 官方内核提取的跨游戏验证：CommandPrint 通道仅 Girl's Blossom Project
       实测；其它官方 revision 内核（V2-V6）块布局/树偏移可能不同，需实测微调
+
+- [ ] KRKR 文本提取：非 FT 渲染游戏（tsukikage 类）的通道（方案 §3.3-D/B5，
+      2026-10-08 会话四十五定判据）——该类游戏（KAGParserEx +
+      textrender/layerExDraw/PreRenderFontEx）正文渲染**完全不经 libgame.so 的
+      FreeType 与 cocos2d Label**（真机计数全程冻结，对照 kazurauta 正常）。
+      剩余可选路线：①TJS 发射器扩展到 KAGParserEx（需处理「注册前不可写」，
+      可能崩游戏、需可回滚）②带钩内核（krkr2-main 源码级，工作量大）。
+      推进前需用户确认可接受的实验窗口
+- [ ] 提取状态可见性（低优先）：钩子武装成功但该游戏无字符流时，面板/引擎设置
+      目前无任何提示，用户只会看到空句栏；可考虑把 native 通道计数（诊断开关下）
+      汇总成一行状态展示

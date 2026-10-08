@@ -4,6 +4,43 @@
 > `docs/说明/游戏内提取制卡功能方案.md`（提取功能线方案）阅读。
 > 更新时间：2026-10-08
 
+## 2026-10-08 会话（四十五）：KRKR 提取失效定位（真机判据）+ 全局提取钩子开关
+
+- **用户反馈**：①tsukikage（KRKR）hook 不到文本；②游戏条目与设置页里没有
+  「文本提取钩子」开关。执行 `docs/dev/KRKR提取失效与钩子开关方案.md` 的 B1–B4。
+- **B1 诊断埋点（已落地）**：native 新增 `krkr_set_extract_diag(bool)` 开关
+  （经 `NativeBridge.setExtractDiagEnabled` 按 `DiagLog.isEnabled()` 在启动期下发），
+  限频埋点：`ft char`（码点/字形索引）、`ft glyph`、`label set`（长度+首码点）、
+  每 2s `ft state`（raw/known/idx/glyph/nextchar/label 计数）与 `ft raw`（尾部原文）；
+  `onKrkrText` 入口加 `krkr text raw` 原始日志。另外把 `FT_Load_Glyph` 也接上——
+  以「逐码点问原 `FT_Get_Char_Index`」惰性建立 `glyph_index → 码点` 反向映射
+  （42387 项，200ms 内一次建成，读侧无锁），两条通道共用相邻去重。
+- **B1 判据（真机 alioth，两游戏对照）**：
+  - kazurauta（普通 KAGParser）：进入正片后 idx/glyph 计数从 168 涨到 909，
+    `ft line:` 正常（「だってわたしたち、友達だもん」…）→ 通道可用、无回归；
+  - tsukikage（KAGParserEx + textrender/layerExDraw/PreRenderFontEx）：
+    钩子全部武装成功（虚表 slot 173、三个 FT GOT 槽 patched=1），但
+    **idx/glyph/label 计数在标题菜单、18 禁告知、对白全程完全冻结**
+    （144/144/217），`ft line`、`krkr text raw`、`krkr text` 全为 0 条。
+  - 结论：**H1 成立且强于原判据**——该游戏正文根本不调用 libgame.so 的
+    FreeType（Get_Char_Index / Load_Glyph / Load_Char / Get_Next_Char 全零调用），
+    因此 A1/A2 对本游戏无解；**H2（页推导门槛）、H3（Java 过滤）被排除**
+    （原始链恒为 0，上游就断了）。剩余可行通道 = 解析器层 TJS 发射器或带钩内核。
+- **B2 全局开关（已落地）**：`SettingsScreen` 引擎设置详情页新增三个全局开关
+  `文本提取钩子`（KRKR/ONS/Artemis 各一，原先三个 setter 零调用方）；
+  三 locale 补 `settings_extract_hook_summary` / `..._unsupported`。
+  KRKR 的 `文本输出方式` 全局默认（`kr_extract_tjs` 开关）原已存在，保留。
+- **B4 单游戏页核对（真机截图）**：tsukikage 的「游戏条目 → 引擎设置 → KRKR」
+  卡片中 `文本提取钩子`（跟随全局（开））与 `文本输出方式`（运行时文本流）
+  **都在正常渲染**——P2 的「看不到」是入口认知问题，不是渲染缺陷；原方案
+  §2.5 记的「SDL3 下被 if (!isSdl3) 隐藏」与代码事实不符（该 if 只包住操作卡片）。
+  另按 §3.3-E 在 SDL3 内核下把两行换成禁用态说明行。
+- **产物**：`krkr_extract_hook.cpp` / `krkr_bridge.cpp` / `NativeBridge.kt` /
+  `KirikiroidLauncherBaseActivity.java` / `SettingsScreen.kt` /
+  `PerGameSettingsScreen.kt` / 三 locale strings；方案文档新增 §6.5 执行记录。
+- **未完成**：B5（TJS 发射器 / 解析器层通道）待用户确认是否接受可能崩游戏的
+  实验窗口；本游戏用的 `KAGParserEx` 还需额外处理（现有发射器只包装 KAGParser）。
+
 ## 2026-10-08 会话（四十四）：查词性能优化 B1–B4 实施 + 真机实测
 
 - **B1 索引**：`OnsDictStore.migrate()` 补 `idx_entries_reading(reading, dict_id)`

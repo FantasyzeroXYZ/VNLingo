@@ -31,6 +31,8 @@ object NativeBridge {
     @JvmStatic external fun initialize(so: String?): Boolean
     /** 提取钩子开关（KRKR）：initialize 前调用，false = 跳过提取钩子武装（纯游戏模式）。 */
     @JvmStatic external fun setExtractHookEnabled(enabled: Boolean)
+    /** 提取链路诊断埋点开关（B1，默认关）：复测时按调试日志开关下发，日志一律限频。 */
+    @JvmStatic external fun setExtractDiagEnabled(enabled: Boolean)
     @JvmStatic external fun isLaunchSceneReady(so: String?): Boolean
     @JvmStatic external fun launch(so: String?, path: String?, useMaps: Boolean): Boolean
     @JvmStatic external fun interceptor(prefix: String?): Unit
@@ -64,6 +66,11 @@ object NativeBridge {
     @JvmStatic
     private fun onKrkrText(text: String?) {
         if (text.isNullOrBlank()) return
+        // B1 诊断：区分「native 完全没上行」与「上行后被前缀/hasCjk 过滤丢弃」。
+        // 只在调试日志开关打开时打印，且截断到 24 字符避免刷屏。
+        if (com.core.diag.DiagLog.isEnabled()) {
+            Log.d("NativeBridge", "krkr text raw: len=${text.length} head=${text.take(24)}")
+        }
         // 严格 [TNEXT] 通道：仅 TJS 发射器 v8（或未来带钩内核经此路径）发出的标记行
         // 进入提取；其余 Label 文本（引擎控制台的脚本加载/调试行）一律丢弃，
         // 避免原版内核下面板被噪音刷屏。KR2Activity.setExtractListener 通道仅在

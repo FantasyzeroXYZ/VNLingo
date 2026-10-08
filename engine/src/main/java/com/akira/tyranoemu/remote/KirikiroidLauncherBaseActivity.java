@@ -536,6 +536,9 @@ public abstract class KirikiroidLauncherBaseActivity extends KR2Activity {
         boolean extractHook = getIntent() == null ||
                 getIntent().getBooleanExtra(LaunchContract.EXTRACT_HOOK, true);
         NativeBridge.setExtractHookEnabled(extractHook);
+        // 提取链路诊断埋点（B1）：跟随调试日志开关，默认开（DiagLog 默认 enabled=true）；
+        // 关闭调试日志即零埋点开销（ARM 转译下高频日志会拖慢渲染线程）。
+        NativeBridge.setExtractDiagEnabled(com.core.diag.DiagLog.isEnabled());
         boolean initialized = NativeBridge.initialize(gameLibrary);
         nativeBridgeInitialized = initialized;
         recordBridgeDiagnostic("initialize=" + initialized + " library=" + gameLibrary);
