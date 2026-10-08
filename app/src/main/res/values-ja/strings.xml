@@ -183,8 +183,8 @@
     <string name="panel_action_mouse_toggle">仮想マウスを切り替え</string>
     <string name="panel_action_token_prev">単語選択：前へ</string>
     <string name="panel_action_token_next">単語選択：次へ</string>
-    <string name="panel_action_nav_up">内容を上へ</string>
-    <string name="panel_action_nav_down">内容を下へ</string>
+    <string name="panel_action_nav_up">前の行を選択（同じ列／端ではスクロール）</string>
+    <string name="panel_action_nav_down">次の行を選択（同じ列／端ではスクロール）</string>
     <string name="panel_action_confirm">検索を確定（未選択時は再生）</string>
     <string name="panel_action_translate">文全体を翻訳</string>
     <string name="panel_action_card">カード作成（検索済みなら単語カード）</string>

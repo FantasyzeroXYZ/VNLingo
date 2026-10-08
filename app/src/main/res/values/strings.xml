@@ -182,8 +182,8 @@
     <string name="panel_action_mouse_toggle">切换虚拟鼠标（点击模式）</string>
     <string name="panel_action_token_prev">选词：上一个</string>
     <string name="panel_action_token_next">选词：下一个</string>
-    <string name="panel_action_nav_up">内容上移</string>
-    <string name="panel_action_nav_down">内容下移</string>
+    <string name="panel_action_nav_up">选词：上一行（同列；到底则滚动）</string>
+    <string name="panel_action_nav_down">选词：下一行（同列；到底则滚动）</string>
     <string name="panel_action_confirm">确认查词（未选词时播放）</string>
     <string name="panel_action_translate">翻译整句</string>
     <string name="panel_action_card">制卡（有查词结果=词卡）</string>

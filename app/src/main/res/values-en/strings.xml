@@ -183,8 +183,8 @@
     <string name="panel_action_mouse_toggle">Toggle virtual mouse</string>
     <string name="panel_action_token_prev">Select previous token</string>
     <string name="panel_action_token_next">Select next token</string>
-    <string name="panel_action_nav_up">Scroll content up</string>
-    <string name="panel_action_nav_down">Scroll content down</string>
+    <string name="panel_action_nav_up">Previous line (same column; scrolls at edges)</string>
+    <string name="panel_action_nav_down">Next line (same column; scrolls at edges)</string>
     <string name="panel_action_confirm">Confirm lookup (play when no token)</string>
     <string name="panel_action_translate">Translate sentence</string>
     <string name="panel_action_card">Make card (word card if looked up)</string>

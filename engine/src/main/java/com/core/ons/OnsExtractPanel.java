@@ -1345,6 +1345,59 @@ public class OnsExtractPanel {
         applyTokenSelection();
     }
 
+    /**
+     * 上下行同列选词：把选区在**多行文本**里按行上下移动，尽量落在同一列
+     * （用当前词元中心的水平位置在目标行里找覆盖它的词元，找不到就取最近的）。
+     *
+     * 单行文本 / 已经到首末行 / 目标行没有词元时**回退为滚动**——这样 ↑↓ 在
+     * 单行面板里依然是有用的滚动键，不会变成「按了没反应」。
+     *
+     * @return true = 已按上下行选词处理（调用方不要再滚动）
+     */
+    private boolean moveTokenVertical(int dir) {
+        if (historyMode || unitRanges.isEmpty() || sentenceSpan == null || sentenceView == null) {
+            return false;
+        }
+        android.text.Layout layout = sentenceView.getLayout();
+        if (layout == null) return false;
+        int cur = selectedToken >= 0 ? selectedToken : 0;
+        if (cur < 0 || cur >= unitRanges.size()) return false;
+        int[] range = unitRanges.get(cur);
+        int line = layout.getLineForOffset(range[0]);
+        int targetLine = line + dir;
+        if (targetLine < 0 || targetLine >= layout.getLineCount()) return false;
+
+        // 当前词元中心的水平位置（相对行首；左对齐文本下即为「列」）
+        float center = (layout.getPrimaryHorizontal(range[0])
+                + layout.getPrimaryHorizontal(range[1])) / 2f;
+        int best = -1;
+        float bestDistance = Float.MAX_VALUE;
+        for (int i = 0; i < unitRanges.size(); i++) {
+            int[] r = unitRanges.get(i);
+            if (layout.getLineForOffset(r[0]) != targetLine) continue;
+            float h0 = layout.getPrimaryHorizontal(r[0]);
+            float h1 = layout.getPrimaryHorizontal(r[1]);
+            if (center >= h0 && center <= h1) { // 同列命中，直接用
+                best = i;
+                bestDistance = 0f;
+                break;
+            }
+            float mid = (h0 + h1) / 2f;
+            float distance = Math.abs(mid - center);
+            if (distance < bestDistance) {
+                bestDistance = distance;
+                best = i;
+            }
+        }
+        if (best < 0) return false; // 目标行没有可选的词元 → 交给滚动
+        if (com.core.engine.PanelOptions.isAutoLookup(activity)) {
+            selectUnit(best, unitRanges.get(best)[0], true);
+        } else {
+            highlightUnit(best);
+        }
+        return true;
+    }
+
     /** 后台扫描：结果刷新到释义区；代次号丢弃过期结果（快速连按选词）。
      *  扫描循环内也查代次——过期扫描立刻中止，不再空跑几十次词典查询；
      *  全程捕获异常：词典库异常（损坏/满盘）降级为无结果，不杀进程。 */
@@ -2584,11 +2637,12 @@ public class OnsExtractPanel {
             android.util.Log.i(TAG, "panel action " + action + " keyCode=" + code);
         }
         if (PanelActionBindings.matches(PanelActionBindings.PANEL_NAV_UP, code)) {
-            scrollFocused(-1);
+            // ↑↓：多行文本里上下行同列选词；选不动（单行/到边界/目标行无词元）则滚动
+            if (!moveTokenVertical(-1)) scrollFocused(-1);
             return true;
         }
         if (PanelActionBindings.matches(PanelActionBindings.PANEL_NAV_DOWN, code)) {
-            scrollFocused(1);
+            if (!moveTokenVertical(1)) scrollFocused(1);
             return true;
         }
         if (PanelActionBindings.matches(PanelActionBindings.PANEL_TOKEN_PREV, code)) {
@@ -2687,7 +2741,7 @@ public class OnsExtractPanel {
             lastHatNavMs = now;
             if (Math.abs(hatX) >= Math.abs(hatY)) {
                 if (hatX > 0) moveTokenSelection(1); else moveTokenSelection(-1);
-            } else {
+            } else if (!moveTokenVertical(hatY > 0 ? 1 : -1)) {
                 scrollFocused(hatY > 0 ? 1 : -1);
             }
             return true;
