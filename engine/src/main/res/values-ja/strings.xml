@@ -237,6 +237,8 @@
     <string name="engine_ons_anki_slot_word_audio">単語音声</string>
     <string name="engine_ons_anki_slot_word_tags">単語タグ</string>
     <string name="engine_ons_anki_slot_source">ソース（ゲーム）</string>
+    <string name="engine_ons_anki_slot_deinflection">復元パス</string>
+    <string name="engine_ons_anki_slot_match_type">一致方式</string>
     <string name="engine_ons_tts_title">TTS 設定</string>
     <string name="engine_ons_tts_engine">TTS エンジン</string>
     <string name="engine_ons_tts_engine_multi">MultiTTS</string>

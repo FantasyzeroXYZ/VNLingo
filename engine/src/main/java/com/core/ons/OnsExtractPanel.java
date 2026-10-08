@@ -172,6 +172,10 @@ public class OnsExtractPanel {
     /** 最近一次查词结果（词卡用）。 */
     private List<OnsDictStore.Group> defGroups;
     private String defSentence;
+    /** M6：当前查词命中的方式与还原路径（供释义悬浮窗标题与制卡槽位使用）。 */
+    private String defMatchType = "";
+    private String defPath = "";
+    private String defLemma = "";
     /** 查词/翻译请求代次号：翻句或重复请求后丢弃过期回调结果。 */
     private volatile int dictRequestId;
     private volatile int translateRequestId;
@@ -1010,6 +1014,20 @@ public class OnsExtractPanel {
                 .show();
     }
 
+    /** M6：当前命中的展示文案（如「词形还原 食べる · -te→v1」/「查表还原 走る」；普通命中为空）。 */
+    private String matchDetailText() {
+        if ("table-deinflect".equals(defMatchType)) {
+            return defLemma.isEmpty() ? "查表还原" : "查表还原 " + defLemma;
+        }
+        if (defMatchType != null && defMatchType.startsWith("deinflect")) {
+            StringBuilder sb = new StringBuilder("词形还原");
+            if (!defLemma.isEmpty()) sb.append(' ').append(defLemma);
+            if (!defPath.isEmpty()) sb.append(" · ").append(defPath);
+            return sb.toString();
+        }
+        return "";
+    }
+
     private void refresh() {
         ExtractFacade bridge = facade;
         String sentence = bridge.getSentenceText();
@@ -1052,6 +1070,9 @@ public class OnsExtractPanel {
             defGroups = null;
             matchedRange = null; // 旧句高亮区间不跨句
             defSentence = null;
+            defMatchType = "";
+            defPath = "";
+            defLemma = "";
             if (transView != null) {
                 transView.setTag(null); // 翻句清掉旧译文
                 transView.setText("");
@@ -1079,7 +1100,8 @@ public class OnsExtractPanel {
                     break;
                 }
             }
-            OnsDictOverlay.show(activity, overlayTitle, groups, this::makeWordCard);
+            OnsDictOverlay.show(activity, overlayTitle, groups, this::makeWordCard,
+                    matchDetailText());
         } else {
             OnsDictOverlay.hide();
         }
@@ -1312,10 +1334,15 @@ public class OnsExtractPanel {
                 }
                 defGroups = hit.groups;
                 defSentence = hit.matched;
+                defMatchType = hit.matchType;
+                defPath = hit.path;
+                defLemma = hit.lemma;
                 matchedRange = hit.range;
                 matchedText = hit.matched;
                 com.core.diag.DiagLog.debug("dict", "hit: " + hit.matched
-                        + " groups=" + hit.groups.size() + " in " + scanMs + "ms");
+                        + " groups=" + hit.groups.size() + " in " + scanMs + "ms"
+                        + " match=" + hit.matchType
+                        + (hit.path.isEmpty() ? "" : " path=" + hit.path));
                 main.post(this::refresh);
             } catch (Throwable t) {
                 Log.w(TAG, "dict scan failed", t);
@@ -1327,11 +1354,25 @@ public class OnsExtractPanel {
         final String matched;
         final int[] range;
         final List<OnsDictStore.Group> groups;
+        /** M6：命中方式（term/reading/table-deinflect/deinflect-term/deinflect-reading）。 */
+        final String matchType;
+        /** M6：还原路径（如 `-te→v1`；非还原命中为空）。 */
+        final String path;
+        /** M6：还原后的词典形（非还原命中为空）。 */
+        final String lemma;
 
         ScanHit(String matched, int[] range, List<OnsDictStore.Group> groups) {
+            this(matched, range, groups, "term", "", "");
+        }
+
+        ScanHit(String matched, int[] range, List<OnsDictStore.Group> groups,
+                String matchType, String path, String lemma) {
             this.matched = matched;
             this.range = range;
             this.groups = groups;
+            this.matchType = matchType == null ? "" : matchType;
+            this.path = path == null ? "" : path;
+            this.lemma = lemma == null ? "" : lemma;
         }
     }
 
@@ -1346,18 +1387,27 @@ public class OnsExtractPanel {
         final String deinflectedTerm;   // 还原原形（非还原命中为 null）
         /** M6：命中方式（term/reading/table-deinflect/deinflect-term/deinflect-reading）。 */
         final String matchType;
+        /** M6：还原路径（如 `-te→v1`；查表还原为 `table`，非还原命中为空）。 */
+        final String deinflectionPath;
 
         CandidateMatch(String matchedText, List<OnsDictStore.Group> groups, String deinflectedTerm) {
             this(matchedText, groups, deinflectedTerm,
-                    deinflectedTerm == null ? "term" : "deinflect-term");
+                    deinflectedTerm == null ? "term" : "deinflect-term",
+                    deinflectedTerm == null ? "" : "");
         }
 
         CandidateMatch(String matchedText, List<OnsDictStore.Group> groups,
                        String deinflectedTerm, String matchType) {
+            this(matchedText, groups, deinflectedTerm, matchType, "");
+        }
+
+        CandidateMatch(String matchedText, List<OnsDictStore.Group> groups,
+                       String deinflectedTerm, String matchType, String deinflectionPath) {
             this.matchedText = matchedText;
             this.groups = groups;
             this.deinflectedTerm = deinflectedTerm;
-            this.matchType = matchType;
+            this.matchType = matchType == null ? "" : matchType;
+            this.deinflectionPath = deinflectionPath == null ? "" : deinflectionPath;
         }
     }
 
@@ -1384,10 +1434,14 @@ public class OnsExtractPanel {
         boolean tryReading = dictReading && "ja".equals(lang) && cand.length() > 1;
         List<String> keys = new ArrayList<>();
         keys.add(cand);
+        List<OnsDeinflector.Result> roots = new ArrayList<>();
         if (deinflect) {
             // M1：还原候选按 score 升序（同分 term 字典序），替代原先的字典序列表
             for (OnsDeinflector.Result r : OnsDeinflector.deinflectDetailed(cand, lang)) {
-                if (!r.term.equals(cand) && !keys.contains(r.term)) keys.add(r.term);
+                if (!r.term.equals(cand) && !keys.contains(r.term)) {
+                    keys.add(r.term);
+                    roots.add(r);
+                }
             }
         }
         // B3：原形 + 全部还原形合并成一次 IN 查询（term 列、reading 列各一次），
@@ -1427,13 +1481,18 @@ public class OnsExtractPanel {
             }
         }
         if (deinflect) {
-            for (int i = 1; i < keys.size(); i++) {
-                String root = keys.get(i);
+            // ④ 规则还原→term ⑤ 规则还原→reading（带还原路径，供面板/制卡显示）
+            for (OnsDeinflector.Result r : roots) {
+                String root = r.term;
                 g = termHits.get(root);
-                if (g != null && !g.isEmpty()) return new CandidateMatch(cand, g, root);
+                if (g != null && !g.isEmpty()) {
+                    return new CandidateMatch(cand, g, root, "deinflect-term", r.pathString());
+                }
                 if (tryReading) {
                     g = readingHits.get(root);
-                    if (g != null && !g.isEmpty()) return new CandidateMatch(cand, g, root);
+                    if (g != null && !g.isEmpty()) {
+                        return new CandidateMatch(cand, g, root, "deinflect-reading", r.pathString());
+                    }
                 }
             }
         }
@@ -1450,7 +1509,8 @@ public class OnsExtractPanel {
             CandidateMatch m = tryMatchCandidate(cand, deinflect);
             if (m != null) {
                 return new ScanHit(m.matchedText,
-                        new int[]{startPos, startPos + m.matchedText.length()}, m.groups);
+                        new int[]{startPos, startPos + m.matchedText.length()}, m.groups,
+                        m.matchType, m.deinflectionPath, m.deinflectedTerm);
             }
         }
         return null;
@@ -1469,19 +1529,27 @@ public class OnsExtractPanel {
         if (startIdx < 0) return null;
         String firstWord = text.substring(origSpans.get(startIdx)[0], origSpans.get(startIdx)[1]);
 
-        // 车队：原句 + 首词替换为各还原形的句子
+        // 车队：原句 + 首词替换为各还原形的句子（并行记录该车的还原结果，供 M6 显示路径）
         java.util.List<String> vehicles = new java.util.ArrayList<>();
+        java.util.List<OnsDeinflector.Result> vehicleRoots = new java.util.ArrayList<>();
         vehicles.add(text);
+        vehicleRoots.add(null);
         if (deinflect) {
-            for (String root : OnsDeinflector.deinflect(firstWord)) {
-                if (root.equals(firstWord)) continue;
-                String replaced = text.substring(0, origSpans.get(startIdx)[0]) + root
+            for (OnsDeinflector.Result r : OnsDeinflector.deinflectDetailed(
+                    firstWord, effectiveLang(firstWord))) {
+                if (r.term.equals(firstWord)) continue;
+                String replaced = text.substring(0, origSpans.get(startIdx)[0]) + r.term
                         + text.substring(origSpans.get(startIdx)[1]);
-                if (!vehicles.contains(replaced)) vehicles.add(replaced);
+                if (!vehicles.contains(replaced)) {
+                    vehicles.add(replaced);
+                    vehicleRoots.add(r);
+                }
             }
         }
 
-        for (String vehicle : vehicles) {
+        for (int v = 0; v < vehicles.size(); v++) {
+            String vehicle = vehicles.get(v);
+            OnsDeinflector.Result vehicleRoot = vehicleRoots.get(v);
             if (requestId != dictRequestId) return null;
             java.util.List<int[]> vSpans = buildWordSpans(vehicle);
             int vi = findWordIndex(vSpans, origSpans.get(startIdx)[0]);
@@ -1496,7 +1564,10 @@ public class OnsExtractPanel {
                     // 还原句与原句首词 1:1 替换、词数对齐：按车辆词序折回原句
                     int origEndIdx = Math.min(e, origSpans.size() - 1);
                     int[] range = {origSpans.get(startIdx)[0], origSpans.get(origEndIdx)[1]};
-                    return new ScanHit(text.substring(range[0], range[1]), range, g);
+                    return new ScanHit(text.substring(range[0], range[1]), range, g,
+                            vehicleRoot == null ? "term" : "deinflect-term",
+                            vehicleRoot == null ? "" : vehicleRoot.pathString(),
+                            vehicleRoot == null ? "" : vehicleRoot.term);
                 }
             }
         }
@@ -1506,6 +1577,9 @@ public class OnsExtractPanel {
     private void dismissDef() {
         defGroups = null;
         defSentence = null;
+        defMatchType = "";
+        defPath = "";
+        defLemma = "";
         OnsDictOverlay.hide();
         refresh();
     }
@@ -1737,6 +1811,9 @@ public class OnsExtractPanel {
                 // 新槽位：单词标签（查词词典名）+ 来源（游戏显示名）；未映射时内容闲置
                 slots.put(com.core.anki.AnkiCardConfig.SLOT_WORD_TAGS,
                         com.core.ons.OnsDictStore.get().getDictName());
+                // M6 槽位：还原路径 + 命中方式（非还原命中为空串）
+                slots.put(com.core.anki.AnkiCardConfig.SLOT_DEINFLECTION, defPath);
+                slots.put(com.core.anki.AnkiCardConfig.SLOT_MATCH_TYPE, defMatchType);
                 slots.put(com.core.anki.AnkiCardConfig.SLOT_SOURCE, getGameDisplayName());
 
                 File dir = new File(activity.getExternalFilesDir(null), "extract");

@@ -234,6 +234,8 @@
     <string name="engine_ons_anki_slot_word_audio">Word audio</string>
     <string name="engine_ons_anki_slot_word_tags">Word tags</string>
     <string name="engine_ons_anki_slot_source">Source (game)</string>
+    <string name="engine_ons_anki_slot_deinflection">Deinflection path</string>
+    <string name="engine_ons_anki_slot_match_type">Match type</string>
     <string name="engine_ons_tts_title">TTS settings</string>
     <string name="engine_ons_tts_engine">TTS engine</string>
     <string name="engine_ons_tts_engine_multi">MultiTTS</string>

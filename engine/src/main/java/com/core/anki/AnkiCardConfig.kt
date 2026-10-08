@@ -24,6 +24,10 @@ object AnkiCardConfig {
     const val SLOT_WORD_AUDIO = "word_audio"     // 单词语音 [sound:]（TTS）
     const val SLOT_WORD_TAGS = "word_tags"       // 单词标签（查词词典名）
     const val SLOT_SOURCE = "source"             // 来源（游戏显示名）
+    /** M6：还原路径（如 `-te→v1`；查表还原为 `table`；非还原命中为空）。 */
+    const val SLOT_DEINFLECTION = "deinflection"
+    /** M6：命中方式（term/reading/table-deinflect/deinflect-term/deinflect-reading）。 */
+    const val SLOT_MATCH_TYPE = "match_type"
 
     // ---- 语音源策略 ----
     const val VOICE_AUTO = "auto"   // 游戏配对语音优先，无则 TTS

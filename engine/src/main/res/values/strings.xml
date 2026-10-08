@@ -236,6 +236,8 @@
     <string name="engine_ons_anki_slot_word_audio">单词语音</string>
     <string name="engine_ons_anki_slot_word_tags">单词标签</string>
     <string name="engine_ons_anki_slot_source">来源（游戏）</string>
+    <string name="engine_ons_anki_slot_deinflection">还原路径</string>
+    <string name="engine_ons_anki_slot_match_type">命中方式</string>
     <string name="engine_ons_tts_title">TTS 设置</string>
     <string name="engine_ons_tts_engine">TTS 引擎</string>
     <string name="engine_ons_tts_engine_multi">MultiTTS</string>

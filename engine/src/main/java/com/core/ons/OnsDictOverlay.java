@@ -29,21 +29,29 @@ public final class OnsDictOverlay {
     private OnsDictOverlay() {
     }
 
+    public static void show(Activity activity, String term, List<OnsDictStore.Group> groups,
+                            Runnable onWordCard) {
+        show(activity, term, groups, onWordCard, null);
+    }
+
     /**
      * 显示释义（已开则更新内容）。
      *
      * @param term       查得词条（扫描命中串）
      * @param groups     释义组（词条/读音/释义列表）
      * @param onWordCard 词卡动作回调（面板 makeWordCard；defGroups 已就绪）
+     * @param detail     M6 命中细节（如「还原 食べる · -te→v1」；无则 null）
      */
     public static void show(Activity activity, String term, List<OnsDictStore.Group> groups,
-                            Runnable onWordCard) {
+                            Runnable onWordCard, String detail) {
         if (root == null || owner != activity) {
             detach();
             create(activity);
             owner = activity;
         }
-        header.setText(term == null ? "" : term);
+        String headerText = term == null ? "" : term;
+        if (detail != null && !detail.isEmpty()) headerText = headerText + "  " + detail;
+        header.setText(headerText);
         body.removeAllViews();
         if (groups == null || groups.isEmpty()) {
             TextView empty = new TextView(activity);

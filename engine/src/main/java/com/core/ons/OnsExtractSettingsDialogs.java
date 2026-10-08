@@ -824,7 +824,8 @@ public final class OnsExtractSettingsDialogs {
                 AnkiCardConfig.SLOT_PAGE, AnkiCardConfig.SLOT_TRANSLATION,
                 AnkiCardConfig.SLOT_SCREENSHOT, AnkiCardConfig.SLOT_SENTENCE_AUDIO,
                 AnkiCardConfig.SLOT_WORD_AUDIO, AnkiCardConfig.SLOT_WORD_TAGS,
-                AnkiCardConfig.SLOT_SOURCE};
+                AnkiCardConfig.SLOT_SOURCE,
+                AnkiCardConfig.SLOT_DEINFLECTION, AnkiCardConfig.SLOT_MATCH_TYPE};
         final String[] slotLabels = {
                 activity.getString(R.string.engine_ons_anki_slot_none),
                 activity.getString(R.string.engine_ons_anki_slot_word),
@@ -837,7 +838,9 @@ public final class OnsExtractSettingsDialogs {
                 activity.getString(R.string.engine_ons_anki_slot_sentence_audio),
                 activity.getString(R.string.engine_ons_anki_slot_word_audio),
                 activity.getString(R.string.engine_ons_anki_slot_word_tags),
-                activity.getString(R.string.engine_ons_anki_slot_source)};
+                activity.getString(R.string.engine_ons_anki_slot_source),
+                activity.getString(R.string.engine_ons_anki_slot_deinflection),
+                activity.getString(R.string.engine_ons_anki_slot_match_type)};
 
         // 当前槽位映射（模型字段名 → 槽位），初值取自活动配置
         final java.util.Map<String, String> slotByField = new java.util.HashMap<>();

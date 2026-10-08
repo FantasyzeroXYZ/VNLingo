@@ -281,11 +281,16 @@
       JSONL）；候选顺序 ③ 查表先于规则还原（标记 `table-deinflect`）；
       词典管理弹窗「词形还原语言包」区（导入 + 三内置包 + table 包管理）。
       真机 harness **33/33 PASS**；UI 卸载→已卸载+恢复 已验证
-- [ ] 词汇处理移植 V6：面板/制卡对接（面板展示 matchType 与还原路径、制卡
-      `deinflection` 要素填充、候选列表按 score 排序展示）——`CandidateMatch.matchType`
-      已在 V5 就位，剩展示与要素接线
+- [x] 词汇处理移植 V6（面板/制卡对接，会话五十）：`ScanHit`/面板状态带
+      `matchType/path/lemma`；释义悬浮窗标题显示「词形还原 X · path / 查表还原 X」；
+      制卡新增 `SLOT_DEINFLECTION`（还原路径）+ `SLOT_MATCH_TYPE`（命中方式）槽位与
+      三 locale 文案；`scanByWordTwoPhase` 改 `deinflectDetailed` 保留路径；
+      DiagLog 命中行加 `match=`/`path=`。真机实测
+      `hit: 見て groups=1 match=deinflect-term path=v1` + 悬浮窗标题截图
 - [ ] 词汇处理遗留：词典页结果语言 chips 仍是脚本启发式，未按 `dicts.scope` 过滤结果
       （需给 `OnsDictStore.Group` 带 dict_id）
+- [ ] 词汇处理遗留：真实语言包（simplemma 导出的 de 等）端到端实测——本轮只用
+      合成包验证了 store/导入器语义
 - [ ] 词汇处理增强（方案未要求）：中文全角/NFKC 变体目前只进预处理、不进候选，
       若要让「ＡＢＣ→ABC」真正命中，需在查询侧把预处理变体当字面 term 试查
 - [ ] 真机人工验收：词典页查询测试用**日文**用例（adb 无法注入日文输入）

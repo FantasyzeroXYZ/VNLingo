@@ -4,6 +4,25 @@
 > `docs/说明/游戏内提取制卡功能方案.md`（提取功能线方案）阅读。
 > 更新时间：2026-10-08
 
+## 2026-10-08 会话（五十）：词汇处理移植 V6（面板/制卡对接）+ 方案收尾
+
+- **链路打通**：`CandidateMatch.deinflectionPath` 新增 → `ScanHit` 带
+  `matchType/path/lemma` → 面板 `defMatchType/defPath/defLemma`（命中写入、翻句与
+  关闭释义清空）→ ①释义悬浮窗标题 ②制卡槽位。
+- **释义悬浮窗**：`OnsDictOverlay.show(..., detail)` 新增可选 detail——查表还原显示
+  「查表还原 <lemma>」、规则还原显示「词形还原 <lemma> · <path>」，普通命中不追加。
+- **制卡**：`AnkiCardConfig` 新增 `SLOT_DEINFLECTION`（还原路径）与
+  `SLOT_MATCH_TYPE`（命中方式），`makeWordCard` 填值；制卡设置弹窗槽位循环表
+  同步加两项 + 三 locale 文案（还原路径 / 命中方式）。
+- **补齐**：`scanByWordTwoPhase` 原用 `deinflect()` 丢路径，改 `deinflectDetailed()`
+  并把「还原句车队」与 `Result` 并行记录；`DiagLog` 查词命中行追加 `match=`/`path=`。
+- **真机验证**：kazurauta 点选「見て」→ `hit: 見て groups=1 in 19ms
+  match=deinflect-term path=v1`；释义悬浮窗标题实测「見る  词形还原 見る · v1」
+  （截图）；「あれ」这类命中为 `match=term` 且无后缀。
+- **方案收尾**：V1（规则 0 差异）、V2（M1+M6）、V3（M4）、V4/M3（全语言预处理引擎侧）、
+  V5（M2 语言包 + 查表还原）、V6（面板/制卡）全部落地；遗留项（词典页 chips 未按
+  scope 过滤、真实 simplemma 包未端到端实测）记入待办。
+
 ## 2026-10-08 会话（四十九）：词汇处理移植 V5（语言包 + 查表还原 M2）
 
 - **双型包模型**（对齐参考 `packs/types.ts`）：`rules`（ja/en/ko，规则在 assets，
