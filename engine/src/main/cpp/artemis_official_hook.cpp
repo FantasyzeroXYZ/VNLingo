@@ -31,6 +31,8 @@
 #include <string>
 #include <atomic>
 #include <mutex>
+#include <thread>
+#include <chrono>
 
 #define TAG "ArtemisExtract"
 
@@ -61,6 +63,9 @@ constexpr const char* kCommandPrint =
     "_ZN7artemis8CArtemis12CommandPrintERNS_12CScriptBlockEb";
 constexpr const char* kBlockToString =
     "_ZN7artemis12CScriptBlock8ToStringENS_11CStringUtil7CHARSETE";
+// 语音命令处理器（与 CommandPrint 同签名，块参数 map 携带语音文件名）
+constexpr const char* kCommandVoice =
+    "_ZN7artemis8CArtemis12CommandVoiceERNS_12CScriptBlockEb";
 
 JavaVM* gJvm = nullptr;
 jclass gBridgeClass = nullptr;
@@ -83,7 +88,32 @@ std::string readStdString(const void* p) {
 }
 
 // ---- 上行（ArtemisActivity.onArtemisExtract；引擎线程 attach） ----
-void emitText(const char* text) {
+// onArtemisExtract 签名 (text, voiceName, voiceCached) 三 String——任何一参
+// 缺传时 CheckJNI 会把 va_list 栈上垃圾当 jobject 校验 → SIGABRT，必须传满。
+jstring newJavaString(JNIEnv* env, const char* text) {
+    if (text == nullptr) return env->NewStringUTF("");
+    const jsize len = static_cast<jsize>(strlen(text));
+    jbyteArray arr = env->NewByteArray(len);
+    if (arr == nullptr) return env->NewStringUTF("");
+    env->SetByteArrayRegion(arr, 0, len, reinterpret_cast<const jbyte*>(text));
+    jstring out = nullptr;
+    jclass stringClass = env->FindClass("java/lang/String");
+    if (stringClass != nullptr) {
+        jmethodID ctor = env->GetMethodID(stringClass, "<init>", "([BLjava/lang/String;)V");
+        if (ctor != nullptr) {
+            jstring charset = env->NewStringUTF("UTF-8");
+            jobject obj = env->NewObject(stringClass, ctor, arr, charset);
+            if (env->ExceptionCheck()) env->ExceptionClear();
+            else out = static_cast<jstring>(obj);
+            if (charset != nullptr) env->DeleteLocalRef(charset);
+        }
+        env->DeleteLocalRef(stringClass);
+    }
+    env->DeleteLocalRef(arr);
+    return out != nullptr ? out : env->NewStringUTF("");
+}
+
+void emitEvent(const char* text, const char* voiceName) {
     JavaVM* vm = gJvm;
     if (vm == nullptr || gBridgeClass == nullptr || gOnTextMethod == nullptr) {
         LOGW("emitText skip: vm=%p cls=%p m=%p", vm, (void*) gBridgeClass,
@@ -96,35 +126,19 @@ void emitText(const char* text) {
         if (vm->AttachCurrentThread(&env, nullptr) != JNI_OK || env == nullptr) return;
         attached = true;
     }
-    jstring result = nullptr;
-    const jsize len = static_cast<jsize>(std::strlen(text));
-    jbyteArray arr = env->NewByteArray(len);
-    if (arr != nullptr) {
-        env->SetByteArrayRegion(arr, 0, len, reinterpret_cast<const jbyte*>(text));
-        jclass stringClass = env->FindClass("java/lang/String");
-        if (stringClass != nullptr) {
-            jmethodID ctor = env->GetMethodID(stringClass, "<init>", "([BLjava/lang/String;)V");
-            if (ctor != nullptr) {
-                jstring charset = env->NewStringUTF("UTF-8");
-                jobject obj = env->NewObject(stringClass, ctor, arr, charset);
-                if (env->ExceptionCheck()) env->ExceptionClear();
-                else result = static_cast<jstring>(obj);
-                if (charset != nullptr) env->DeleteLocalRef(charset);
-            }
-            env->DeleteLocalRef(stringClass);
-        }
-        env->DeleteLocalRef(arr);
-    }
-    if (result != nullptr) {
-        // onArtemisExtract 签名 (text, voiceName, voiceCached) 三 String——
-        // 少传参数时 CheckJNI 会把 va_list 栈上垃圾当 jobject 校验 → SIGABRT
-        jstring empty = env->NewStringUTF("");
-        env->CallStaticVoidMethod(gBridgeClass, gOnTextMethod, result, empty, empty);
+    jstring result = newJavaString(env, text);
+    jstring voice = newJavaString(env, voiceName);
+    if (result != nullptr && voice != nullptr) {
+        env->CallStaticVoidMethod(gBridgeClass, gOnTextMethod, result, voice, voice);
         if (env->ExceptionCheck()) env->ExceptionClear();
-        env->DeleteLocalRef(result);
-        if (empty != nullptr) env->DeleteLocalRef(empty);
     }
+    if (result != nullptr) env->DeleteLocalRef(result);
+    if (voice != nullptr) env->DeleteLocalRef(voice);
     if (attached) vm->DetachCurrentThread();
+}
+
+void emitText(const char* text) {
+    emitEvent(text, "");
 }
 
 // ---- arm64 内联钩子（4 指令跳板） ----
@@ -349,8 +363,61 @@ static void walkArgTree(void* node, int depth, Fn&& fn) {
 
 // 官方内核文本提取主通道（Girl's Blossom Project 实测）：脚本每个 print 命令
 // 触发 CArtemis::CommandPrint，块参数 map 携带 data=<文本>。说话人行与正文行
-// 成对到达（间隔 ~2ms）：speaker("Himari") → 正文。逐条纯文本上行——正文非
-// speaker 前缀，宿主 facade 的句子替换逻辑自动覆盖，speaker 闪现不可见。
+// 成对到达（间隔 ~2ms）：speaker("Himari") → 正文。native 侧配对成
+// 「speaker\n正文」一次上行——分条上行会让宿主历史记录多出说话人碎片条目；
+// 400ms 兜底线程 flush 独立行（旁白无说话人也能及时显示）。
+static std::mutex gPairMutex;
+static std::string gPendingLine;
+static int64_t gPendingAtMs = 0;
+
+static int64_t steadyNowMs() {
+    return std::chrono::duration_cast<std::chrono::milliseconds>(
+            std::chrono::steady_clock::now().time_since_epoch()).count();
+}
+
+static void flushPendingIfStale() {
+    std::string out;
+    {
+        std::lock_guard<std::mutex> lk(gPairMutex);
+        if (!gPendingLine.empty() && steadyNowMs() - gPendingAtMs >= 400) {
+            out = std::move(gPendingLine);
+            gPendingLine.clear();
+        }
+    }
+    if (!out.empty()) emitText(out.c_str());
+}
+
+static void feedPrintLine(const std::string& value) {
+    std::string emitNow;
+    bool spawnTimer = false;
+    int64_t at = 0;
+    {
+        std::lock_guard<std::mutex> lk(gPairMutex);
+        int64_t now = steadyNowMs();
+        if (!gPendingLine.empty() && now - gPendingAtMs < 400
+                && gPendingLine.size() <= 48
+                && gPendingLine.find('\n') == std::string::npos) {
+            // 短行 + 紧随 → 说话人；与其正文合并一次上行
+            emitNow = gPendingLine + "\n" + value;
+            gPendingLine.clear();
+        } else {
+            if (!gPendingLine.empty()) emitNow = std::move(gPendingLine);  // 孤儿补发
+            gPendingLine = value;
+            gPendingAtMs = now;
+            at = now;
+            spawnTimer = true;
+        }
+    }
+    if (!emitNow.empty()) emitText(emitNow.c_str());
+    if (spawnTimer) {
+        std::thread([at] {
+            std::this_thread::sleep_for(std::chrono::milliseconds(420));
+            (void) at;
+            flushPendingIfStale();
+        }).detach();
+    }
+}
+
 void hookedCommandPrint(void* self, void* blockRef, bool flag) {
     const CommandPrintFn orig = gOrigCommandPrint;
     if (blockRef != nullptr) {
@@ -364,9 +431,55 @@ void hookedCommandPrint(void* self, void* blockRef, bool flag) {
                         if (!firstCaptureLogged.exchange(true, std::memory_order_relaxed)) {
                             LOGI("CommandPrint first capture: %.60s", value.c_str());
                         }
-                        emitText(value.c_str());
+                        feedPrintLine(value);
                         return false;
                     });
+        }
+    }
+    if (orig != nullptr) orig(self, blockRef, flag);
+}
+
+// ---- 语音命令钩子：块参数携带语音文件名 → 空文本+语音名上行
+// （facade 只认「text 空且 voiceFile 非空」进待配队列，随下一句台词消费）。
+using CommandVoiceFn = void (*)(void*, void*, bool);
+CommandVoiceFn gOrigCommandVoice = nullptr;
+
+static bool looksLikeVoiceFile(const std::string& v) {
+    if (v.empty() || v.size() > 200) return false;
+    static const char* kExts[] = {".ogg", ".opus", ".wav", ".m4a", ".mp3", ".npz"};
+    for (const char* e : kExts) {
+        if (v.size() >= strlen(e)
+                && strcasecmp(v.c_str() + v.size() - strlen(e), e) == 0) return true;
+    }
+    return v.find('/') != std::string::npos;  // 脚本内路径（voice/xxx）
+}
+
+void hookedCommandVoice(void* self, void* blockRef, bool flag) {
+    const CommandVoiceFn orig = gOrigCommandVoice;
+    if (blockRef != nullptr) {
+        static std::atomic<int> logCount{0};
+        bool first = logCount.load(std::memory_order_relaxed) < 8;
+        uint64_t node = 0;
+        memcpy(&node, static_cast<uint8_t*>(blockRef) + 0x20, 8);
+        if (node > 0x1000) {
+            std::string voice;
+            walkArgTree(reinterpret_cast<void*>(node), 0,
+                    [&voice, first](const std::string& key, const std::string& value) {
+                        if (first) {
+                            int n = logCount.fetch_add(1, std::memory_order_relaxed);
+                            LOGI("CommandVoice arg[%d] key='%.24s' value='%.96s'",
+                                 n, key.c_str(), value.c_str());
+                        }
+                        if (voice.empty() && looksLikeVoiceFile(value)) voice = value;
+                        return false;
+                    });
+            if (!voice.empty()) {
+                static std::atomic<bool> voiceEmitLogged{false};
+                if (!voiceEmitLogged.exchange(true, std::memory_order_relaxed)) {
+                    LOGI("CommandVoice first emit: %.80s", voice.c_str());
+                }
+                emitEvent("", voice.c_str());
+            }
         }
     }
     if (orig != nullptr) orig(self, blockRef, flag);
@@ -470,7 +583,7 @@ extern "C" bool artemis_official_install(void* kernelHandle, JavaVM* jvm, jobjec
         return false;
     }
 
-    InlineHook hooks[8];
+    InlineHook hooks[10];
     int count = 0;
     void* orig = nullptr;
     if (makeTrampoline(backlogAdd, &hooks[count].trampoline, &orig)
@@ -528,13 +641,23 @@ extern "C" bool artemis_official_install(void* kernelHandle, JavaVM* jvm, jobjec
     }
     // 文本提取主通道：CScriptBlock::ToString（CommandPrint 内部经此取文本）
     void* blockToString = dlsym(kernelHandle, kBlockToString);
-    if (blockToString != nullptr && count < 8
+    if (blockToString != nullptr && count < 9
             && makeTrampoline(blockToString, &hooks[count].trampoline, &orig)
             && patchEntry(blockToString, reinterpret_cast<void*>(&hookedBlockToString))) {
         gOrigBlockToString = reinterpret_cast<BlockToStringFn>(orig);
         ++count;
     } else if (blockToString == nullptr) {
         LOGW("official hook: CScriptBlock::ToString not exported");
+    }
+    // 语音通道：CommandVoice 块参数取语音文件名 → 空文本+语音名上行
+    void* commandVoice = dlsym(kernelHandle, kCommandVoice);
+    if (commandVoice != nullptr && count < 9
+            && makeTrampoline(commandVoice, &hooks[count].trampoline, &orig)
+            && patchEntry(commandVoice, reinterpret_cast<void*>(&hookedCommandVoice))) {
+        gOrigCommandVoice = reinterpret_cast<CommandVoiceFn>(orig);
+        ++count;
+    } else if (commandVoice == nullptr) {
+        LOGW("official hook: CArtemis::CommandVoice not exported");
     }
     (void) hooks;
     gInstalled.store(true, std::memory_order_relaxed);

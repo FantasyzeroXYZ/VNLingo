@@ -71,6 +71,8 @@ public class ONScripter extends SDLActivity {
     private OnsVideoOverlay videoOverlay;
     /** [ONS-BRIDGE] 对话/语音提取面板。 */
     private OnsExtractPanel extractPanel;
+    private android.view.View extractPanelPanelView;
+    private android.view.WindowManager.LayoutParams extractPanelPanelParams;
     /** 手柄方向键虚拟鼠标。 */
     private EngineVirtualMouse virtualMouse;
     private native int nativeInitJavaCallbacks();
@@ -132,7 +134,36 @@ public class ONScripter extends SDLActivity {
             OnsExtractBridge.get().attach(this);
             try {
                 extractPanel = new OnsExtractPanel(new com.core.ons.OnsExtractFacade(this));
-                extractPanel.install(onsOverlay, this::toggleVirtualMouseMode, this::isVirtualMouseMode);
+                // 独立窗口承载（对齐 ArtemisLauncherBaseActivity）：overlay 模式的右缘
+                // 按键组在本机（alioth/MIUI12.5，导航条右置 + cutout 短边窗）实测
+                // 量出 0×0 触摸域、点击全部落空；独立小窗全程可触
+                extractPanel.setSideButtonsWindowMode(true);
+                android.view.View panelView = extractPanel.installDetached(
+                        this::toggleVirtualMouseMode, this::isVirtualMouseMode);
+                android.view.WindowManager.LayoutParams plp =
+                        new android.view.WindowManager.LayoutParams(
+                                extractPanel.preferredWindowWidthPx(),
+                                android.view.ViewGroup.LayoutParams.WRAP_CONTENT,
+                                android.view.WindowManager.LayoutParams.TYPE_APPLICATION,
+                                android.view.WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE,
+                                android.graphics.PixelFormat.TRANSLUCENT);
+                plp.gravity = android.view.Gravity.BOTTOM | android.view.Gravity.CENTER_HORIZONTAL;
+                int navInset = 0;
+                try {
+                    android.view.WindowInsets ins = getWindow().getDecorView().getRootWindowInsets();
+                    if (ins != null) navInset = ins.getInsets(
+                            android.view.WindowInsets.Type.systemBars()).bottom;
+                } catch (Throwable ignored) { }
+                plp.y = navInset;
+                getWindowManager().addView(panelView, plp);
+                extractPanelPanelView = panelView;
+                extractPanelPanelParams = plp;
+                extractPanel.setPanelVisibilityHook(() -> {
+                    try {
+                        getWindowManager().updateViewLayout(extractPanelPanelView,
+                                extractPanelPanelParams);
+                    } catch (Throwable t) { Log.w(TAG, "panel relayout failed", t); }
+                });
             } catch (Throwable t) { Log.w(TAG, "extract panel install failed", t); }
         } else {
             Log.i(TAG, "extract hook disabled; skip extract bridge and panel");
@@ -390,7 +421,11 @@ public class ONScripter extends SDLActivity {
             }
             rightControls = null;
 
-            addContentView(onsOverlay, new WindowManager.LayoutParams(WindowManager.LayoutParams.MATCH_PARENT, WindowManager.LayoutParams.MATCH_PARENT));
+            // 注意 params 类型：WindowManager.LayoutParams 会让覆盖层测量成 0×0
+            // （真机 alioth 实测：按键可见但 bounds 全零、点击全部落空），
+            // 必须用宿主 FrameLayout 的 LayoutParams
+            addContentView(onsOverlay, new FrameLayout.LayoutParams(
+                    FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.MATCH_PARENT));
             // 手柄方向键/左摇杆虚拟鼠标（覆盖层纯绘制 + 按键前置拦截 + 光标命中面板优先）
             virtualMouse = new EngineVirtualMouse(onsOverlay, () -> mSurface, this::injectTapAtCursor,
                     (x, y) -> extractPanel != null && extractPanel.dispatchCursorClick(x, y));

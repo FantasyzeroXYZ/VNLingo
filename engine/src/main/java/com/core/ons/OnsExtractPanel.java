@@ -478,10 +478,16 @@ public class OnsExtractPanel {
         expanded = !expanded;
         panel.setVisibility(expanded ? View.VISIBLE : View.GONE);
         if (expanded) {
-            applyOpacity();
-            applyPanelWidth();
-            applyAdaptiveHeight();
+            // refresh 先行：apply* 任何一环异常都不能挡住内容显示（窗口承载宿主
+            // 实测 applyAdaptiveHeight 一类的尺寸同步异常会吞掉 refresh）
             refresh();
+            try {
+                applyOpacity();
+                applyPanelWidth();
+                applyAdaptiveHeight();
+            } catch (Throwable t) {
+                android.util.Log.w("OnsExtractPanel", "panel layout sync failed", t);
+            }
         }
         // 可见性已同步生效，直接通知宿主同步覆盖窗触摸放行（post 一次避让同帧布局）
         if (panelVisibilityHook != null) {
@@ -525,24 +531,40 @@ public class OnsExtractPanel {
             int w = buttonsWidth > 0
                     ? Math.min(buttonsWidth + dp(28), screenW - dp(24))
                     : Math.min(dp(560), screenW - dp(24));
-            android.widget.FrameLayout.LayoutParams flp =
-                    (android.widget.FrameLayout.LayoutParams) panel.getLayoutParams();
-            flp.width = w;
-            flp.gravity = Gravity.BOTTOM | Gravity.CENTER_HORIZONTAL;
-            panel.setLayoutParams(flp);
+            applyPanelWidthValue(w, true);
         }
     };
+
+    /**
+     * 宿主模式感知的宽度应用：窗口承载宿主（Artemis）下 panel.getLayoutParams()
+     * 是 WindowManager.LayoutParams，强转 FrameLayout.LayoutParams 会
+     * ClassCastException（曾把 togglePanel 展开链路的 refresh 一起吞掉）——
+     * 改宽后经 panelVisibilityHook 触发宿主 updateViewLayout。
+     */
+    private void applyPanelWidthValue(int w, boolean centerHorizontal) {
+        android.view.ViewGroup.LayoutParams lp = panel.getLayoutParams();
+        if (lp instanceof android.widget.FrameLayout.LayoutParams) {
+            android.widget.FrameLayout.LayoutParams flp =
+                    (android.widget.FrameLayout.LayoutParams) lp;
+            flp.width = w;
+            flp.gravity = Gravity.BOTTOM | (centerHorizontal ? Gravity.CENTER_HORIZONTAL : 0);
+            panel.setLayoutParams(flp);
+        } else {
+            lp.width = w;
+            panel.setLayoutParams(lp);
+            if (panelVisibilityHook != null) {
+                final Runnable hook = panelVisibilityHook;
+                main.post(hook);
+            }
+        }
+    }
 
     private void applyPanelWidth() {
         if (panel == null) return;
         boolean landscape = activity.getResources().getConfiguration().orientation
                 == android.content.res.Configuration.ORIENTATION_LANDSCAPE;
-        android.widget.FrameLayout.LayoutParams lp =
-                (android.widget.FrameLayout.LayoutParams) panel.getLayoutParams();
         if (!landscape) {
-            lp.width = android.view.ViewGroup.LayoutParams.MATCH_PARENT;
-            lp.gravity = Gravity.BOTTOM;
-            panel.setLayoutParams(lp);
+            applyPanelWidthValue(android.view.ViewGroup.LayoutParams.MATCH_PARENT, false);
             return;
         }
         panelWidthRetry = 0;
