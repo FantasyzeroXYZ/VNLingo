@@ -89,15 +89,9 @@ class VirtualMouseLayer(
         const val WHEEL_SENS = 4.0f
         const val CURSOR_SENS = 1.5f
         const val FLUSH_INTERVAL_MS = 16L
-        const val HANDLE_RADIUS_DP = 23f
-        const val CURSOR_SCALE_DP = 1.2f
-        const val PREFS = "tyrano_virtual_mouse"
-        const val KEY_HANDLE_X = "handle_nx"
-        const val KEY_HANDLE_Y = "handle_ny"
 
-        // 手势状态机
+        // 手势状态机（手柄圆钮已移除，不再有 STATE_HANDLE）
         const val STATE_IDLE = 0      // 无手势
-        const val STATE_HANDLE = 1    // 操作手柄
         const val STATE_PENDING = 2   // 单指按下未超 slop（等长按/点按判定）
         const val STATE_DRAG = 3      // 单指拖动光标
         const val STATE_WHEEL = 4     // 双指滚动
@@ -107,14 +101,8 @@ class VirtualMouseLayer(
 
     private val density = resources.displayMetrics.density
     private val touchSlop = ViewConfiguration.get(context).scaledTouchSlop
-    private val prefs = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
 
-    /** 手柄圆钮半径（px） */
-    private val handleR = HANDLE_RADIUS_DP * density
-
-    // ---- 手柄 / 光标位置（px；光标存归一化值防旋转丢位） ----
-    private var hx = -1f
-    private var hy = -1f
+    // ---- 光标位置（px；光标存归一化值防旋转丢位） ----
     private var active = false
     private var cnx = 0.5f
     private var cny = 0.4f
@@ -128,8 +116,6 @@ class VirtualMouseLayer(
     private var lastCx = 0f; private var lastCy = 0f // 双指质心
     private var sx = 0f; private var sy = 0f
     private var moved = false
-    private var handleDrag = false
-    private var hox = 0f; private var hoy = 0f
     private var downAt = 0L
     private var twoFingerAt = 0L
 
@@ -140,21 +126,8 @@ class VirtualMouseLayer(
     private var flushPosted = false
 
     // ---- 画笔 ----
-    private val handleFill = Paint(Paint.ANTI_ALIAS_FLAG).apply { style = Paint.Style.FILL }
-    private val handleStroke = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-        style = Paint.Style.STROKE
-        strokeWidth = density
-        color = 0x73FFFFFF
-    }
-    private val glyphPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-        style = Paint.Style.STROKE
-        strokeWidth = 1.8f * density
-        color = Color.WHITE
-        strokeCap = Paint.Cap.ROUND
-    }
     /** 光标统一绘制器（与 KRKR/ONS/Artemis 同一套样式，见 VirtualMouseCursorRenderer）。 */
     private val cursorRenderer = com.core.engine.VirtualMouseCursorRenderer(density)
-    private val glyphRect = RectF()
 
     private val longPressRunnable = Runnable {
         // 单指长按 = 右键（一次性消费，忽略本手势剩余部分）
@@ -193,18 +166,8 @@ class VirtualMouseLayer(
     override fun onSizeChanged(w: Int, h: Int, ow: Int, oh: Int) {
         super.onSizeChanged(w, h, ow, oh)
         if (w <= 0 || h <= 0) return
-        if (hx < 0f) {
-            hx = prefs.getFloat(KEY_HANDLE_X, 0.055f) * w
-            // 默认 0.48：避开触屏手柄左上开关区（~0-36%）与左下摇杆区（~60%+）
-            hy = prefs.getFloat(KEY_HANDLE_Y, 0.48f) * h
-        }
-        hx = hx.coerceIn(handleR, w - handleR)
-        hy = hy.coerceIn(handleR, h - handleR)
-        // 屏幕旋转后尺寸变化：将 handle 坐标归一化再按新尺寸计算，
-        // 保持手柄在屏幕上的相对位置；然后清除残留手势、重置光标到中心。
+        // 屏幕旋转后尺寸变化：清除残留手势并把光标重置到中心（与其它引擎一致）
         if (ow > 0 && oh > 0 && (w != ow || h != oh)) {
-            hx = (hx / ow * w).coerceIn(handleR, w - handleR)
-            hy = (hy / oh * h).coerceIn(handleR, h - handleR)
             cancelGesture()
             cnx = 0.5f
             cny = 0.5f
@@ -218,21 +181,8 @@ class VirtualMouseLayer(
     }
 
     override fun onDraw(canvas: Canvas) {
-        drawHandle(canvas)
+        // 只画光标：可拖动圆形手柄已按用户要求去掉（开关走右缘「点击模式」按键或手柄快捷键）
         if (active) drawCursor(canvas)
-    }
-
-    private fun drawHandle(canvas: Canvas) {
-        handleFill.color = if (active) 0x73469AFF.toInt() else 0x29FFFFFF
-        canvas.drawCircle(hx, hy, handleR, handleFill)
-        canvas.drawCircle(hx, hy, handleR, handleStroke)
-        // 简笔鼠标轮廓：圆角矩形机身 + 中线 + 左键分界
-        val bw = handleR * 0.78f
-        val bh = handleR * 1.18f
-        glyphRect.set(hx - bw / 2f, hy - bh / 2f, hx + bw / 2f, hy + bh / 2f)
-        canvas.drawRoundRect(glyphRect, bw / 2.6f, bw / 2.6f, glyphPaint)
-        canvas.drawLine(hx, hy - bh / 2f + glyphPaint.strokeWidth, hx, hy - bh * 0.08f, glyphPaint)
-        canvas.drawLine(glyphRect.left, hy - bh * 0.08f, glyphRect.right, hy - bh * 0.08f, glyphPaint)
     }
 
     /** 标准指针箭头：竖直左缘 + 内凹缺口 + 甩尾，滚轮态填充黄色。
@@ -256,15 +206,7 @@ class VirtualMouseLayer(
                 p1y = event.y; sy = event.y
                 lastCx = p1x; lastCy = p1y
                 moved = false
-                handleDrag = false
                 downAt = System.currentTimeMillis()
-                if (inHandle(event.x, event.y)) {
-                    parent?.requestDisallowInterceptTouchEvent(true)
-                    state = STATE_HANDLE
-                    hox = event.x - hx
-                    hoy = event.y - hy
-                    return true
-                }
                 if (!active) {
                     pid1 = -1
                     return false // 放行给 WebView：触屏模式零干扰
@@ -298,14 +240,6 @@ class VirtualMouseLayer(
                 updatePointer(event, pid1)
                 updatePointer(event, pid2)
                 when (state) {
-                    STATE_HANDLE -> {
-                        if (Math.hypot((p1x - sx).toDouble(), (p1y - sy).toDouble()) > touchSlop) handleDrag = true
-                        if (handleDrag) {
-                            hx = (p1x - hox).coerceIn(handleR, width - handleR)
-                            hy = (p1y - hoy).coerceIn(handleR, height - handleR)
-                            invalidate()
-                        }
-                    }
                     STATE_PENDING -> {
                         if (!moved && Math.hypot((p1x - sx).toDouble(), (p1y - sy).toDouble()) > touchSlop) {
                             moved = true
@@ -360,20 +294,12 @@ class VirtualMouseLayer(
                     val quick = !moved && state == STATE_PENDING &&
                         System.currentTimeMillis() - downAt < LONG_PRESS_MS
                     if (event.actionMasked == MotionEvent.ACTION_UP) {
-                        if (state == STATE_HANDLE && !handleDrag) {
-                            setActive(!active)
-                        } else if (quick && active) {
+                        if (quick && active) {
                             flushNow()
                             js("click", cnx * width / density, cny * height / density)
                         } else if (active) {
                             flushNow() // 拖动/滚轮收尾：立即派发剩余增量，不等 16ms 队列
                         }
-                    }
-                    if (state == STATE_HANDLE && handleDrag) {
-                        prefs.edit()
-                            .putFloat(KEY_HANDLE_X, hx / width)
-                            .putFloat(KEY_HANDLE_Y, hy / height)
-                            .apply()
                     }
                     state = STATE_IDLE
                     pid1 = -1
@@ -445,7 +371,4 @@ class VirtualMouseLayer(
         }
         dispatchJs(sb.toString())
     }
-
-    private fun inHandle(x: Float, y: Float): Boolean =
-        Math.hypot((x - hx).toDouble(), (y - hy).toDouble()) <= handleR + 6f * density
 }
