@@ -1356,27 +1356,40 @@ public class OnsExtractPanel {
      */
     private boolean moveTokenVertical(int dir) {
         if (historyMode || unitRanges.isEmpty() || sentenceSpan == null || sentenceView == null) {
+            android.util.Log.i(TAG, "vnav bail: no tokens span=" + (sentenceSpan != null)
+                    + " ranges=" + unitRanges.size() + " view=" + (sentenceView != null));
             return false;
         }
         android.text.Layout layout = sentenceView.getLayout();
-        if (layout == null) return false;
+        if (layout == null) {
+            android.util.Log.i(TAG, "vnav bail: layout null");
+            return false;
+        }
         int cur = selectedToken >= 0 ? selectedToken : 0;
-        if (cur < 0 || cur >= unitRanges.size()) return false;
+        if (cur < 0 || cur >= unitRanges.size()) {
+            android.util.Log.i(TAG, "vnav bail: cur=" + cur + " ranges=" + unitRanges.size());
+            return false;
+        }
         int[] range = unitRanges.get(cur);
         int line = layout.getLineForOffset(range[0]);
         int targetLine = line + dir;
-        if (targetLine < 0 || targetLine >= layout.getLineCount()) return false;
+        if (targetLine < 0 || targetLine >= layout.getLineCount()) {
+            android.util.Log.i(TAG, "vnav bail: line=" + line + " target=" + targetLine
+                    + " lines=" + layout.getLineCount());
+            return false;
+        }
 
         // 当前词元中心的水平位置（相对行首；左对齐文本下即为「列」）
         float center = (layout.getPrimaryHorizontal(range[0])
-                + layout.getPrimaryHorizontal(range[1])) / 2f;
+                + layout.getPrimaryHorizontal(range[1])) / 2f
+                + layout.getLineLeft(line);
         int best = -1;
         float bestDistance = Float.MAX_VALUE;
         for (int i = 0; i < unitRanges.size(); i++) {
             int[] r = unitRanges.get(i);
             if (layout.getLineForOffset(r[0]) != targetLine) continue;
-            float h0 = layout.getPrimaryHorizontal(r[0]);
-            float h1 = layout.getPrimaryHorizontal(r[1]);
+            float h0 = layout.getPrimaryHorizontal(r[0]) + layout.getLineLeft(targetLine);
+            float h1 = layout.getPrimaryHorizontal(r[1]) + layout.getLineLeft(targetLine);
             if (center >= h0 && center <= h1) { // 同列命中，直接用
                 best = i;
                 bestDistance = 0f;
@@ -1389,7 +1402,12 @@ public class OnsExtractPanel {
                 best = i;
             }
         }
-        if (best < 0) return false; // 目标行没有可选的词元 → 交给滚动
+        if (best < 0) {
+            android.util.Log.i(TAG, "vnav bail: no token on line " + targetLine);
+            return false; // 目标行没有可选的词元 → 交给滚动
+        }
+        android.util.Log.i(TAG, "vnav " + line + "->" + targetLine
+                + " token " + cur + "->" + best + " x=" + Math.round(center));
         if (com.core.engine.PanelOptions.isAutoLookup(activity)) {
             selectUnit(best, unitRanges.get(best)[0], true);
         } else {
