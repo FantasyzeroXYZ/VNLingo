@@ -963,6 +963,18 @@
 13. **模式分流约定（三宿主统一顺序：面板 → 虚拟鼠标 → 游戏）**：面板展开时方向键/确认归面板；
    面板收起且虚拟鼠标模式开 → 方向键移动光标、确认点击；面板收起且触摸模式 → 全透传游戏；
    不冲突的面板快捷键（翻译/制卡/复制/播放/历史/模式切换）两种模式下都生效。
+14. **「开关类」快捷键必须过滤重复事件**（用户反馈「切换虚拟鼠标不稳定」的根因，2026-10-09）：
+   长按会持续下发 `ACTION_DOWN + repeatCount>0`，部分手柄/多设备还会重复下发首次 DOWN；
+   只判 `ACTION_DOWN` 就会来回狂切。正确写法：`repeatCount == 0` **且** 加 350ms 去抖
+   （`debounceToggle`），抬起不触发。面板呼出键（RB）同样是开关，已加同等保护；
+   真机验证：`input keyevent --longpress 105`（R2 长按）→ 恰好 1 次切换。
+   另外：部分手柄 L2/R2 **只报 `AXIS_LTRIGGER/AXIS_RTRIGGER`**、不报按键——绑定到这两个键的
+   开关动作要在 `handleMotion` 里把扳机轴当按键处理（阈值 0.5 + 锁存/重新武装），否则「有时灵有时不灵」。
+15. **虚拟鼠标输入核心已抽出**：`com.core.engine.VirtualMouseInput`（按键五动作 + 长按重复 +
+   HAT 轴长按重复 + 摇杆死区 + 模拟器旋转补偿 + 轴诊断），宿主只实现 `Target`
+   （isCursorVisible/ensureCursor/moveBy/click/requestRender）。Tyrano/RPGM 的 WebView 光标层
+   已接它；KRKR/ONS/Artemis 仍用各自的 `EngineVirtualMouse`（同语义，已打同一批修复），
+   要彻底统一需单独迁移提交 + 三引擎回归。
 5. **「存档目录 = 游戏根」的引擎必须用白名单，不能只排资源包**（2026-10-09 修复）：
    Artemis 游戏根里除了本体的 `root.pfs/movie/system`，还有**我们自己写进去的**
    `screenshots/`、`extract/`、`artemis_extract/voice/`（提取面板与内核），

@@ -2625,16 +2625,27 @@ public class OnsExtractPanel {
         if (event == null) return false;
         int code = event.getKeyCode();
         // 虚拟鼠标开关（点击模式）快捷键：面板收起/展开都生效——它本来就是
-        // 「不开面板也要能切」的快捷操作（用户要求快速开关虚拟鼠标）
+        // 「不开面板也要能切」的快捷操作（用户要求快速开关虚拟鼠标）。
+        //
+        // 稳定性要点（用户反馈「切换不稳定」的根因）：
+        // ① 只认 repeatCount == 0 的首次按下——长按会持续下发 repeatCount>0 的 DOWN，
+        //    不过滤就会来回狂切；
+        // ② 去抖窗口：部分手柄/多设备会重复下发同一键（重复 DOWN/多帧抖动），窗口内忽略；
+        // ③ 抬起（ACTION_UP）不触发，也不改状态。
         if (event.getAction() == KeyEvent.ACTION_DOWN
                 && PanelActionBindings.matches(PanelActionBindings.PANEL_MOUSE_TOGGLE, code)) {
-            toggleMouseModeFromKey();
+            if (event.getRepeatCount() == 0 && debounceToggle("mouse")) {
+                toggleMouseModeFromKey();
+            }
             return true;
         }
         if (!expanded) {
             if (PanelActionBindings.matches(PanelActionBindings.PANEL_TOGGLE, code)
                     && event.getAction() == KeyEvent.ACTION_DOWN) {
-                togglePanel();
+                if (event.getRepeatCount() == 0 && debounceToggle("panel")) {
+                    Log.i(TAG, "panel toggle via key code=" + code);
+                    togglePanel();
+                }
                 return true;
             }
             return false;
@@ -2723,6 +2734,26 @@ public class OnsExtractPanel {
         return true; // webgametxt：面板打开时其余按键全拦，不透传游戏
     }
 
+    /**
+     * 面板/虚拟鼠标开关去抖：同一开关在 [TOGGLE_DEBOUNCE_MS] 内只认一次。
+     * 手柄长按重复与「多设备/抖动重复下发同一键」都会造成来回狂切，靠它兜住。
+     */
+    private static final long TOGGLE_DEBOUNCE_MS = 350;
+    private long lastMouseToggleMs;
+    private long lastPanelToggleMs;
+
+    private boolean debounceToggle(String which) {
+        long now = android.os.SystemClock.uptimeMillis();
+        if ("mouse".equals(which)) {
+            if (now - lastMouseToggleMs < TOGGLE_DEBOUNCE_MS) return false;
+            lastMouseToggleMs = now;
+            return true;
+        }
+        if (now - lastPanelToggleMs < TOGGLE_DEBOUNCE_MS) return false;
+        lastPanelToggleMs = now;
+        return true;
+    }
+
     /** 快速开关虚拟鼠标（点击模式）：调宿主开关并提示新状态。 */
     private void toggleMouseModeFromKey() {
         Runnable toggle = mouseModeToggle;
@@ -2750,6 +2781,10 @@ public class OnsExtractPanel {
      * （←→ 选词、↑↓ 滚动），否则用户在面板里按方向键「没反应」。
      */
     public boolean handleMotion(android.view.MotionEvent event) {
+        // 扳机轴当按键：部分手柄的 L2/R2 不报按键、只报 AXIS_LTRIGGER/AXIS_RTRIGGER。
+        // 绑定了这两个键的「开关虚拟鼠标」在轴越过阈值时触发一次（松开归零后重新武装），
+        // 否则这类手柄上开关会「有时灵有时不灵」。
+        if (handleTriggerToggleAxes(event)) return true;
         if (!expanded) return false;
         float hatX = event.getAxisValue(android.view.MotionEvent.AXIS_HAT_X);
         float hatY = event.getAxisValue(android.view.MotionEvent.AXIS_HAT_Y);
@@ -2771,6 +2806,44 @@ public class OnsExtractPanel {
     /** HAT 轴导航的最小间隔（防同一次方向被重复上报导致连跳）。 */
     private static final long HAT_NAV_MIN_INTERVAL_MS = 120;
     private long lastHatNavMs;
+
+    /** 扳机轴「按下」锁存（>阈值算按下，回落到阈值以下重新武装）。 */
+    private boolean l2Latched;
+    private boolean r2Latched;
+
+    /**
+     * 把 L2/R2 的**扳机轴**当作按键处理（仅影响绑定了对应键的「开关虚拟鼠标」动作）。
+     * 越过阈值 → 触发一次（走去抖）；回落 → 重新武装。返回 true = 已消费该事件。
+     */
+    private boolean handleTriggerToggleAxes(android.view.MotionEvent event) {
+        float rt = event.getAxisValue(android.view.MotionEvent.AXIS_RTRIGGER);
+        float lt = event.getAxisValue(android.view.MotionEvent.AXIS_LTRIGGER);
+        boolean consumed = false;
+        if (rt > 0.5f || lt > 0.5f) {
+            if (rt > 0.5f && !r2Latched) {
+                r2Latched = true;
+                if (PanelActionBindings.matches(
+                        PanelActionBindings.PANEL_MOUSE_TOGGLE, android.view.KeyEvent.KEYCODE_BUTTON_R2)
+                        && debounceToggle("mouse")) {
+                    toggleMouseModeFromKey();
+                }
+                consumed = true;
+            }
+            if (lt > 0.5f && !l2Latched) {
+                l2Latched = true;
+                if (PanelActionBindings.matches(
+                        PanelActionBindings.PANEL_MOUSE_TOGGLE, android.view.KeyEvent.KEYCODE_BUTTON_L2)
+                        && debounceToggle("mouse")) {
+                    toggleMouseModeFromKey();
+                }
+                consumed = true;
+            }
+        } else {
+            r2Latched = false;
+            l2Latched = false;
+        }
+        return consumed;
+    }
 
     /** 命中的面板动作名（仅用于验收日志；未命中返回 null）。 */
     private static String panelActionOf(int code, boolean longPress) {
