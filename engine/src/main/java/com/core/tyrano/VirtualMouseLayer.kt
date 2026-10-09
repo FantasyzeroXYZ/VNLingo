@@ -152,15 +152,8 @@ class VirtualMouseLayer(
         color = Color.WHITE
         strokeCap = Paint.Cap.ROUND
     }
-    private val cursorShadow = Paint(Paint.ANTI_ALIAS_FLAG).apply { style = Paint.Style.FILL }
-    private val cursorFill = Paint(Paint.ANTI_ALIAS_FLAG).apply { style = Paint.Style.FILL }
-    private val cursorStroke = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-        style = Paint.Style.STROKE
-        strokeWidth = density * 0.9f
-        color = 0xE6141414.toInt()
-        strokeJoin = Paint.Join.ROUND
-    }
-    private val cursorPath = Path()
+    /** 光标统一绘制器（与 KRKR/ONS/Artemis 同一套样式，见 VirtualMouseCursorRenderer）。 */
+    private val cursorRenderer = com.core.engine.VirtualMouseCursorRenderer(density)
     private val glyphRect = RectF()
 
     private val longPressRunnable = Runnable {
@@ -242,28 +235,13 @@ class VirtualMouseLayer(
         canvas.drawLine(glyphRect.left, hy - bh * 0.08f, glyphRect.right, hy - bh * 0.08f, glyphPaint)
     }
 
-    /** 标准指针箭头：竖直左缘 + 内凹缺口 + 甩尾，滚轮态填充黄色。 */
+    /** 标准指针箭头：竖直左缘 + 内凹缺口 + 甩尾，滚轮态填充黄色。
+     *  绘制委托 [com.core.engine.VirtualMouseCursorRenderer]（与 KRKR/ONS/Artemis 同一套样式）。 */
     private fun drawCursor(canvas: Canvas) {
-        val x = cnx * width
-        val y = cny * height
-        val s = CURSOR_SCALE_DP * density
-        cursorPath.rewind()
-        cursorPath.moveTo(x, y)                 // 尖端
-        cursorPath.lineTo(x, y + 13.6f * s)     // 左缘（竖直）
-        cursorPath.lineTo(x + 3.3f * s, y + 10.6f * s)   // 内凹
-        cursorPath.lineTo(x + 5.6f * s, y + 15.8f * s)   // 尾部外缘
-        cursorPath.lineTo(x + 7.7f * s, y + 14.8f * s)   // 尾部内缘
-        cursorPath.lineTo(x + 5.6f * s, y + 9.9f * s)    // 尾根
-        cursorPath.lineTo(x + 10.3f * s, y + 9.6f * s)   // 右侧倒钩
-        cursorPath.close()
-        canvas.save()
-        canvas.translate(0.9f * density, 1.5f * density)
-        cursorShadow.color = 0x59000000
-        canvas.drawPath(cursorPath, cursorShadow)
-        canvas.restore()
-        cursorFill.color = if (state == STATE_WHEEL) 0xFFFFD34D.toInt() else Color.WHITE
-        canvas.drawPath(cursorPath, cursorFill)
-        canvas.drawPath(cursorPath, cursorStroke)
+        cursorRenderer.draw(
+            canvas, cnx * width, cny * height,
+            highlight = state == STATE_WHEEL,
+        )
     }
 
     // ============================================================ 触控

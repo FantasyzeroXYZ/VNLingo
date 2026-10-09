@@ -65,13 +65,8 @@ class EngineVirtualMouse(
             (STEP_BASE * (1f + stepsTaken / 8f)).coerceAtMost(STEP_MAX) * density
     }
 
-    private val cursorPaint = Paint(Paint.ANTI_ALIAS_FLAG)
-    private val outlinePaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-        style = Paint.Style.STROKE
-        strokeWidth = 2.5f
-        color = Color.BLACK
-    }
-    private val arrow = Path()
+    /** 光标统一绘制器（与 Tyrano/RPGM 光标层同一套样式）。 */
+    private val cursorRenderer = VirtualMouseCursorRenderer(resources.displayMetrics.density)
     private val repeatHandler = Handler(Looper.getMainLooper())
 
     var cursorX = 0f
@@ -386,18 +381,7 @@ class EngineVirtualMouse(
     override fun onDraw(canvas: Canvas) {
         super.onDraw(canvas)
         if (!cursorVisible) return
-        val size = 22f * resources.displayMetrics.density
-        arrow.reset()
-        arrow.moveTo(cursorX, cursorY)
-        arrow.lineTo(cursorX, cursorY + size)
-        arrow.lineTo(cursorX + size * 0.28f, cursorY + size * 0.72f)
-        arrow.lineTo(cursorX + size * 0.62f, cursorY + size * 1.12f)
-        arrow.lineTo(cursorX + size * 0.88f, cursorY + size * 0.92f)
-        arrow.lineTo(cursorX + size * 0.52f, cursorY + size * 0.56f)
-        arrow.lineTo(cursorX + size * 0.86f, cursorY + size * 0.56f)
-        arrow.close()
-        cursorPaint.color = Color.WHITE
-        canvas.drawPath(arrow, cursorPaint)
-        canvas.drawPath(arrow, outlinePaint)
+        // 光标样式与 Tyrano/RPGM 的光标层统一（同尺寸/同描边/同投影）
+        cursorRenderer.draw(canvas, cursorX, cursorY)
     }
 }
