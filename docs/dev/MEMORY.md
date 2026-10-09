@@ -975,6 +975,20 @@
    （isCursorVisible/ensureCursor/moveBy/click/requestRender）。Tyrano/RPGM 的 WebView 光标层
    已接它；KRKR/ONS/Artemis 仍用各自的 `EngineVirtualMouse`（同语义，已打同一批修复），
    要彻底统一需单独迁移提交 + 三引擎回归。
+16. **逐段出现的对白不能"来一段念一段"**（用户反馈 Tyrano TTS 重复播放，2026-10-09）：
+   Tyrano 这类引擎的对白是**分次更新**的（先 `AAAA`，随后变成 `AAAA BBBB`），旧实现「文本一变就念」
+   → 先念 AAAA、整句到位后再念一遍 AAAA BBBB。两层修复（`OnsExtractPanel.autoPlayForNewSentence`）：
+   - **稳定窗口**：每次文本变化都重新计时，静止 400ms（若还在增长则 650ms）才朗读
+     → 打字机/快速增量只念一次整句；
+   - **前缀增量补念**：文本以上次**已念**内容为前缀时，只念新增部分
+     （`auto speak append(len)`），绝不重念整句 → 晚到的续写也不会重复。
+   诊断日志：`auto speak(len): …` / `auto speak append(len): …`（`adb logcat | grep "auto speak"`）。
+   注意：`speakSentence()` 念的是 facade 当前句，补念增量要用 `speakText(suffix)`。
+：`com.core.engine.VirtualMouseInput`（按键五动作 + 长按重复 +
+   HAT 轴长按重复 + 摇杆死区 + 模拟器旋转补偿 + 轴诊断），宿主只实现 `Target`
+   （isCursorVisible/ensureCursor/moveBy/click/requestRender）。Tyrano/RPGM 的 WebView 光标层
+   已接它；KRKR/ONS/Artemis 仍用各自的 `EngineVirtualMouse`（同语义，已打同一批修复），
+   要彻底统一需单独迁移提交 + 三引擎回归。
 5. **「存档目录 = 游戏根」的引擎必须用白名单，不能只排资源包**（2026-10-09 修复）：
    Artemis 游戏根里除了本体的 `root.pfs/movie/system`，还有**我们自己写进去的**
    `screenshots/`、`extract/`、`artemis_extract/voice/`（提取面板与内核），

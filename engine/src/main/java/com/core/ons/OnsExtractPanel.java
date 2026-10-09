@@ -3221,21 +3221,93 @@ public class OnsExtractPanel {
         }
     }
 
+    /**
+     * 自动朗读的触发（**去抖 + 增量合并**）。
+     *
+     * 背景（用户反馈 Tyrano 重复朗读）：这类引擎的对白是**逐段更新**的，例如先出
+     * `AAAA`、随后变成 `AAAA BBBB`；旧实现「文本一变就念」，于是先念 AAAA，等 BBBB
+     * 到位后又把 AAAA BBBB 整句念一遍——同一句听两遍。
+     *
+     * 现在的判定：
+     * 1. 文本与上次已念内容相同 → 直接忽略；
+     * 2. 每次文本变化都**重新计时**，只有文本静止 [AUTO_SPEAK_STABLE_MS]（正在增长时
+     *    [AUTO_SPEAK_GROW_MS]）才真正朗读——打字机/逐段刷新期间不会中途开念；
+     * 3. 「增长」= 新文本以上一次待念文本为前缀（同一句还在变长），此时用更长的静默窗口，
+     *    确保等到这句彻底显示完再念一次；
+     * 4. 手动「播放」不受影响（走 speakSentence 直呼）。
+     */
+    private static final long AUTO_SPEAK_STABLE_MS = 400;
+    private static final long AUTO_SPEAK_GROW_MS = 650;
+    private String pendingSpokenSentence;
+
+    private final Runnable autoSpeakJob = new Runnable() {
+        @Override
+        public void run() {
+            String text = pendingSpokenSentence;
+            pendingSpokenSentence = null;
+            if (text == null || text.isEmpty()) return;
+            if (text.equals(lastSpokenSentence)) return; // 去重：同一句不重复念
+            // 生效条件 = 面板「自动」快调 OR 设置页「自动朗读」全局开关（后者面板隐藏
+            // 也生效——隐藏剧情文本框时更新文本后照常自动朗读）
+            boolean autoOn = ttsAuto || OnsTtsEngines.autoRead(activity);
+            if (!autoOn) return;
+            lastSpokenSentence = text;
+            // 有配对语音时游戏自身已在播放，自动模式不重复播；仅对无语音句子 TTS，
+            // 重播由用户手动点「播放」按钮。
+            // 自动路径不受面板「TTS 朗读」开关牵制（面板隐藏时该开关不可达，会把全局
+            // 自动朗读静音）——ttsEnabled 只管手动「播放」按钮。
+            android.util.Log.i(TAG, "auto speak(" + text.length() + "): " + text);
+            if (facade.getVoiceName().isEmpty() && (ttsEnabled || OnsTtsEngines.autoRead(activity))) {
+                speakSentence();
+            }
+        }
+    };
+
+    /**
+     * 「同一句又长出来了」的补念：文本以上次**已念**内容为前缀时，只念新增部分，
+     * 绝不重念整句（用户要求：Tyrano 这类逐段更新的对白不能重复播放）。
+     * 返回 true = 已按补念处理。
+     */
+    private boolean speakOnlyAppendedPart(String text) {
+        String spoken = lastSpokenSentence;
+        if (spoken == null || spoken.isEmpty()) return false;
+        if (!text.startsWith(spoken) || text.length() <= spoken.length()) return false;
+        String suffix = text.substring(spoken.length()).trim();
+        lastSpokenSentence = text;
+        if (!hasSpeakableContent(suffix)) {
+            android.util.Log.i(TAG, "auto speak: 仅标点增量，跳过: " + suffix);
+            return true;
+        }
+        android.util.Log.i(TAG, "auto speak append(" + suffix.length() + "): " + suffix);
+        if (ttsEnabled || OnsTtsEngines.autoRead(activity)) {
+            speakText(suffix);
+        }
+        return true;
+    }
+
+    /** 增量里是否有可朗读内容（纯标点/空白就不念，避免怪异发音）。 */
+    private static boolean hasSpeakableContent(String text) {
+        for (int i = 0; i < text.length(); i++) {
+            char c = text.charAt(i);
+            if (Character.isLetterOrDigit(c)) return true;
+        }
+        return false;
+    }
+
     private void autoPlayForNewSentence(String sentence) {
         if (sentence == null || sentence.isEmpty()) return;
         if (sentence.equals(lastSpokenSentence)) return;
-        // 生效条件 = 面板「自动」快调 OR 设置页「自动朗读」全局开关（后者面板隐藏
-        // 也生效——隐藏剧情文本框时更新文本后照常自动朗读）
         boolean autoOn = ttsAuto || OnsTtsEngines.autoRead(activity);
         if (!autoOn) return;
-        lastSpokenSentence = sentence;
-        // 有配对语音时游戏自身已在播放，自动模式不重复播；仅对无语音句子 TTS，
-        // 重播由用户手动点「播放」按钮。
-        // 自动路径不受面板「TTS 朗读」开关牵制（面板隐藏时该开关不可达，会把全局
-        // 自动朗读静音）——ttsEnabled 只管手动「播放」按钮。
-        if (facade.getVoiceName().isEmpty() && (ttsEnabled || OnsTtsEngines.autoRead(activity))) {
-            speakSentence();
-        }
+        // ① 已念过的句子又长出新内容（AAAA → AAAA BBBB）→ 只补念新增部分
+        if (speakOnlyAppendedPart(sentence)) return;
+        // ② 同一句还在变长（尚未念过）→ 等更久，避免"先念一半、整句再念一遍"
+        boolean growing = pendingSpokenSentence != null
+                && sentence.startsWith(pendingSpokenSentence)
+                && sentence.length() > pendingSpokenSentence.length();
+        pendingSpokenSentence = sentence;
+        main.removeCallbacks(autoSpeakJob);
+        main.postDelayed(autoSpeakJob, growing ? AUTO_SPEAK_GROW_MS : AUTO_SPEAK_STABLE_MS);
     }
 
     /**
