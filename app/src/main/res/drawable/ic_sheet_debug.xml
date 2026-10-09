@@ -1,0 +1,13 @@
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="24dp"
+    android:height="24dp"
+    android:viewportWidth="24"
+    android:viewportHeight="24">
+    <!-- 调试信息：文档 + 放大镜中的“诊断”意象（虫形常用但这里用文档+下划线更中性） -->
+    <path
+        android:fillColor="#FF000000"
+        android:pathData="M14,2H6C4.9,2 4,2.9 4,4v16c0,1.1 0.9,2 2,2h12c1.1,0 2,-0.9 2,-2V8l-6,-6zM14,4l4,4h-4V4z" />
+    <path
+        android:fillColor="#FF000000"
+        android:pathData="M8,12h8v1.6H8zM8,15h8v1.6H8zM8,18h5v1.6H8z" />
+</vector>

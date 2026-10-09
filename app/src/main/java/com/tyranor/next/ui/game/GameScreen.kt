@@ -991,7 +991,7 @@ internal fun GameActionsSheet(
                     DrawerAction(
                         key = "debug_info",
                         title = drawerDebugInfoTitle,
-                        icon = com.core.engine.R.drawable.ic_camera,
+                        icon = R.drawable.ic_sheet_debug,
                         showArrow = true,
                         iconTint = drawerPrimaryColor,
                         onClick = {
