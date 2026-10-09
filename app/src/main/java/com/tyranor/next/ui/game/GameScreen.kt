@@ -926,31 +926,8 @@ internal fun GameActionsSheet(
                 }
             }
             // 「启动游戏 / 启动文件」保持整行；其余动作条目一行两个（末行单个保持半宽）。
+            // 用户要求：条目选项里不再提供「添加快捷启动 / 添加到桌面」（用不到）。
             val drawerActions = buildList {
-                add(
-                    DrawerAction(
-                        key = "quick_launch",
-                        title = drawerQuickLaunchTitle,
-                        icon = R.drawable.ic_home,
-                        iconTint = drawerPrimaryColor,
-                        onClick = {
-                            if (onQuickLaunchToggle()) {
-                                onDismiss()
-                            } else {
-                                android.widget.Toast.makeText(context, quickLaunchFullMessage, android.widget.Toast.LENGTH_SHORT).show()
-                            }
-                        },
-                    ),
-                )
-                add(
-                    DrawerAction(
-                        key = "desktop_shortcut",
-                        title = drawerDesktopShortcutTitle,
-                        icon = R.drawable.ic_sheet_desktop_shortcut,
-                        iconTint = drawerPrimaryColor,
-                        onClick = { if (!shortcutRequestInFlight) openShortcutCrop() },
-                    ),
-                )
                 add(
                     DrawerAction(
                         key = "search_cover",
