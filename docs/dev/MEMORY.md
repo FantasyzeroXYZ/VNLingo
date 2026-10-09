@@ -999,3 +999,14 @@
    若等于游戏根，直接判「不可管理」（`save_error_save_dir_is_game_root`）。
    排查这类问题时，**先解开用户手上的导出 ZIP 看条目**——一眼就能看出谁把什么打了进去。
 
+
+17. **条目「调试信息」**（2026-10-10）：`GameRunRecord`（game_run_record prefs，按 uri 记录
+   engine/target/file/patch/at/result/detail）+ `GameDebugInfoActivity`（最近一次运行 + DiagLog.readTail(400)
+   + filesDir/crash 最新文件，可复制/分享）；`EngineLauncher.launch` 成功/失败都留痕。
+   排查启动失败/白屏先看这里，再看 logcat 里引擎自己的 tag trace。
+18. **Artemis 引擎的脚本停滞（The Shell Part I 白屏）**：点 Start 后脚本 `call estag04` 创建
+   `lyc {id=startmask, file=:bg/white}` 白蒙版 → trans/wait 走完后**再无任何 tag trace**，
+   渲染循环仍在跑（draw 只剩 bg+startmask），二次点击只到 `click: fallback -> onpush key 1`。
+   无视频请求、无音频解码报错。怀疑点：脚本此前注册了 `setonsoundfinish {id=4, function=sesys_voiceend}`，
+   而我们的 `artemis_audio_bridge.cpp` 里**没有**任何 finish/完成回调实现 → 等声音结束的回调不来，
+   脚本永久停住（白屏）。下一步：给音频桥补"播放结束"上报，或先验证 sesys_voiceend 是否被调用。
