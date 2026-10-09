@@ -33,6 +33,56 @@ class VirtualMouseLayer(
     private val dispatchJs: (String) -> Unit,
 ) : View(context) {
 
+    /**
+     * **手柄驱动的虚拟鼠标**（与 KRKR/ONS/Artemis 同一套抽象 [com.core.engine.VirtualMouseInput]
+     * 与同一份按键绑定）：方向键/摇杆/十字键 HAT 移动光标，确认键点击——落地方式改为
+     * 注入 `window.__tnMouse` 的合成鼠标事件（WebView 内的 JS 契约）。
+     */
+    private val gamepadInput = com.core.engine.VirtualMouseInput(
+        object : com.core.engine.VirtualMouseInput.Target {
+            override fun isCursorVisible(): Boolean = active
+            override fun ensureCursor() {
+                if (!active) setActive(true)
+            }
+
+            override fun moveBy(dx: Float, dy: Float) {
+                if (width <= 0 || height <= 0) return
+                cnx = (cnx + dx / width).coerceIn(0f, 1f)
+                cny = (cny + dy / height).coerceIn(0f, 1f)
+                pendingCssX = cnx * width / density
+                pendingCssY = cny * height / density
+                scheduleFlush()
+                invalidate()
+            }
+
+            override fun click() {
+                if (!active) return
+                flushNow()
+                js("click", cnx * width / density, cny * height / density)
+            }
+
+            override fun requestRender() {
+                invalidate()
+            }
+        },
+        resources.displayMetrics.density,
+        context,
+    )
+
+    /** 手柄按键路由（宿主 dispatchKeyEvent 调用）：返回 true = 已消费。 */
+    fun handleGamepadKey(event: android.view.KeyEvent): Boolean = gamepadInput.handleKey(event)
+
+    /** 手柄轴路由（宿主 dispatchGenericMotionEvent 调用）：返回 true = 已消费。 */
+    fun handleGamepadMotion(event: MotionEvent): Boolean = gamepadInput.handleMotion(event)
+
+    /** 当前是否处于虚拟鼠标（光标）模式。 */
+    fun isActive(): Boolean = active
+
+    /** 宿主（侧键/手柄快捷键/面板）切换光标模式。 */
+    fun toggleActiveByHost() {
+        setActive(!active)
+    }
+
     private companion object {
         const val LONG_PRESS_MS = 350L
         const val TWO_FINGER_TAP_MS = 300L

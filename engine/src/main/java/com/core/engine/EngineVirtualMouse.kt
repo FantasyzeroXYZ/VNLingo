@@ -150,24 +150,32 @@ class EngineVirtualMouse(
      * 摇杆 / 十字键移动光标（Activity.dispatchGenericMotionEvent 前置调用）。
      *
      * 处理三类轴：
+     * - **十字键 HAT 轴 `AXIS_HAT_X/Y`**（实测部分手柄 D-pad 不产生按键事件，只报 HAT）：
+     *   按下立即走一步，**按住期间由内部重复引擎持续移动**（修复：原先只在轴变化时走一步，
+     *   长按不动），轴回中即停；看门狗兜底防释放事件丢失；
      * - 左摇杆 `AXIS_X/Y` → 连续移动（带死区）；
-     * - **十字键 HAT 轴 `AXIS_HAT_X/Y`**（实测部分手柄 D-pad 不产生按键事件，只报 HAT）
-     *   → 每次按固定步长移动一次（带最小间隔去抖）；
      * - 右摇杆 `AXIS_RX/RY` → 同左摇杆（部分手柄/映射把它当鼠标用）。
      */
     fun handleMotion(event: MotionEvent): Boolean {
         // HAT 轴可能来自 SOURCE_JOYSTICK 或 SOURCE_DPAD，这里不按 source 过滤
         val hatX = event.getAxisValue(MotionEvent.AXIS_HAT_X)
         val hatY = event.getAxisValue(MotionEvent.AXIS_HAT_Y)
-        if (hatX != 0f || hatY != 0f) {
-            val now = android.os.SystemClock.uptimeMillis()
-            if (now - lastHatMoveMs < HAT_MOVE_MIN_INTERVAL_MS) return true
-            lastHatMoveMs = now
-            ensureCursor()
-            val step = 12f * resources.displayMetrics.density
-            cursorX = (cursorX + hatX * step).coerceIn(0f, width.toFloat())
-            cursorY = (cursorY + hatY * step).coerceIn(0f, height.toFloat())
-            invalidate()
+        if (hatX == 0f && hatY == 0f) {
+            if (hatActive) { // 轴回中：停掉连续移动，并消费这次释放
+                stopHatMove()
+                return true
+            }
+        } else {
+            lastHatEventMs = android.os.SystemClock.uptimeMillis()
+            val (sx, sy) = toScreenVector(hatX to hatY)
+            if (!hatActive || sx != hatDx || sy != hatDy) {
+                ensureCursor()
+                val step = HAT_STEP_DP * resources.displayMetrics.density
+                cursorX = (cursorX + sx * step).coerceIn(0f, width.toFloat())
+                cursorY = (cursorY + sy * step).coerceIn(0f, height.toFloat())
+                invalidate()
+                startHatMove(sx, sy)
+            }
             return true
         }
         if ((event.source and InputDevice.SOURCE_CLASS_JOYSTICK) == 0) {
@@ -190,6 +198,48 @@ class EngineVirtualMouse(
         cursorY = (cursorY + ry * speed).coerceIn(0f, height.toFloat())
         invalidate()
         return true
+    }
+
+    /** HAT 轴长按连续移动的状态与重复引擎（修复「长按方向键不连续移动」）。 */
+    private var hatActive = false
+    private var hatDx = 0f
+    private var hatDy = 0f
+    private var lastHatEventMs = 0L
+    private val HAT_STEP_DP = 12f
+    private val HAT_WATCHDOG_MS = 1200L
+
+    private fun startHatMove(dx: Float, dy: Float) {
+        hatActive = true
+        hatDx = dx
+        hatDy = dy
+        repeatHandler.removeCallbacks(hatStepper)
+        repeatHandler.postDelayed(hatStepper, REPEAT_DELAY_MS)
+    }
+
+    private fun stopHatMove() {
+        hatActive = false
+        hatDx = 0f
+        hatDy = 0f
+        repeatHandler.removeCallbacks(hatStepper)
+    }
+
+    /** HAT 按住期间的连续移动；轴事件断流超过看门狗时长即自停。 */
+    private val hatStepper = object : Runnable {
+        override fun run() {
+            if (!hatActive || !isAttachedToWindow) {
+                stopHatMove()
+                return
+            }
+            if (android.os.SystemClock.uptimeMillis() - lastHatEventMs > HAT_WATCHDOG_MS) {
+                stopHatMove()
+                return
+            }
+            val step = HAT_STEP_DP * resources.displayMetrics.density
+            cursorX = (cursorX + hatDx * step).coerceIn(0f, width.toFloat())
+            cursorY = (cursorY + hatDy * step).coerceIn(0f, height.toFloat())
+            invalidate()
+            repeatHandler.postDelayed(this, REPEAT_INTERVAL_MS)
+        }
     }
 
     /** HAT 轴移动的最小间隔（防同一次方向被重复上报导致连跳）。 */

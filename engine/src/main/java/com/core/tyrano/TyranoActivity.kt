@@ -96,6 +96,13 @@ class TyranoActivity : Activity() {
         }
     }
 
+    /** 右缘按键「点击模式」按钮与手柄快捷键（PANEL_MOUSE_TOGGLE）共用。 */
+    private fun toggleVirtualMouseForPanel() {
+        virtualMouseLayer?.toggleActiveByHost()
+    }
+
+    private fun isVirtualMouseForPanel(): Boolean = virtualMouseLayer?.isActive() == true
+
     /** 影响引擎行为的 Intent extras 摘要，用于判断单游戏重启是否需要重建。 */
     private fun behaviorSignature(intent: Intent): String = listOf(
         resolveGameDir(intent),
@@ -264,8 +271,10 @@ class TyranoActivity : Activity() {
         }
         webView = browser
         root.addView(browser)
-        // 虚拟鼠标层（issue #25）：仅 RPG Maker MV/MZ 需要，叠在 WebView 之上
-        if (webGameType == WebGameType.RPG_MV || webGameType == WebGameType.RPG_MZ) {
+        // 虚拟鼠标层：RPG Maker MV/MZ（issue #25，触摸手势）与 Tyrano（手柄驱动）都需要，
+        // 叠在 WebView 之上；两者共用同一份按键绑定与输入核心（VirtualMouseInput）
+        if (webGameType == WebGameType.RPG_MV || webGameType == WebGameType.RPG_MZ
+            || webGameType == WebGameType.TYRANO) {
             val layer = VirtualMouseLayer(this) { js ->
                 webView?.let { v -> runCatching { v.evaluateJavascript(js, null) } }
             }
@@ -299,7 +308,8 @@ class TyranoActivity : Activity() {
         val extractFacadeLocal = WebExtractFacade(this, saveDirectory, gameRootFile?.name ?: "web")
         extractFacade = extractFacadeLocal
         val extract = OnsExtractPanel(extractFacadeLocal)
-        extract.install(root, null, null)
+        // 手柄「切换虚拟鼠标」快捷键与右缘按键的点击模式按钮都接到本页的虚拟鼠标层
+        extract.install(root, this::toggleVirtualMouseForPanel, this::isVirtualMouseForPanel)
         extractPanel = extract
         val server = requireNotNull(localServer)
         if (server.usedFallbackPort) {
@@ -647,11 +657,20 @@ class TyranoActivity : Activity() {
         val mapped = com.core.engine.GamepadRemap.apply(event)
         // 提取面板按键路由（webgametxt 语义：RB 呼出；展开时消费手柄/键盘）
         if (extractPanel?.handleKey(mapped) == true) return true
+        // 虚拟鼠标：方向键/摇杆移动光标、确认键点击（面板收起时才轮到它）
+        if (virtualMouseLayer?.handleGamepadKey(mapped) == true) return true
         if (mapped.keyCode == KeyEvent.KEYCODE_BACK) {
             if (mapped.action == KeyEvent.ACTION_UP) handleBackRequest()
             return true
         }
         return super.dispatchKeyEvent(mapped)
+    }
+
+    override fun dispatchGenericMotionEvent(event: android.view.MotionEvent): Boolean {
+        // 面板展开时摇杆/轴事件全吞；否则交给虚拟鼠标（摇杆移动光标）
+        if (extractPanel?.handleMotion(event) == true) return true
+        if (virtualMouseLayer?.handleGamepadMotion(event) == true) return true
+        return super.dispatchGenericMotionEvent(event)
     }
 
     private fun handleBackRequest() {

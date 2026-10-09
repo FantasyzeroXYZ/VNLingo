@@ -1,0 +1,51 @@
+tables: ['android_metadata', 'games', 'scan_roots', 'quick_launch', 'game_overrides', 'engine_detection_cache', 'room_master_table']
+
+== android_metadata cols: ['locale']
+
+== games cols: ['uri', 'root_uri', 'title', 'engine', 'launch_target', 'launch_file', 'cover_uri', 'cover_source', 'vndb_id', 'metadata_title', 'external_module_alias', 'detected_renpy_version', 'last_opened_at', 'discovered_at', 'updated_at', 'sort_title', 'sort_tag']
+HIT:
+   uri = content://com.android.externalstorage.documents/tree/primary%3A0.%E5%A4%96%E6%9D%A5%E6%96%87%E4%BB%B6%E5%AD%98%E5%82%A8%2Fgame/document/primary%3A0.%E5%A4%96%E6
+   root_uri = content://com.android.externalstorage.documents/tree/primary%3A0.%E5%A4%96%E6%9D%A5%E6%96%87%E4%BB%B6%E5%AD%98%E5%82%A8%2Fgame
+   title = Sakura, The Jirai-kei Magical Girl
+   engine = ARTEMIS
+   launch_target = DIR
+   launch_file = None
+   cover_uri = None
+   cover_source = None
+   vndb_id = None
+   metadata_title = None
+   external_module_alias = None
+   detected_renpy_version = None
+   last_opened_at = 1791504619766
+   discovered_at = 1791504466671
+   updated_at = 1791504619777
+   sort_title = sakura, the jirai-kei magical girl
+   sort_tag = 
+HIT:
+   uri = content://com.android.externalstorage.documents/tree/primary%3A0.%E5%A4%96%E6%9D%A5%E6%96%87%E4%BB%B6%E5%AD%98%E5%82%A8%2Fgame%2FArtemis/document/primary%3A0.%E
+   root_uri = content://com.android.externalstorage.documents/tree/primary%3A0.%E5%A4%96%E6%9D%A5%E6%96%87%E4%BB%B6%E5%AD%98%E5%82%A8%2Fgame
+   title = Sakura, The Jirai-kei Magical Girl
+   engine = ARTEMIS
+   launch_target = DIR
+   launch_file = None
+   cover_uri = None
+   cover_source = None
+   vndb_id = None
+   metadata_title = None
+   external_module_alias = None
+   detected_renpy_version = None
+   last_opened_at = 1791509370712
+   discovered_at = 1791504466671
+   updated_at = 1791509370714
+   sort_title = sakura, the jirai-kei magical girl
+   sort_tag = 
+
+== scan_roots cols: ['uri', 'display_name', 'added_at', 'scan_depth', 'last_scanned_at']
+
+== quick_launch cols: ['game_uri', 'slot_index', 'updated_at']
+
+== game_overrides cols: ['game_uri', 'kr_json', 'artemis_json', 'ons_json', 'tyrano_json', 'renpy_json', 'touchpad_json', 'updated_at']
+
+== engine_detection_cache cols: ['game_uri', 'engine', 'fingerprint_hash', 'artemis_version', 'artemis_success_version', 'renpy_version', 'rpgm_runtime', 'mkxpz_supported', 'confidence', 'reason', 'updated_at']
+
+== room_master_table cols: ['id', 'identity_hash']

@@ -1,0 +1,5 @@
+=== engine_detection_cache ===
+
+=== game_overrides ===
+
+=== 全部 ARTEMIS 游戏的检测缓存（对照）===
