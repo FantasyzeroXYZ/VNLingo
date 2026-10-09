@@ -34,6 +34,58 @@
   /** 暂停时取消：用于 50ms click timer + 释放按压状态。 */
   var pendingClick = null;
 
+  /* ---- Tyrano（KAG/HTML5）支持 ----------------------------------------
+   * Tyrano 在**移动端**把推进/选择绑定在 touch 事件上（桌面端才用 mouse），
+   * 只发 mouse 事件时的表现就是「光标能移动、点击无效」。按引擎类型分流：
+   * Tyrano → 合成 touchstart/touchend（再补一个 click 兜底）；
+   * RPG Maker → 仍只走 mouse（MZ 的 TouchInput 对 touch 也响应，两者同发会双推进）。
+   */
+  function isTyranoEngine() {
+    try {
+      return !!(window.TYRANO || window.tyrano || window.Tyrano ||
+        window.kag || window.KAG || window.tyrano_player);
+    } catch (e) { return false; }
+  }
+
+  function touchFire(type, x, y) {
+    var el = hitElement(x, y) || document.body || document.documentElement;
+    if (!el) return false;
+    try {
+      var t = new Touch({
+        identifier: 1, target: el,
+        clientX: x, clientY: y, pageX: x, pageY: y, screenX: x, screenY: y
+      });
+      var ev = new TouchEvent(type, {
+        touches: type === "touchend" ? [] : [t],
+        targetTouches: type === "touchend" ? [] : [t],
+        changedTouches: [t],
+        bubbles: true, cancelable: true
+      });
+      el.dispatchEvent(ev);
+      return true;
+    } catch (e) {
+      return false; // 个别 WebView 无 Touch/TouchEvent 构造器
+    }
+  }
+
+  function tyranoTap(x, y) {
+    var touched = touchFire("touchstart", x, y);
+    if (pendingClick) { clearTimeout(pendingClick); }
+    pendingClick = setTimeout(function () {
+      pendingClick = null;
+      if (touched) touchFire("touchend", x, y);
+      else {
+        mouseEvent("mousedown", x, y, 0);
+        mouseEvent("mouseup", x, y, 0);
+      }
+      // 兜底 click：Tyrano 某些版本只监听 click（KAG 内部有防抖，不会双推进）
+      fire(MouseEvent, {
+        type: "click", clientX: x, clientY: y, button: 0,
+        bubbles: true, cancelable: true
+      });
+    }, 50);
+  }
+
   function mouseEvent(type, x, y, button) {
     fire(MouseEvent, {
       type: type, clientX: x, clientY: y,
@@ -55,6 +107,8 @@
      *  同帧复位 _mousePressed 会让下一帧 isPressed()=false，对话永不推进
      *  （真实鼠标靠人手按住数帧才生效）。 */
     click: function (x, y) {
+      // Tyrano（移动端把推进绑在 touch 上）走 touch 合成，RPG Maker 走 mouse
+      if (isTyranoEngine()) { tyranoTap(x, y); return; }
       var self = this;
       this.down(x, y, 0);
       if (pendingClick) { clearTimeout(pendingClick); }
