@@ -629,16 +629,15 @@ public class OnsExtractPanel {
      * 高度自适应：面板 WRAP_CONTENT 随内容收缩；内容超出屏高 60% 时，
      * 把可见滚动区压到剩余空间并锁定面板高度，内容转内部滚动。
      */
-    private void applyAdaptiveHeight() {
-        if (panel == null) return;
-        // 不再「重置 WRAP_CONTENT → 塌缩 → 再撑开」（每次文本更新都闪现一下）。
-        // 改为离线量测内容自然高度：需要的高度与当前不一致时一次性调整，
-        // 同高更新零重布局，文本就地替换不闪。
-        panel.post(() -> {
+    /** 自适应高度任务（合并多次请求，避免文本高频更新时堆一串测量）。 */
+    private final Runnable adaptiveHeightJob = new Runnable() {
+        @Override
+        public void run() {
             if (panel == null || !expanded) return;
             ScrollView visible = historyMode ? historyScroller : mainScroller;
-            if (visible.getVisibility() != View.VISIBLE) return;
-            int max = Math.round(activity.getResources().getDisplayMetrics().heightPixels * 0.6f);
+            if (visible == null || visible.getVisibility() != View.VISIBLE) return;
+            // 高度上限：内容装得下就长高，装不下才回到滑动（用户要求：自适应 + 有上限）
+            int max = Math.round(activity.getResources().getDisplayMetrics().heightPixels * 0.7f);
             int width = panel.getWidth() > 0
                     ? panel.getWidth()
                     : activity.getResources().getDisplayMetrics().widthPixels;
@@ -651,7 +650,16 @@ public class OnsExtractPanel {
                 panel.getLayoutParams().height = android.view.ViewGroup.LayoutParams.WRAP_CONTENT;
                 panel.requestLayout();
             }
-        });
+        }
+    };
+
+    private void applyAdaptiveHeight() {
+        if (panel == null) return;
+        // 不再「重置 WRAP_CONTENT → 塌缩 → 再撑开」（每次文本更新都闪现一下）。
+        // 改为离线量测内容自然高度：需要的高度与当前不一致时一次性调整，
+        // 同高更新零重布局，文本就地替换不闪。多次调用合并成一次任务。
+        panel.removeCallbacks(adaptiveHeightJob);
+        panel.post(adaptiveHeightJob);
     }
 
     /** 应用面板不透明度：只作用于面板/按钮/释义区背景，文本保持全不透明。 */
@@ -1441,19 +1449,15 @@ public class OnsExtractPanel {
                 final long scanMs = System.currentTimeMillis() - scanStart;
                 if (hit == null) {
                     com.core.diag.DiagLog.debug("dict", "miss in " + scanMs + "ms len=" + text.length());
-                    // 已加载词典但未命中 ≠ 未导入词典：两句文案分开，避免误判成库为空
+                    // 未命中一律**不弹提示**（用户要求：没有释义用户自己就明白了）。
+                    // 只有「词典库为空」这种需要用户处理的情况才提示。
                     boolean noDict = !OnsDictStore.get().hasDictionary();
-                    // 手柄选词/确认查词（silentMiss）未命中时不弹「未查到」——
-                    // 用户要求：手柄在文本框里选词查不到词不要弹提示
-                    if (silentMiss && !noDict) {
-                        // 面板状态行给轻提示（不弹 toast）：手柄选词查不到词时只更新状态
-                        com.core.diag.DiagLog.debug("dict", "miss(silent,gamepad) len=" + text.length());
+                    com.core.diag.DiagLog.debug("dict", "miss(silent) noDict=" + noDict);
+                    if (noDict) {
+                        main.post(() -> toast(R.string.engine_ons_extract_dict_none));
+                    } else {
                         main.post(this::refresh);
-                        return;
                     }
-                    main.post(() -> toast(noDict
-                            ? R.string.engine_ons_extract_dict_none
-                            : R.string.engine_ons_extract_def_none));
                     return;
                 }
                 defGroups = hit.groups;
@@ -2168,9 +2172,21 @@ public class OnsExtractPanel {
                     toast(activity.getString(
                             R.string.engine_ons_extract_translate_failed, "network"));
                 }
-                if (expanded) mainScrollToTrans();
+                if (expanded) {
+                    // 先按内容自适应长高（能放下就不需要滑动）；真的超过高度上限时才滚到底
+                    applyAdaptiveHeight();
+                    mainScroller.post(() -> {
+                        if (isMainContentOverflowing()) mainScrollToTrans();
+                    });
+                }
             });
         }, "ons-translate").start();
+    }
+
+    /** 主滚动区内容是否超过当前可视高度（超过才需要滚动/自动滚到底）。 */
+    private boolean isMainContentOverflowing() {
+        if (mainScroller == null || mainScroller.getChildCount() == 0) return false;
+        return mainScroller.getChildAt(0).getHeight() > mainScroller.getHeight();
     }
 
     private void mainScrollToTrans() {
