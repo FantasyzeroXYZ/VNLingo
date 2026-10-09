@@ -280,6 +280,11 @@ public abstract class ArtemisLauncherBaseActivity extends com.ies_net.artemis.Ar
      */
     private boolean routeMouseKey(android.view.KeyEvent event) {
         KeyEvent mapped = com.core.engine.GamepadRemap.apply(event);
+        // 诊断：确认「我们的可聚焦窗口能否收到手柄事件」（能否用软件接收 + 再转发给内核）
+        Log.i("YukiArtemis", "mouse catcher key code=" + event.getKeyCode()
+                + " action=" + event.getAction()
+                + " source=0x" + Integer.toHexString(event.getSource()));
+        if (extractPanel != null && mapped != null && extractPanel.handleKey(mapped)) return true;
         if (virtualMouse != null && virtualMouse.handleKey(mapped)) return true;
         try {
             super.dispatchKeyEvent(mapped);

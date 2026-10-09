@@ -934,12 +934,19 @@
    `adb shell am start -n com.tyranor.next/com.tyranor.next.ui.game.GameShortcutActivity --es extra_shortcut_id game_<sha256(游戏uri)>`
    （`GameShortcutManager.shortcutId` = `"game_" + sha256(uri)`；uri 用 `adb exec-out run-as … cat databases/game_library.db` 拉库后查）。
    这条路径稳、可复现，是后续所有游戏内验收的首选入口。
-9. **Artemis 的输入是 NativeActivity 直读，按键完全不经 Java**（2026-10-09 两轮实测，比原注释更彻底）：
-   `input keyevent`（键盘源）与 `input gamepad keyevent`（手柄源）在 Artemis 上都**收不到任何
-   Java 侧回调**——连「虚拟鼠标模式」的可聚焦光标捕获窗也不接收；因此方案 §3.2 的
-   A/B/C 三种 Android 手段都无从生效。该内核还缺 `injectHostTouch` 符号（`UnsatisfiedLinkError`），
-   虚拟鼠标的点击也不可用。**结论：Artemis 面板只能触摸打开**；要给 Artemis 加手柄快捷键，
-   必须改内核（native → Java 回调），不是应用层能解决的。
+9. **Artemis 的输入是 NativeActivity 直读**（2026-10-09 修正后的准确结论）：
+   - **触摸模式下**（我们的窗 NOT_FOCUSABLE、焦点在 native 窗）按键确实到不了 Java；
+   - **但只要让我们的窗口持焦**（虚拟鼠标模式的 `mouseKeyCatcher`、或面板键捕获窗），
+     手柄事件**能进 Java**——实测 `mouse catcher key code=20/96 source=0x401`（DPAD_DOWN/BUTTON_A，
+     手柄源 0x401）。我最初判定「完全不经 Java」是**测量错误**：那条路径当时没有日志，
+     `virtualMouse.handleKey` 在 Artemis 分支也不打日志，于是「没日志」被我误读成「没事件」。
+   - 因此「软件接收 → 转换 → 回送内核」在**按键**上是可行的：`routeMouseKey` 里未消费的键
+     已经 `super.dispatchKeyEvent(mapped)` 走内核的 `EmulateKeyEvent` 映射链回送游戏；
+   - **触摸/点击**仍需要内核侧入口（clean 内核的 `InjectHostTouch`，或钩子捕获的
+     `CArtemisTouch`）——Android 不允许普通应用把事件塞进别人的/native 的输入队列。
+   - 该设备上 7 个 Artemis 内核 .so **都已安装**（`files/engine_plugins/artemis/current/arm64-v8a/`，
+     含 `libartemis-clean.so`），manifest 记 `pluginVersion: 32`，所以切内核是即时可用的。
+   教训：**加日志再做结论**；没有日志的路径不能当作"没有事件"。
 10. **注入手柄事件用 `adb shell input gamepad keyevent <code>`**（`input` 支持
    dpad/keyboard/mouse/gamepad/joystick… 源前缀）；排查「手柄键到底进了谁」时，键盘源与手柄源
    各发一次对比，能区分「事件没到」与「到了但没人处理」。
