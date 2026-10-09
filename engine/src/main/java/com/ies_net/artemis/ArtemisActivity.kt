@@ -97,6 +97,12 @@ open class ArtemisActivity : NativeActivity() {
     external fun OnReadyPlayAssetDelivery(a: Int, b: Int, c: Int)
 
     fun PlayVideo(path: String, offset: Int, length: Int, volume: Int, skip: Int) {
+        // 影片桥（内核 movie_play → Java → IJK）。白屏类问题里"影片没播"是最常见原因，
+        // 这里必须留日志：内核是否真的调到这里、参数是什么、启动是否抛异常。
+        android.util.Log.i(
+            "ArtemisVideo",
+            "PlayVideo path=$path offset=$offset length=$length volume=$volume skip=$skip",
+        )
         val intent = Intent(applicationContext, VideoViewActivity::class.java)
         intent.addFlags(Intent.FLAG_ACTIVITY_NO_ANIMATION)
         intent.putExtra("PATH", path)
@@ -104,8 +110,14 @@ open class ArtemisActivity : NativeActivity() {
         intent.putExtra("LENGTH", length)
         intent.putExtra("VOLUME", volume)
         intent.putExtra("SKIP", skip)
-        startActivityForResult(intent, 1)
-        overridePendingTransition(0, 0)
+        try {
+            startActivityForResult(intent, 1)
+            overridePendingTransition(0, 0)
+        } catch (t: Throwable) {
+            android.util.Log.e("ArtemisVideo", "PlayVideo startActivity failed: $t")
+            // 启动失败也必须回调内核，否则脚本会永远等在影片结束上（表现为白屏卡住）
+            runCatching { OnFinishVideo() }
+        }
     }
 
     override fun dispatchKeyEvent(event: KeyEvent): Boolean {

@@ -1010,3 +1010,22 @@
    无视频请求、无音频解码报错。怀疑点：脚本此前注册了 `setonsoundfinish {id=4, function=sesys_voiceend}`，
    而我们的 `artemis_audio_bridge.cpp` 里**没有**任何 finish/完成回调实现 → 等声音结束的回调不来，
    脚本永久停住（白屏）。下一步：给音频桥补"播放结束"上报，或先验证 sesys_voiceend 是否被调用。
+19. **The Shell Part I 白屏定位（2026-10-09/10，Artemis）**：点 Start 后脚本走
+   `call estag04`(system/script.asb) → `lyc {id=startmask, file=:bg/white}` 白幕 → trans →
+   `wait {input=1,time=1000}` → `wait {input=0,time=0}` **然后彻底静止**（渲染循环仍在跑）。
+   证据链：
+   - 游戏是**解包版**（目录名带 (files)），`system/script.asb` 可直接读，尾部 token 显示这段
+     逻辑属于影片流程：`movie_play` / `movie_autoskip` / `call file=system/first.iet
+     label=movie_emergendcy` / `movie_play_exit` / 错误弹窗「ファイルの終端に到達しました」；
+     `movie/` 目录里只有 `op1.dat`（开场影片）。
+   - 官方内核 `libartemis.so` 里**有** `PlayVideo` 与 `OnFinishVideo` 的 JNI 字符串，
+     签名 `(Ljava/lang/String;IIII)V` 与 `ArtemisActivity.PlayVideo` 一致 → 影片本应经
+     Java(IJK) 播放；但真机跑：`PlayVideo` **一次都没被调用**（无 `ArtemisVideo` 日志），
+     说明内核在影片打开阶段就卡住（还没走到 Java 桥）。
+   - 已排除：内核 official/clean 都是同样白屏；auto_patch=auto 无变化；无音频/video 报错；
+     logcat 无 JNI/NoSuchMethod 异常。
+   结论：**开场影片无法播放，脚本等它结束 → 停在白幕**。
+   下一步（未做）：在 Artemis 标签钩子（artemis_extract_hook/official_hook）里拦截影片标签
+   （movie_play/lyvideo）：先记日志确认参数，再在无法播放时主动走"影片结束"路径
+   （OnFinishVideo / movie_play_exit），让脚本继续。
+   已落地：`ArtemisActivity.PlayVideo` 加日志 + 启动异常时回调 `OnFinishVideo`（防再次卡死）。
