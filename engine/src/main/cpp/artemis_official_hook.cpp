@@ -66,10 +66,20 @@ constexpr const char* kBlockToString =
 // 语音命令处理器（与 CommandPrint 同签名，块参数 map 携带语音文件名）
 constexpr const char* kCommandVoice =
     "_ZN7artemis8CArtemis12CommandVoiceERNS_12CScriptBlockEb";
+// 影片命令处理器（C）。开场影片打不开时脚本会永久等在白幕上（The Shell Part I 实测），
+// 这里既能记下影片标签的真实参数，也能按设置跳过整条影片命令（A）。
+constexpr const char* kCommandVideo =
+    "_ZN7artemis8CArtemis12CommandVideoERNS_12CScriptBlockEb";
+// wait 命令处理器：只记日志——卡白屏时能看出卡在哪个 wait（input/time 参数）
+constexpr const char* kCommandWait =
+    "_ZN7artemis8CArtemis11CommandWaitERNS_12CScriptBlockEb";
 
 JavaVM* gJvm = nullptr;
 jclass gBridgeClass = nullptr;
 jmethodID gOnTextMethod = nullptr;
+jmethodID gSkipVideoMethod = nullptr;
+// -1 未知 / 0 不跳过 / 1 跳过（Java 侧 artemisSkipVideo() 读 prefs，默认 true）
+std::atomic<int> gSkipVideoCached{-1};
 std::atomic<bool> gInstalled{false};
 std::atomic<bool> gFirstEmitLogged{false};
 std::mutex gInstallMutex;
@@ -531,6 +541,89 @@ void hookedTouchEnd(void* self) {
     gTouchObjCaptured.store(true, std::memory_order_relaxed);
 }
 
+// ---- 影片 / wait 命令钩子（C 记录 + A 跳过）----
+// 背景（The Shell Part I 白屏，2026-10-10）：点 Start 后脚本 `lyc startmask=:bg/white` 铺白幕，
+// trans/wait 走完后进入影片流程（movie_play → movie/op1.dat），但内核从未回调 Java
+// PlayVideo（无 ArtemisVideo 日志）→ 影片既播不了也结束不了 → 脚本永久停在白幕。
+// 处理：钩住 CArtemis::CommandVideo
+//   1. 总是记录该命令被调用（含块参数）→ 以后排查"影片到底调没调"；
+//   2. Java 侧 artemisSkipVideo()（prefs artemis_skip_video，默认 true）为真时**不调用原实现**，
+//      整条影片命令直接跳过，脚本继续往下走（影片看不到，但游戏能玩）。
+constexpr int kMaxLoggedArgs = 8;
+
+using BlockCommandFn = void (*)(void*, void*, bool);
+BlockCommandFn gOrigCommandVideo = nullptr;
+BlockCommandFn gOrigCommandWait = nullptr;
+
+/** 读取"是否跳过影片命令"（Java 侧 prefs，首次查询后缓存；改设置需重启生效）。 */
+bool skipVideoEnabled() {
+    const int cached = gSkipVideoCached.load(std::memory_order_relaxed);
+    if (cached >= 0) return cached == 1;
+    bool value = true;  // 兜底也跳过：影片打不开时的失败形态是永久白屏，宁可跳过
+    if (gJvm != nullptr && gBridgeClass != nullptr && gSkipVideoMethod != nullptr) {
+        JNIEnv* env = nullptr;
+        bool attached = false;
+        if (gJvm->GetEnv(reinterpret_cast<void**>(&env), JNI_VERSION_1_6) != JNI_OK
+                || env == nullptr) {
+            if (gJvm->AttachCurrentThread(&env, nullptr) == JNI_OK && env != nullptr) {
+                attached = true;
+            } else {
+                env = nullptr;
+            }
+        }
+        if (env != nullptr) {
+            const jboolean r = env->CallStaticBooleanMethod(gBridgeClass, gSkipVideoMethod);
+            if (env->ExceptionCheck()) {
+                env->ExceptionClear();
+            } else {
+                value = (r == JNI_TRUE);
+            }
+            if (attached) gJvm->DetachCurrentThread();
+        }
+    }
+    gSkipVideoCached.store(value ? 1 : 0, std::memory_order_relaxed);
+    LOGI("video: skip setting resolved = %s", value ? "true" : "false");
+    return value;
+}
+
+void hookedCommandVideo(void* self, void* blockRef, bool flag) {
+    const bool skip = skipVideoEnabled();
+    LOGI("CommandVideo: called (skip=%s) self=%p block=%p",
+         skip ? "true" : "false", self, blockRef);
+    if (blockRef != nullptr) {
+        int n = 0;
+        walkArgTree(blockRef, 0, [&n](const std::string& key, const std::string& value) {
+            if (n < kMaxLoggedArgs) {
+                LOGI("CommandVideo arg[%d] key='%.24s' value='%.96s'",
+                     n, key.c_str(), value.c_str());
+            }
+            ++n;
+            return false;
+        });
+    }
+    if (skip) {
+        LOGI("CommandVideo: skipped (影片在本端口无法播放，跳过以免脚本卡死)");
+        return;
+    }
+    if (gOrigCommandVideo != nullptr) gOrigCommandVideo(self, blockRef, flag);
+}
+
+void hookedCommandWait(void* self, void* blockRef, bool flag) {
+    static std::atomic<int> logged{0};
+    if (logged.fetch_add(1, std::memory_order_relaxed) < 40 && blockRef != nullptr) {
+        int n = 0;
+        walkArgTree(blockRef, 0, [&n](const std::string& key, const std::string& value) {
+            if (n < 4) {
+                LOGI("CommandWait arg[%d] key='%.16s' value='%.32s'",
+                     n, key.c_str(), value.c_str());
+            }
+            ++n;
+            return false;
+        });
+    }
+    if (gOrigCommandWait != nullptr) gOrigCommandWait(self, blockRef, flag);
+}
+
 }  // namespace
 
 /**
@@ -577,13 +670,16 @@ extern "C" bool artemis_official_install(void* kernelHandle, JavaVM* jvm, jobjec
     env->DeleteLocalRef(bridge);
     gOnTextMethod = env->GetStaticMethodID(gBridgeClass, "onArtemisExtract",
             "(Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;)V");
+    // 影片容错开关（prefs artemis_skip_video，默认 true）：缺失时按 true 处理（见 skipVideoEnabled）
+    gSkipVideoMethod = env->GetStaticMethodID(gBridgeClass, "artemisSkipVideo", "()Z");
+    if (gSkipVideoMethod == nullptr && env->ExceptionCheck()) env->ExceptionClear();
     if (attached) gJvm->DetachCurrentThread();
     if (gOnTextMethod == nullptr) {
         LOGW("official hook: onArtemisExtract method unresolved");
         return false;
     }
 
-    InlineHook hooks[10];
+    InlineHook hooks[12];
     int count = 0;
     void* orig = nullptr;
     if (makeTrampoline(backlogAdd, &hooks[count].trampoline, &orig)
@@ -658,6 +754,28 @@ extern "C" bool artemis_official_install(void* kernelHandle, JavaVM* jvm, jobjec
         ++count;
     } else if (commandVoice == nullptr) {
         LOGW("official hook: CArtemis::CommandVoice not exported");
+    }
+    // 影片命令：记录（C）+ 按设置跳过（A，见 hookedCommandVideo 注释）
+    void* commandVideo = dlsym(kernelHandle, kCommandVideo);
+    if (commandVideo != nullptr && count < 11
+            && makeTrampoline(commandVideo, &hooks[count].trampoline, &orig)
+            && patchEntry(commandVideo, reinterpret_cast<void*>(&hookedCommandVideo))) {
+        gOrigCommandVideo = reinterpret_cast<BlockCommandFn>(orig);
+        ++count;
+        LOGI("official hook: CArtemis::CommandVideo armed (movie skip=%s)",
+             skipVideoEnabled() ? "on" : "off");
+    } else if (commandVideo == nullptr) {
+        LOGW("official hook: CArtemis::CommandVideo not exported");
+    }
+    // wait 命令：只记参数，便于对照白屏卡在哪个 wait
+    void* commandWait = dlsym(kernelHandle, kCommandWait);
+    if (commandWait != nullptr && count < 12
+            && makeTrampoline(commandWait, &hooks[count].trampoline, &orig)
+            && patchEntry(commandWait, reinterpret_cast<void*>(&hookedCommandWait))) {
+        gOrigCommandWait = reinterpret_cast<BlockCommandFn>(orig);
+        ++count;
+    } else if (commandWait == nullptr) {
+        LOGW("official hook: CArtemis::CommandWait not exported");
     }
     (void) hooks;
     gInstalled.store(true, std::memory_order_relaxed);

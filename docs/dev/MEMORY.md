@@ -1029,3 +1029,21 @@
    （movie_play/lyvideo）：先记日志确认参数，再在无法播放时主动走"影片结束"路径
    （OnFinishVideo / movie_play_exit），让脚本继续。
    已落地：`ArtemisActivity.PlayVideo` 加日志 + 启动异常时回调 `OnFinishVideo`（防再次卡死）。
+20. **The Shell Part I 白屏已修复（2026-10-10，方案 A+C）**：真机确认该游戏跑的是
+   **libartemis-clean.so（clean 内核）**——不是 prefs 里写的 official（loader 日志：
+   `dlopen .../libartemis-clean.so` + `CBackLog::Add not exported (clean kernel?)`）。
+   因此修复落在 clean 内核这条链路上：
+   - `artemis_extract_hook.cpp`（编入 artemis_audio_bridge）：带内置提取桥的内核**也要装
+     DispatchTag 钩子**（用 gSuppressText 关掉文本发射，避免与内置桥重复），否则拿不到
+     标签分发、无法做任何控制；
+   - **C 记录**：每个不同标签名打一条 `tag: <name>`（全量标签流，定位卡点神器）；
+   - **A 跳过**：影片标签（video/movie 类）直接判定已处理，不进原实现；
+   - **真正解卡的一步**：影片打不开的另一形态是脚本用 `wait time=0 input=0` 等它结束，
+     于是永久停住。容错开启时把这种"无限等待"当已完成 → 脚本继续（日志
+     `blocking wait(time=0,input=0) skipped`）。跳过该 wait 后 The Shell Part I 立刻进入
+     开场旁白，画面正常推进（截图为证）。
+   - 官方内核路径同样加了 `CArtemis::CommandVideo`（记录+跳过）与 `CommandWait`（记录）钩子，
+     但本机该游戏走 clean 内核，未实测官方路径。
+   开关：`tyranor_prefs` 的 `artemis_skip_video`（默认 true，Java 侧
+   `ArtemisActivity.artemisSkipVideo()` 供 native 查询）；置 false 恢复旧行为（会白屏）。
+   代价：开场影片不会播放（本来也播不了），换来游戏可玩。尚未加设置页开关。

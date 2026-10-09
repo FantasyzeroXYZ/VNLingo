@@ -37,6 +37,27 @@ open class ArtemisActivity : NativeActivity() {
         @JvmStatic
         fun getExtractCacheDir(): String = extractCacheDirOverride
 
+        /** 宿主 Context（onCreate 里设置），供 [artemisSkipVideo] 读 prefs。 */
+        @Volatile
+        private var appContext: android.content.Context? = null
+
+        /** 与 App 侧 EngineSettingsStore 同一个 prefs 文件（引擎读、App 写）。 */
+        private const val ARTEMIS_PREFS = "tyranor_prefs"
+        private const val KEY_SKIP_VIDEO = "artemis_skip_video"
+
+        /**
+         * 影片容错开关（内核 `CArtemis::CommandVideo` 钩子每进程查询一次）。
+         *
+         * 默认 **true**：本端口里影片打不开时，脚本会永久等在白幕上（The Shell Part I 实测：
+         * 铺白幕 → wait → 影片命令从未回调 Java PlayVideo），跳过整条影片命令能让剧情继续。
+         * 想恢复播放影片可把 `tyranor_prefs` 的 `artemis_skip_video` 置 false（需重启游戏）。
+         */
+        @JvmStatic
+        fun artemisSkipVideo(): Boolean = runCatching {
+            appContext?.getSharedPreferences(ARTEMIS_PREFS, android.content.Context.MODE_PRIVATE)
+                ?.getBoolean(KEY_SKIP_VIDEO, true) ?: true
+        }.getOrDefault(true)
+
         /**
          * 虚拟鼠标模式保持 native 失焦渲染：全屏按键捕获窗持焦后游戏窗失焦，
          * libartemis 的 native 循环在 APP_CMD_LOST_FOCUS 后停止绘制/响应
@@ -170,6 +191,7 @@ open class ArtemisActivity : NativeActivity() {
     }
 
     override fun onCreate(bundle: Bundle?) {
+        appContext = applicationContext
         super.onCreate(bundle)
         window.addFlags(1024)
         window.addFlags(128)

@@ -29,6 +29,7 @@
 #include <atomic>
 #include <cstring>
 #include <mutex>
+#include <set>
 #include <string>
 #include <vector>
 
@@ -167,14 +168,123 @@ void hookedAudioPlay(void* self, const std::string& a, const std::string& b,
 /**
  * 标签分发兜底钩子（仅供无桥的官方 revision 内核；带桥内核已跳过）：
  * 把携带 CJK 正文的标签参数值上行提取（台词正文以标签参数形态流经）。
+ *
+ * 另承担两件事（2026-10-10，The Shell Part I 白屏排查）：
+ * - **C 记录**：每个不同的标签名只打一条 `tag: <name>` 日志——白屏时能看出脚本停在哪个标签；
+ * - **A 跳过影片**：影片标签（video/movie 类）在本端口可能既播不了也不回调结束，
+ *   按 prefs `artemis_skip_video`（默认 true，经 Java `artemisSkipVideo()` 查询）直接
+ *   判定为已处理、不进原实现，让脚本继续。
  */
+/** 带桥内核由内置桥发射文本，本钩子只做控制（跳过影片 + 记标签名）。 */
+std::atomic<bool> gSuppressText{false};
+
+bool isVideoTag(const std::string& tag) {
+    if (tag.find("movie") != std::string::npos) return true;
+    if (tag.find("video") != std::string::npos) return true;
+    if (tag.find("Movie") != std::string::npos) return true;
+    if (tag.find("Video") != std::string::npos) return true;
+    return false;
+}
+
+/** 每个不同标签名只登录一次（上限 300 个，避免刷屏）。 */
+void logTagNameOnce(const std::string& tag) {
+    static std::mutex m;
+    static std::set<std::string> seen;
+    std::lock_guard<std::mutex> lk(m);
+    if (seen.size() >= 300 || !seen.insert(tag).second) return;
+    LOGI("tag: %s", tag.c_str());
+}
+
+/** 是否跳过影片标签（Java 侧 artemisSkipVideo()，读 prefs；查询失败按 true 处理）。 */
+bool artemisSkipVideoEnabled() {
+    static std::atomic<int> cached{-1};
+    const int c = cached.load(std::memory_order_relaxed);
+    if (c >= 0) return c == 1;
+    bool value = true;
+    JNIEnv* env = nullptr;
+    bool attached = false;
+    if (gJvm != nullptr) {
+        if (gJvm->GetEnv(reinterpret_cast<void**>(&env), JNI_VERSION_1_6) != JNI_OK
+                || env == nullptr) {
+            if (gJvm->AttachCurrentThread(&env, nullptr) == JNI_OK && env != nullptr) {
+                attached = true;
+            } else {
+                env = nullptr;
+            }
+        }
+    }
+    if (env != nullptr && gBridgeClass != nullptr) {
+        static std::mutex midMutex;
+        std::lock_guard<std::mutex> lk(midMutex);
+        static jmethodID mid = nullptr;
+        if (mid == nullptr) {
+            mid = env->GetStaticMethodID(gBridgeClass, "artemisSkipVideo", "()Z");
+            if (mid == nullptr && env->ExceptionCheck()) env->ExceptionClear();
+        }
+        if (mid != nullptr) {
+            const jboolean r = env->CallStaticBooleanMethod(gBridgeClass, mid);
+            if (env->ExceptionCheck()) {
+                env->ExceptionClear();
+            } else {
+                value = (r == JNI_TRUE);
+            }
+        }
+    }
+    if (attached && gJvm != nullptr) gJvm->DetachCurrentThread();
+    cached.store(value ? 1 : 0, std::memory_order_relaxed);
+    LOGI("extract hook: skip video = %s", value ? "true" : "false");
+    return value;
+}
+
+/** 标签参数是否 = 「等到天荒地老」形态（time 缺省/0 且 input=0）。 */
+bool isBlockingWaitParams(const void* params) {
+    if (params == nullptr) return false;
+    void* const* v = static_cast<void* const*>(params);
+    const uintptr_t begin = reinterpret_cast<uintptr_t>(v[0]);
+    const uintptr_t end = reinterpret_cast<uintptr_t>(v[1]);
+    if (begin == 0 || end <= begin || (end - begin) % 0x30 != 0 || end - begin > 0x3000) {
+        return false;
+    }
+    const size_t count = (end - begin) / 0x30;
+    bool timeZero = true;
+    bool inputZero = true;
+    for (size_t i = 0; i < count && i < 24; ++i) {
+        const std::string key = readStdString(
+                reinterpret_cast<const void*>(begin + i * 0x30));
+        const std::string value = readStdString(
+                reinterpret_cast<const void*>(begin + i * 0x30 + 0x18));
+        if (key == "time") timeZero = (value.empty() || value == "0");
+        if (key == "input") inputZero = (value.empty() || value == "0");
+    }
+    return timeZero && inputZero;
+}
+
 bool hookedDispatchTag(void* self, const void* name, const void* params, bool flag) {
     const DispatchTagFn original = gOrigDispatchTag;
+    // 标签名要先读：影片标签必须在**调用原实现之前**决定是否跳过（原实现会阻塞在白幕上）
+    std::string tag;
+    if (name != nullptr) {
+        tag = readStdString(name);
+        if (tag.size() > 64) tag.clear();
+    }
+    if (!tag.empty()) logTagNameOnce(tag);
+    if (!tag.empty() && artemisSkipVideoEnabled()) {
+        if (isVideoTag(tag)) {
+            LOGI("extract hook: video tag '%s' skipped (影片无法播放，避免脚本卡死)", tag.c_str());
+            return true;  // 已处理：不进原实现
+        }
+        // 影片打不开时的另一形态：脚本用 `wait time=0 input=0` 等影片/音效结束，
+        // 而本端口不会回调"结束"，于是永久停在这里（The Shell Part I 白屏）。
+        // 影容器错开时把这种"无限等待"当作已完成，让脚本继续往下走。
+        if (tag == "wait" && isBlockingWaitParams(params)) {
+            LOGI("extract hook: blocking wait(time=0,input=0) skipped (影片容错)");
+            return true;
+        }
+    }
     const bool result = original != nullptr ? original(self, name, params, flag) : false;
     (void) self;
     if (name == nullptr || params == nullptr) return result;
-    const std::string tag = readStdString(name);
-    if (tag.empty() || tag.size() > 64) return result;
+    if (tag.empty()) return result;
     // libc++ vector：{begin, end, cap}；元素 pair<string,string> 为 0x30 字节，
     // second 在 +0x18（由 DispatchTag 反汇编 add x22, x8, #0x18 证实）。
     void* const* v = static_cast<void* const*>(params);
@@ -184,6 +294,8 @@ bool hookedDispatchTag(void* self, const void* name, const void* params, bool fl
         return result;
     }
     const size_t count = (end - begin) / 0x30;
+    // 带桥内核：文本已由内置桥发射，这里只做控制（跳过影片/记标签名），不再重复上行
+    if (gSuppressText.load(std::memory_order_relaxed)) return result;
     for (size_t i = 0; i < count && i < 24; ++i) {
         const std::string val = readStdString(
                 reinterpret_cast<const void*>(begin + i * 0x30 + 0x18));
@@ -365,8 +477,19 @@ Java_com_ies_1net_artemis_ArtemisActivity_nativeInstallExtractHook(JNIEnv* env, 
     // SetMessageLayered/AudioChannels::Play 钩子再发射会造成语音事件重复。
     if (dlsym(RTLD_DEFAULT,
               "_ZN4artc17SetExtractEmitterEPFvRKNS_12ExtractEventEPvES3_") != nullptr) {
+        // 文本/语音发射交给内置桥，但 **DispatchTag 仍要装**（2026-10-10 修正）：
+        // 它还承担「影片标签跳过」的控制职责——The Shell Part I 用 clean 内核时脚本
+        // 卡在白幕上，只有拿到标签分发才能把播不了的影片命令跳过。
+        gSuppressText.store(true, std::memory_order_relaxed);
+        if (cacheJniRefs(env) && hookKernelGot(kDispatchTag,
+                                              reinterpret_cast<void*>(&hookedDispatchTag),
+                                              reinterpret_cast<void**>(&gOrigDispatchTag))) {
+            gHookInstalled.store(true, std::memory_order_relaxed);
+            LOGI("extract hook: DispatchTag armed (control only: video skip + tag log)");
+            return JNI_TRUE;
+        }
         gHookInstalled.store(true, std::memory_order_relaxed);
-        LOGI("extract hook: kernel has built-in extract bridge; GOT hooks skipped");
+        LOGW("extract hook: bridged kernel, DispatchTag control hook unavailable");
         return JNI_TRUE;
     }
     if (!cacheJniRefs(env)) return JNI_FALSE;
