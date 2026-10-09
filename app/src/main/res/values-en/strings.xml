@@ -881,4 +881,8 @@
     <string name="play_stats_unit_hour">%1$.1f h</string>
     <string name="plugin_not_installed">This engine runtime has been uninstalled — re-download or restore it from the Engines page</string>
     <string name="plugin_runtime_disabled">Engine plugin is disabled — re-enable it on the Engines page</string>
-</resources>
+    <string name="game_debug_info">Debug info</string>
+    <string name="game_debug_last_run">Last run</string>
+    <string name="game_debug_copy">Copy</string>
+    <string name="game_debug_copied">Debug info copied</string>
+    <string name="game_debug_share">Share</string></resources>

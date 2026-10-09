@@ -118,8 +118,17 @@ object EngineLauncher {
      *  [patchChoice] 为 Artemis 补丁确认弹窗（见 [needsArtemisPatchConfirm]）的选择结果。
      *  全链路（SAF 查询/文件扫描/patch 与 Steam overlay 写盘/PFS 解包）均为重 IO，
      *  统一切到 IO 线程执行，避免大游戏目录/慢存储上阻塞调用方主线程导致 ANR。 */
-    suspend fun launch(context: Context, game: ScanGame, patchChoice: ArtemisPatchChoice? = null): LaunchResult =
-        withContext(Dispatchers.IO) { launchInternal(context, game, patchChoice) }
+    suspend fun launch(context: Context, game: ScanGame, patchChoice: ArtemisPatchChoice? = null): LaunchResult {
+        // 条目「调试信息」：记录本次启动发起 + 失败原因（成功也留痕，便于区分"没跑过"与"跑成功"）
+        GameRunRecord.begin(context, game, patchChoice?.name)
+        val result = withContext(Dispatchers.IO) { launchInternal(context, game, patchChoice) }
+        if (result is LaunchResult.Success) {
+            GameRunRecord.markSuccess(context, game.uri)
+        } else {
+            GameRunRecord.fail(context, game, result.toString())
+        }
+        return result
+    }
 
     /**
      * 直接打开内置原生 Kirikiroid2 界面（`originMode`，不携带游戏路径）。

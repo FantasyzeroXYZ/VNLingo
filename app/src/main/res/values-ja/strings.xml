@@ -881,4 +881,8 @@
     <string name="play_stats_unit_hour">%1$.1f 時間</string>
     <string name="plugin_not_installed">このエンジンランタイムはアンインストール済みです。エンジンページから再取得してください</string>
     <string name="plugin_runtime_disabled">エンジンプラグインが無効です。エンジンページで再度有効にしてください</string>
-</resources>
+    <string name="game_debug_info">デバッグ情報</string>
+    <string name="game_debug_last_run">前回の実行</string>
+    <string name="game_debug_copy">コピー</string>
+    <string name="game_debug_copied">デバッグ情報をコピーしました</string>
+    <string name="game_debug_share">共有</string></resources>

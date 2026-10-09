@@ -880,4 +880,8 @@
     <string name="play_stats_unit_hour">%1$.1f 小时</string>
     <string name="plugin_not_installed">该引擎运行时已被卸载，请在引擎页重新下载或恢复</string>
     <string name="plugin_runtime_disabled">引擎插件已停用，请到「引擎」页重新启用</string>
-</resources>
+    <string name="game_debug_info">调试信息</string>
+    <string name="game_debug_last_run">最近一次运行</string>
+    <string name="game_debug_copy">复制</string>
+    <string name="game_debug_copied">调试信息已复制</string>
+    <string name="game_debug_share">分享</string></resources>

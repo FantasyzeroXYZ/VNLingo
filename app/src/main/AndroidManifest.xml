@@ -62,6 +62,9 @@
             android:name=".ui.stats.PlayStatsActivity"
             android:exported="false" />
         <activity
+            android:name=".ui.game.GameDebugInfoActivity"
+            android:exported="false" />
+        <activity
             android:name=".ui.screenshots.ScreenshotManagerActivity"
             android:exported="false" />
         <activity

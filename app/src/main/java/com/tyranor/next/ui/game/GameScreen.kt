@@ -635,6 +635,7 @@ internal fun GameActionsSheet(
     val drawerSaveManagementTitle = stringResource(R.string.game_save_management)
     val drawerScreenshotManagementTitle = stringResource(R.string.game_screenshot_management)
     val drawerOnlinePatchTitle = stringResource(R.string.game_online_patch)
+    val drawerDebugInfoTitle = stringResource(R.string.game_debug_info)
     val drawerEngineSettingsTitle = stringResource(R.string.settings_engine_settings)
     val drawerDeleteTitle = stringResource(R.string.game_delete_title)
     val drawerPrimaryColor = MaterialTheme.colorScheme.primary
@@ -981,6 +982,23 @@ internal fun GameActionsSheet(
                             startActivityWithPageTransition(
                                 context,
                                 ScreenshotManagerActivity.createIntent(context, game.title),
+                            )
+                            onDismiss()
+                        },
+                    ),
+                )
+                add(
+                    DrawerAction(
+                        key = "debug_info",
+                        title = drawerDebugInfoTitle,
+                        icon = com.core.engine.R.drawable.ic_camera,
+                        showArrow = true,
+                        iconTint = drawerPrimaryColor,
+                        onClick = {
+                            // 调试信息：最近一次运行的记录 + 运行时/崩溃日志，用于分析启动失败
+                            startActivityWithPageTransition(
+                                context,
+                                GameDebugInfoActivity.intent(context, game.uri, game.title),
                             )
                             onDismiss()
                         },
