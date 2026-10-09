@@ -337,6 +337,11 @@ public abstract class ArtemisLauncherBaseActivity extends com.ies_net.artemis.Ar
             injectHostTouch(x, y, true);
         } catch (Throwable t) {
             Log.w("YukiArtemis", "injectHostTouch down failed (official kernel?)", t);
+            // 最后一档兜底：把点击合成成**窗口触摸事件**。
+            // 注意：NativeActivity 的输入走 native 输入队列（AInputQueue），Java 侧的
+            // dispatchTouchEvent 通常到不了引擎——所以这一档能否生效取决于该移植包的实现，
+            // 这里做一次尝试并记日志（成功即不再提示换内核）。
+            if (dispatchWindowTap(x, y)) return;
             notifyClickUnsupportedOnce();
             return;
         }
@@ -351,8 +356,41 @@ public abstract class ArtemisLauncherBaseActivity extends com.ies_net.artemis.Ar
     }
 
     /**
+     * 兜底：把点击合成为一次完整的**窗口触摸**（DOWN + 延时 UP）派发给 decor view。
+     *
+     * 为什么默认不生效：Artemis 内核是 NativeActivity 形态，触摸由 native 的
+     * `AInputQueue`（android_app_glue）消费，**不经 Java 视图体系**；普通应用也没有
+     * `INJECT_EVENTS`（签名级）权限，无法往别人的/native 的输入队列塞事件。
+     * 若某个移植包的 decor 下挂了会转发给 native 的 Java 视图，这一层就能命中——
+     * 因此保留为最后一档并记日志（`decor tap handled=true/false`）。
+     */
+    private boolean dispatchWindowTap(float x, float y) {
+        try {
+            android.view.View decor = getWindow() == null ? null : getWindow().getDecorView();
+            if (decor == null) return false;
+            long now = android.os.SystemClock.uptimeMillis();
+            android.view.MotionEvent down = android.view.MotionEvent.obtain(
+                    now, now, android.view.MotionEvent.ACTION_DOWN, x, y, 0);
+            down.setSource(android.view.InputDevice.SOURCE_TOUCHSCREEN);
+            boolean handledDown = decor.dispatchTouchEvent(down);
+            down.recycle();
+            android.view.MotionEvent up = android.view.MotionEvent.obtain(
+                    now, now + 60, android.view.MotionEvent.ACTION_UP, x, y, 0);
+            up.setSource(android.view.InputDevice.SOURCE_TOUCHSCREEN);
+            boolean handledUp = decor.dispatchTouchEvent(up);
+            up.recycle();
+            Log.i("YukiArtemis", "decor tap (" + Math.round(x) + "," + Math.round(y)
+                    + ") handled down=" + handledDown + " up=" + handledUp);
+            return handledDown || handledUp;
+        } catch (Throwable t) {
+            Log.w("YukiArtemis", "decor tap failed", t);
+            return false;
+        }
+    }
+
+    /**
      * 虚拟鼠标点击提示（只提示一次）：官方内核缺 `injectHostTouch` 符号、钩子也拿不到
-     * 触摸对象时，点击无法生效——明确告诉用户换 compat 内核，而不是让他以为「点了没反应」。
+     * 触摸对象时，点击无法生效——明确告诉用户换「自研内核」，而不是让他以为「点了没反应」。
      */
     private boolean clickUnsupportedNotified;
 

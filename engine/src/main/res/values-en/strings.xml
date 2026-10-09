@@ -52,7 +52,7 @@
     <string name="engine_ons_extract_screenshot">Screenshot</string>
 
     <string name="engine_ons_extract_mouse_on">Virtual mouse: ON (D-pad moves, confirm clicks)</string>
-    <string name="engine_artemis_click_unsupported">This Artemis kernel cannot click with the virtual mouse (injectHostTouch missing). Switch to the compat kernel in engine settings.</string>
+    <string name="engine_artemis_click_unsupported">The official kernel cannot click with the virtual mouse (injectHostTouch missing). Switch to the clean-room kernel in Engine settings → Kernel.</string>
     <string name="engine_ons_extract_mouse_off">Virtual mouse: OFF (back to touch mode)</string>
     <string name="engine_ons_extract_screenshot_saved">Saved %1$s</string>
     <string name="engine_ons_extract_opacity">Opacity</string>
