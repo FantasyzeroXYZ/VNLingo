@@ -1270,63 +1270,26 @@ extern "C" bool krkr_install_ft_probe(void* gameHandle, const char* library);
 
 /** B：tTJSString& 版的第一参数是对象，先把原始字节按 hex 打出来（确认布局/是否真的是文本）。 */
 extern "C" void krkr_on_console_log_obj(const void* obj) {
-    if (obj == nullptr) return;
-    if (!isReadablePtr(obj, 48)) return;
-    const unsigned char* p = static_cast<const unsigned char*>(obj);
-    char hex[3 * 48 + 1];
-    size_t n = 0;
-    for (int i = 0; i < 48 && n + 3 < sizeof(hex); ++i) {
-        n += static_cast<size_t>(snprintf(hex + n, sizeof(hex) - n, "%02x ", p[i]));
-    }
-    hex[n] = '\0';
-    LOGI("console-obj raw: %s", hex);
-    // tTJSString 内部存的是**指针**（真机 raw 显示前两个 8 字节就是带 tag 的地址；
-    // arm64 TBI 允许直接解引用带 tag 的用户指针）。真机 off=8 解出 1 个"空字符"→ 说明还有一层
-    // 间接：对象里存的是 tTJSVariantString 之类的**字符串对象**，字符指针在它内部。
-    // 这里做**两级**探测：候选指针 → 该对象的前 3 个字 → 逐个按 UTF-16 试解码。
-    auto looksLikeWide = [](const unsigned char* sp, size_t* unitsOut, size_t* wideOut) {
-        size_t units = 0, wide = 0;
-        for (size_t i = 0; i < 64; i += 2) {
-            const unsigned c0 = sp[i], c1 = sp[i + 1];
-            if (c0 == 0 && c1 == 0) break;
-            ++units;
-            if (c1 == 0 || (c1 >= 0x30 && c1 <= 0x9F)) ++wide;
-        }
-        *unitsOut = units;
-        *wideOut = wide;
-        return units >= 2 && wide * 2 >= units;
-    };
-    for (int off = 0; off + 8 <= 32; off += 8) {
-        uintptr_t cand = 0;
-        memcpy(&cand, p + off, sizeof(cand));
-        if (cand < 0x1000u) continue;
-        if (!isReadablePtr(reinterpret_cast<const void*>(cand), 128)) continue;
-        const unsigned char* sp = reinterpret_cast<const unsigned char*>(cand);
-        size_t units = 0, wide = 0;
-        if (looksLikeWide(sp, &units, &wide)) {
-            LOGI("console-obj: off=%d units=%zu wide=%zu → 一级 UTF-16 解码", off, units, wide);
-            krkr_on_console_log(sp);
+    // 【离线反汇编得出】TVPConsoleLog(const tTJSString&, bool) 的实现里：
+    //   ldr x9,[obj]        ; ldr x10,[empty_rep] ; sub x8,x9,#0x18 ; cmp x8,x10
+    // 即 tTJSString 内含 COW basic_string<char16_t>：
+    //   对象 offset 0 = _Rep*
+    //   _Rep + 0x00   = 长度（32 位）
+    //   _Rep + 0x18   = 字符数据（char16_t*）
+    if (obj == nullptr || !isReadablePtr(obj, 8)) return;
+    uintptr_t rep = 0;
+    memcpy(&rep, obj, sizeof(rep));
+    if (rep >= 0x1000 && isReadablePtr(reinterpret_cast<const void*>(rep), 0x20)) {
+        uint32_t len = 0;
+        memcpy(&len, reinterpret_cast<const void*>(rep), sizeof(len));
+        const char16_t* chars = reinterpret_cast<const char16_t*>(rep + 0x18);
+        if (len > 0 && len < 8192 && isReadablePtr(chars, (static_cast<size_t>(len) + 1) * 2)) {
+            krkr_on_console_log(chars);   // 复用 UTF-16 解码
+            krkrLateFtMaybe();
             return;
         }
-        // 二级：把该对象的前 3 个字当作字符指针再试
-        for (int off2 = 0; off2 + 8 <= 24; off2 += 8) {
-            uintptr_t inner = 0;
-            memcpy(&inner, sp + off2, sizeof(inner));
-            if (inner < 0x1000u || inner == cand) continue;
-            if (!isReadablePtr(reinterpret_cast<const void*>(inner), 128)) continue;
-            const unsigned char* sp2 = reinterpret_cast<const unsigned char*>(inner);
-            size_t u2 = 0, w2 = 0;
-            if (looksLikeWide(sp2, &u2, &w2)) {
-                LOGI("console-obj: off=%d/%d units=%zu wide=%zu → 二级 UTF-16 解码",
-                     off, off2, u2, w2);
-                krkr_on_console_log(sp2);
-                return;
-            }
-        }
     }
-    // 兜底：把对象首地址当 UTF-8/UTF-16 文本直接试一次
-    krkr_on_console_log(obj);
-    krkrLateFtMaybe();   // 引擎实际走的是这个重载（第 4 轮查明）→ 迟到安装的触发点必须在这里
+    krkrLateFtMaybe();
 }
 
 extern "C" void krkr_console_log_hook();
