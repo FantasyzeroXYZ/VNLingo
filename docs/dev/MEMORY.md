@@ -1047,3 +1047,15 @@
    开关：`tyranor_prefs` 的 `artemis_skip_video`（默认 true，Java 侧
    `ArtemisActivity.artemisSkipVideo()` 供 native 查询）；置 false 恢复旧行为（会白屏）。
    代价：开场影片不会播放（本来也播不了），换来游戏可玩。尚未加设置页开关。
+21. **Artemis「偶发启动退回桌面」根因：我们自己钩子里的 walkArgTree 崩溃（2026-10-10）**。
+   真机 crash buffer：
+   `Fatal signal 11 (SIGSEGV) ... tid 12712 (Thread-7) pid ...:artemis`，
+   回溯 #01-#05 全在 libartemis_loader.so，用 NDK llvm-addr2line 解出：
+   `hookedCommandWait → walkArgTree → __memcpy`（artemis_official_hook.cpp:367）。
+   即：**wait/video 这类命令的块指针布局与 CommandPrint/CommandVoice 不同**，
+   在它们身上调 walkArgTree 会 memcpy 非法地址 → 脚本/音频工作线程崩 → Activity 结束
+   （本类 onDestroy 还会 killProcess）→ 用户看到"启动直接回桌面"。因为是工作线程崩，
+   主线程只表现为 `onPause finishing=true`，且**偶发**（取决于是否走到那条命令 / 用哪个内核）。
+   教训：读引擎内部结构参数前先在真机验证；新钩子先只记"被调用"，别一上来就读参数。
+   修复：CommandVideo/CommandWait 只计数与打日志，不读参数；影片跳过后标记一次，
+   让紧随其后的 wait 也过掉（官方内核版的"影片容错"）。

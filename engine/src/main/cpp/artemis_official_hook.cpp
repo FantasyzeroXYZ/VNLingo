@@ -554,6 +554,8 @@ constexpr int kMaxLoggedArgs = 8;
 using BlockCommandFn = void (*)(void*, void*, bool);
 BlockCommandFn gOrigCommandVideo = nullptr;
 BlockCommandFn gOrigCommandWait = nullptr;
+/** 影片命令被跳过后，标记「下一个 wait 也跳过一次」（见 hookedCommandWait）。 */
+std::atomic<bool> gSkipWaitAfterVideo{false};
 
 /** 读取"是否跳过影片命令"（Java 侧 prefs，首次查询后缓存；改设置需重启生效）。 */
 bool skipVideoEnabled() {
@@ -588,20 +590,18 @@ bool skipVideoEnabled() {
 
 void hookedCommandVideo(void* self, void* blockRef, bool flag) {
     const bool skip = skipVideoEnabled();
-    LOGI("CommandVideo: called (skip=%s) self=%p block=%p",
-         skip ? "true" : "false", self, blockRef);
-    if (blockRef != nullptr) {
-        int n = 0;
-        walkArgTree(blockRef, 0, [&n](const std::string& key, const std::string& value) {
-            if (n < kMaxLoggedArgs) {
-                LOGI("CommandVideo arg[%d] key='%.24s' value='%.96s'",
-                     n, key.c_str(), value.c_str());
-            }
-            ++n;
-            return false;
-        });
+    // 只记"被调用"这一个事实：**不要**用 walkArgTree 读参数——实测 wait/video 这类命令的
+    // 块指针布局与 CommandPrint/CommandVoice 不同，walkArgTree 会 memcpy 到非法地址并
+    // SIGSEGV（2026-10-10 真机 crash：hookedCommandWait → walkArgTree → __memcpy，
+    // 表现为「偶发启动直接退回桌面」，因为崩在脚本/音频工作线程上）。
+    static std::atomic<int> logged{0};
+    if (logged.fetch_add(1, std::memory_order_relaxed) < 20) {
+        LOGI("CommandVideo: called (skip=%s)", skip ? "true" : "false");
     }
     if (skip) {
+        // 影片命令后面紧跟的通常是「等影片结束」的 wait；影片被我们跳过后那个 wait 永远等不到
+        // 结束回调（表现为黑屏/白屏停住）。这里标记一次，让下一个 wait 也直接过掉。
+        gSkipWaitAfterVideo.store(true, std::memory_order_relaxed);
         LOGI("CommandVideo: skipped (影片在本端口无法播放，跳过以免脚本卡死)");
         return;
     }
@@ -609,17 +609,13 @@ void hookedCommandVideo(void* self, void* blockRef, bool flag) {
 }
 
 void hookedCommandWait(void* self, void* blockRef, bool flag) {
-    static std::atomic<int> logged{0};
-    if (logged.fetch_add(1, std::memory_order_relaxed) < 40 && blockRef != nullptr) {
-        int n = 0;
-        walkArgTree(blockRef, 0, [&n](const std::string& key, const std::string& value) {
-            if (n < 4) {
-                LOGI("CommandWait arg[%d] key='%.16s' value='%.32s'",
-                     n, key.c_str(), value.c_str());
-            }
-            ++n;
-            return false;
-        });
+    // 同理：只计数不读参数（读参数会崩，见 hookedCommandVideo 注释）。
+    static std::atomic<int> count{0};
+    const int n = count.fetch_add(1, std::memory_order_relaxed);
+    if (n < 20) LOGI("CommandWait: called (#%d)", n);
+    if (gSkipWaitAfterVideo.exchange(false, std::memory_order_relaxed)) {
+        LOGI("CommandWait: skipped once (紧跟在被跳过的影片命令之后)");
+        return;
     }
     if (gOrigCommandWait != nullptr) gOrigCommandWait(self, blockRef, flag);
 }
