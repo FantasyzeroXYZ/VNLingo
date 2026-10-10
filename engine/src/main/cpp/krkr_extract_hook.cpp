@@ -1283,10 +1283,15 @@ extern "C" bool krkr_install_extract_hook(void* gameHandle, JNIEnv* env) {
     // transition` + `KrkrBridge: launch UI forms ready count=0`），即引擎始终不上报 UI 就绪。
     // 先整体停用 KRKR 提取钩子，保证游戏可正常进入；之后再按单项开关逐个打开定位
     // （引擎识别日志 / TVPConsoleLog inline hook / FT 字形链 各自独立验证）。
-    static const bool kKrkrExtractEnabled = false;
+    // 回归 bisect（第⑫轮）：三项独立开关，逐个打开并用"游戏能否正常进入 + 面板是否出字"验证。
+    //   A 引擎识别日志（同步读 maps/扫模块/转储符号，最可疑）
+    //   B TVPConsoleLog inline hook（核心提取通道）
+    //   C FT 字形链（GOT + 按-face 反查表 + 停顿直发）
+    static const bool kKrkrExtractEnabled = true;   // 总开关（止血时置 false）
+    static const bool kEnableEngineIdentityLog = true;
+    static const bool kEnableConsoleInlineHook = false;
     if (!kKrkrExtractEnabled) {
-        LOGW("krkr extract hooks DISABLED (regression emergency switch): "
-             "game launch stuck at 'starting' on both KRKR games");
+        LOGW("krkr extract hooks DISABLED (regression emergency switch)");
         return false;
     }
     if (gHookInstalled.load(std::memory_order_relaxed)) return true;
@@ -1314,7 +1319,11 @@ extern "C" bool krkr_install_extract_hook(void* gameHandle, JNIEnv* env) {
 
     // ① 无条件打印引擎身份与候选目标命中情况（对齐 LunaHook 的"先识别引擎"）：
     // 之前只在失败时打印 → "成功挂上却拿不到文本"时（Yosuga：armed 但 raw=0）无从判断内核版本。
-    logEngineIdentity(gameHandle);
+    if (kEnableEngineIdentityLog) {
+        logEngineIdentity(gameHandle);
+    } else {
+        LOGI("extract identify: DISABLED (bisect)");
+    }
 
     // ② 首选：钩 TVPConsoleLog（引擎已导出、签名稳定；patch.tjs 把对白经 Debug.message 送到这里）。
     //    只用 const char16_t* 那一版（第一个参数就是文本指针），且**只钩一个**——
@@ -1326,7 +1335,6 @@ extern "C" bool krkr_install_extract_hook(void* gameHandle, JNIEnv* env) {
     // ⚠️ 对照实验开关：宿主停在"正在启动游戏"、引擎进程已起但流程卡住，
     // 先排除"我们挂在引擎热函数上的 inline hook 导致卡住"。false＝暂不挂控制台钩子，
     // 确认游戏能正常进入后再逐个打开定位。
-    static const bool kEnableConsoleInlineHook = false;
     bool consoleHooked = false;
     for (const char* sym : kConsoleLogSymbols) {
         void* addr = dlsym(gameHandle, sym);
@@ -1410,6 +1418,12 @@ extern "C" bool krkr_install_extract_hook(void* gameHandle, JNIEnv* env) {
 static bool gFtProbeInstalled = false;
 
 extern "C" bool krkr_install_ft_probe(void* gameHandle, const char* library) {
+    // C 段开关（bisect）：FT 字形链暂不安装（GOT 钩子 + 反查表 + 停顿直发）
+    static const bool kEnableFtProbe = false;
+    if (!kEnableFtProbe) {
+        LOGI("ft probe: DISABLED (bisect)");
+        return false;
+    }
     if (gameHandle == nullptr || library == nullptr) return false;
     if (gFtProbeInstalled) return true;
     void* orig = nullptr;
