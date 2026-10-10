@@ -1713,7 +1713,8 @@ bool krkr_do_install_ft_hooks(void* gameHandle, const char* library) {
     // 【第⑮轮】inline hook 直挂 FT_Load_Glyph：GOT 补丁只拦"经 PLT"的调用，
     // 引擎内部**直接调用**会绕过它 → 对白字形漏抓（字形流里只有日志/路径的 ASCII）。
     // 用本会话自实现的 inline hook 改写入口，覆盖全部调用方；trampoline 即"原函数"。
-    {
+    static const bool kEnableFtInlineHook = false;   // bisect：先只留 GOT 钩子（文档时代 Kazura 的可用路径）
+    if (kEnableFtInlineHook) {
         void* ftAddr = dlsym(gameHandle, "FT_Load_Glyph");
         if (ftAddr == nullptr) {
             ftAddr = dlsym(RTLD_DEFAULT, "FT_Load_Glyph");
