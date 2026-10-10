@@ -77,7 +77,78 @@ object ImmersiveMode {
             )
     }
 
-    /** [applyLegacy] 的延时重试版（立即 + 300ms + 1000ms）。 */
+    /**
+     * 「顽固」沉浸式：给 **NativeActivity / MIUI** 这类会把系统栏放回来的宿主用。
+     *
+     * 与 [applyLegacy] 的区别：
+     * 1. 同时设置刘海屏适配（`LAYOUT_IN_DISPLAY_CUTOUT_MODE_SHORT_EDGES`）——MIUI 上不声明
+     *    刘海适配时，隐藏状态栏常常被系统撤销（画面还会被刘海区挤下去）；
+     * 2. 注册 `OnSystemUiVisibilityChangeListener`，一旦系统把栏放回来就**立刻再压**；
+     * 3. 创建后按 [intervalMs] 定时重试 [attempts] 次，覆盖启动动画/转屏/焦点切换阶段。
+     *
+     * 全程只用 legacy `systemUiVisibility`，不调 `setDecorFitsSystemWindows`——
+     * 后者会让窗口按全屏坐标重排，native surface 尺寸变化会引起启动异常退出（实测）。
+     */
+    @JvmStatic
+    @JvmOverloads
+    fun applySticky(
+        activity: Activity?,
+        attempts: Int = 8,
+        intervalMs: Long = 500L,
+        applyCutoutMode: Boolean = false,
+    ) {
+        val act = activity ?: return
+        val window: Window = act.window ?: return
+        // 刘海/挖孔适配：MIUI 上这是沉浸式能生效的前提之一；但改 window attributes 会让
+        // NativeActivity 的 surface 重排（实测 Artemis 会直接退出），默认关闭、按宿主需要开。
+        if (applyCutoutMode) {
+            runCatching {
+                val lp = window.attributes
+                lp.layoutInDisplayCutoutMode =
+                    WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_SHORT_EDGES
+                window.attributes = lp
+            }
+        }
+        val decor: View = window.decorView
+        // 系统把栏放回来 → 立即再压（STICKY 之外的兜底）
+        runCatching {
+            decor.setOnSystemUiVisibilityChangeListener { vis ->
+                val hidden = (vis and View.SYSTEM_UI_FLAG_FULLSCREEN) != 0 &&
+                    (vis and View.SYSTEM_UI_FLAG_HIDE_NAVIGATION) != 0
+                if (!hidden) applyLegacy(act)
+            }
+        }
+        applyLegacy(act)
+        applyInsetsOnly(act)
+        for (i in 1 until attempts) {
+            decor.postDelayed({
+                applyLegacy(act)
+                applyInsetsOnly(act)
+            }, intervalMs * i)
+        }
+    }
+
+    /**
+     * 只用 API30+ 的 WindowInsetsController 请求隐藏系统栏，**不改 decor-fits、不改窗口属性**
+     * （因此不会触发 NativeActivity 的 surface 重排）。
+     *
+     * 用途：MIUI 上 legacy `systemUiVisibility` 会被忽略，但 insets controller 的
+     * `hide(systemBars())` 有时仍被尊重——作为 legacy 之外的补充手段。
+     */
+    @JvmStatic
+    fun applyInsetsOnly(activity: Activity?) {
+        val act = activity ?: return
+        val decor = act.window?.decorView ?: return
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.R) return
+        val controller = ViewCompat.getWindowInsetsController(decor) ?: return
+        controller.hide(WindowInsetsCompat.Type.systemBars())
+        controller.systemBarsBehavior =
+            WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
+    }
+
+    /**
+     * [applyLegacy] 的延时重试版（立即 + 300ms + 1000ms）。
+     */
     @JvmStatic
     fun applyLegacyAndReapply(activity: Activity?) {
         val act = activity ?: return

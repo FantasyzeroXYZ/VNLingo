@@ -56,6 +56,10 @@ public abstract class ArtemisLauncherBaseActivity extends com.ies_net.artemis.Ar
         }
         super.onCreate(bundle);
         createdAtElapsed = SystemClock.elapsedRealtime();
+        // 全屏：状态栏 + 底部导航栏自动隐藏（用户反馈 Artemis 下没有全屏效果）。
+        // 本宿主是 NativeActivity + MIUI：单次 systemUiVisibility 会被系统放回来，
+        // 用 applySticky（刘海适配 + 变化监听即时再压 + 启动阶段定时重试）压稳。
+        com.core.engine.ImmersiveMode.applySticky(this);
         Log.i("YukiArtemis", "onCreate path=" + (getIntent() == null ? null : getIntent().getStringExtra(LaunchContract.PATH)) + " scoped=" + (getIntent() != null && getIntent().getBooleanExtra(LaunchContract.SCOPED_SAVE_DIR, false)) + " saveName=" + (getIntent() == null ? null : getIntent().getStringExtra(LaunchContract.SCOPED_SAVE_NAME)));
         loadEngineLibrary();
     }
@@ -64,8 +68,17 @@ public abstract class ArtemisLauncherBaseActivity extends com.ies_net.artemis.Ar
     public void onWindowFocusChanged(boolean hasFocus) {
         super.onWindowFocusChanged(hasFocus);
         if (hasFocus) {
+            // 焦点回来重新压住系统栏（否则状态栏会盖住画面顶部）
+            com.core.engine.ImmersiveMode.applyLegacy(this);
             maybeInstallPanels();
         }
+    }
+
+    @Override
+    protected void onResume() {
+        super.onResume();
+        // 从后台回来/对话框关闭后同样要重新隐藏系统栏
+        com.core.engine.ImmersiveMode.applyLegacy(this);
     }
 
     /**
