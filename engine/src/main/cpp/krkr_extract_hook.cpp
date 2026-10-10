@@ -692,6 +692,57 @@ std::string ftDerivePage(const std::string& raw) {
  * 码点入流唯一入口（FT_Get_Char_Index 与 FT_Load_Char 两条 GOT 通道共用）：
  * gPrevCode 相邻去重保证同一字符被两条路径重复喂入时只算一次。
  */
+/**
+ * 保底直发（第⑪步，LunaHook 系工具的朴素做法）：
+ * 不依赖判页线程（真机上它启动后即不再推进），直接在字形流侧判断"停顿" ——
+ * 文本停顿 ≥400ms 且尾部有**新内容**、且含 CJK（与 NativeBridge 的过滤一致）→ 立即上行 [FTLN]。
+ * 目的：先让面板**出字**（验收点），再谈更精细的判页。
+ */
+std::string gLastDirectEmitted;
+std::atomic<uint64_t> gDirectEmitCalls{0};
+
+bool ftHasCjkUtf8(const std::string& s) {
+    size_t i = 0;
+    while (i < s.size()) {
+        unsigned char c = static_cast<unsigned char>(s[i]);
+        unsigned int cp = 0;
+        size_t len = 1;
+        if (c < 0x80) { cp = c; }
+        else if ((c & 0xE0) == 0xC0) { cp = c & 0x1F; len = 2; }
+        else if ((c & 0xF0) == 0xE0) { cp = c & 0x0F; len = 3; }
+        else if ((c & 0xF8) == 0xF0) { cp = c & 0x07; len = 4; }
+        else { ++i; continue; }
+        if (i + len > s.size()) break;
+        for (size_t k = 1; k < len; ++k) cp = (cp << 6) | (static_cast<unsigned char>(s[i + k]) & 0x3F);
+        i += len;
+        // 日文假名 / CJK 汉字 / 全角标点 → 视为对白候选
+        if ((cp >= 0x3040 && cp <= 0x30FF) || (cp >= 0x4E00 && cp <= 0x9FFF) ||
+            (cp >= 0xFF00 && cp <= 0xFFEF)) {
+            return true;
+        }
+    }
+    return false;
+}
+
+void ftMaybeEmitIdle() {
+    std::string line;
+    {
+        std::lock_guard<std::mutex> lock(gLineMutex);
+        const auto now = std::chrono::steady_clock::now();
+        if (now - gLastCharAt < std::chrono::milliseconds(400)) return;   // 还在打字/重绘
+        if (gRawBuf.empty()) return;
+        line = gRawBuf.size() > 512 ? gRawBuf.substr(gRawBuf.size() - 512) : gRawBuf;
+        if (line == gLastDirectEmitted) return;                            // 无新内容
+        if (!ftHasCjkUtf8(line)) return;                                   // 与桥上过滤一致
+        gLastDirectEmitted = line;
+    }
+    const uint64_t n = gDirectEmitCalls.fetch_add(1, std::memory_order_relaxed) + 1;
+    LOGI("ft line(direct#%llu): %.80s", static_cast<unsigned long long>(n), line.c_str());
+    std::string out = "[FTLN]";
+    out += line;
+    emitText(out.c_str());   // 锁外做 JNI，避免长时间持锁
+}
+
 void ftOnCode(unsigned long code) {
     if (!gHookInstalled.load(std::memory_order_relaxed)) return;
     if (code < 0x20 || code >= 0x110000 || code == gPrevCode) return;
@@ -726,6 +777,8 @@ void ftOnCode(unsigned long code) {
         if (gRawBuf.size() > 2048) gRawBuf.clear();
     }
     gLastCharAt = now;
+    // 保底直发：每次字形入流后顺带检查"是否已停顿"（锁内已在上面释放）
+    ftMaybeEmitIdle();
 }
 
 unsigned long hookedFTGetCharIndex(void* face, unsigned long code) {
@@ -971,11 +1024,41 @@ static void* gKrkrHookTarget = nullptr;      // 被 inline hook 的原函数入�
 extern "C" void krkr_console_log_hook();    // A: 见下方 naked 函数
 extern "C" void krkr_console_log_hook_b();  // B: tTJSString& 版
 
+// ---- 指针安全阀（用户实测：点进游戏闪退）----
+// 控制台对象里存的是"猜测的字符指针"，直接解引用遇到野指针就是 SIGSEGV → 整个游戏闪退。
+// 这里先用 /proc/self/maps 建一次**可读区间**缓存，任何"猜指针"的读取前都必须通过校验。
+static bool isReadablePtr(const void* p, size_t len) {
+    static std::vector<std::pair<uintptr_t, uintptr_t>> ranges;
+    static std::once_flag once;
+    std::call_once(once, [] {
+        FILE* f = std::fopen("/proc/self/maps", "r");
+        if (f == nullptr) return;
+        char line[512];
+        while (std::fgets(line, sizeof(line), f) != nullptr) {
+            unsigned long lo = 0, hi = 0;
+            char perms[8] = {0};
+            if (std::sscanf(line, "%lx-%lx %7s", &lo, &hi, perms) == 3 && perms[0] == 'r') {
+                ranges.emplace_back(static_cast<uintptr_t>(lo), static_cast<uintptr_t>(hi));
+            }
+        }
+        std::fclose(f);
+        LOGI("ptr guard: %zu readable ranges", ranges.size());
+    });
+    const uintptr_t a = reinterpret_cast<uintptr_t>(p);
+    const uintptr_t b = a + len;
+    if (b < a) return false;
+    for (const auto& r : ranges) {
+        if (a >= r.first && b <= r.second) return true;
+    }
+    return false;
+}
+
 extern "C" void krkr_on_console_log(const void* text);   // 定义见下方（UTF-16/UTF-8 自适应）
 
 /** B：tTJSString& 版的第一参数是对象，先把原始字节按 hex 打出来（确认布局/是否真的是文本）。 */
 extern "C" void krkr_on_console_log_obj(const void* obj) {
     if (obj == nullptr) return;
+    if (!isReadablePtr(obj, 48)) return;
     const unsigned char* p = static_cast<const unsigned char*>(obj);
     char hex[3 * 48 + 1];
     size_t n = 0;
@@ -1004,6 +1087,7 @@ extern "C" void krkr_on_console_log_obj(const void* obj) {
         uintptr_t cand = 0;
         memcpy(&cand, p + off, sizeof(cand));
         if (cand < 0x1000u) continue;
+        if (!isReadablePtr(reinterpret_cast<const void*>(cand), 128)) continue;
         const unsigned char* sp = reinterpret_cast<const unsigned char*>(cand);
         size_t units = 0, wide = 0;
         if (looksLikeWide(sp, &units, &wide)) {
@@ -1016,6 +1100,7 @@ extern "C" void krkr_on_console_log_obj(const void* obj) {
             uintptr_t inner = 0;
             memcpy(&inner, sp + off2, sizeof(inner));
             if (inner < 0x1000u || inner == cand) continue;
+            if (!isReadablePtr(reinterpret_cast<const void*>(inner), 128)) continue;
             const unsigned char* sp2 = reinterpret_cast<const unsigned char*>(inner);
             size_t u2 = 0, w2 = 0;
             if (looksLikeWide(sp2, &u2, &w2)) {
@@ -1087,6 +1172,7 @@ static bool installInlineHook(void* target, void* replacement, void** trampoline
 /** TVPConsoleLog 的替换实现（C 侧）：把控制台文本按 UTF-16/UTF-8 自适应上行。 */
 extern "C" void krkr_on_console_log(const void* text) {
     if (text == nullptr) return;
+    if (!isReadablePtr(text, 512)) return;   // 野指针一律不碰
     const unsigned char* p = static_cast<const unsigned char*>(text);
     // 宽松识别：UTF-16LE 的日文/中文常见形如 XX 3X 00 XX（高位字节多为 0 或 0x30~0x9F）
     size_t wide = 0, total = 0;
@@ -1192,6 +1278,17 @@ extern "C" bool krkr_bridge_got_hook(const char* library, const char* symbol,
  */
 extern "C" bool krkr_install_extract_hook(void* gameHandle, JNIEnv* env) {
     if (gameHandle == nullptr || env == nullptr) return false;
+    // ⚠️⚠️ 紧急开关（回归止血）：本会话新增的 KRKR 识别/钩子链导致 **两个 KRKR 游戏都卡在
+    // "正在启动游戏"**（宿主日志：`Kirikiroid2: direct game launch waits for native scene
+    // transition` + `KrkrBridge: launch UI forms ready count=0`），即引擎始终不上报 UI 就绪。
+    // 先整体停用 KRKR 提取钩子，保证游戏可正常进入；之后再按单项开关逐个打开定位
+    // （引擎识别日志 / TVPConsoleLog inline hook / FT 字形链 各自独立验证）。
+    static const bool kKrkrExtractEnabled = false;
+    if (!kKrkrExtractEnabled) {
+        LOGW("krkr extract hooks DISABLED (regression emergency switch): "
+             "game launch stuck at 'starting' on both KRKR games");
+        return false;
+    }
     if (gHookInstalled.load(std::memory_order_relaxed)) return true;
 
     // 缓存 JNI 方法引用（onKrkrText 为 Kotlin object 的 @JvmStatic 方法，静态解析）
@@ -1226,11 +1323,19 @@ extern "C" bool krkr_install_extract_hook(void* gameHandle, JNIEnv* env) {
             "_ZN3TJS13TVPConsoleLogEPKDs",          // TJS::TVPConsoleLog(const tjs_char*)
             "_Z13TVPConsoleLogRKN3TJS10tTJSStringEb", // TVPConsoleLog(const tTJSString&, bool)
     };
+    // ⚠️ 对照实验开关：宿主停在"正在启动游戏"、引擎进程已起但流程卡住，
+    // 先排除"我们挂在引擎热函数上的 inline hook 导致卡住"。false＝暂不挂控制台钩子，
+    // 确认游戏能正常进入后再逐个打开定位。
+    static const bool kEnableConsoleInlineHook = false;
     bool consoleHooked = false;
     for (const char* sym : kConsoleLogSymbols) {
         void* addr = dlsym(gameHandle, sym);
         LOGI("extract identify: dlsym %s -> %s", sym, addr != nullptr ? "FOUND" : "missing");
         if (addr == nullptr) continue;
+        if (!kEnableConsoleInlineHook) {
+            LOGI("extract hook: console inline hook DISABLED (control experiment)");
+            break;
+        }
         // 每个重载用**各自独立**的 trampoline（共用会跳错返回点）
         if (std::strcmp(sym, "_ZN3TJS13TVPConsoleLogEPKDs") == 0) {
             if (installInlineHook(addr, reinterpret_cast<void*>(&krkr_console_log_hook),
