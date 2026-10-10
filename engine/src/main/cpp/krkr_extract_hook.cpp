@@ -36,6 +36,10 @@
 #include <sys/mman.h>
 #include <unistd.h>
 #include <unordered_map>
+#include <unordered_set>
+#include <vector>
+#include <cstdio>
+#include <cstdlib>
 
 #define TAG "KrkrExtract"
 #define LOGI(...) __android_log_print(ANDROID_LOG_INFO, TAG, __VA_ARGS__)
@@ -784,6 +788,86 @@ unsigned long hookedFTGetNextChar(void* face, unsigned long charCode, unsigned i
 
 }  // namespace
 
+// ---- 引擎识别与目标探测（对齐 LunaTranslator/LunaHook 的"先识别引擎、再选目标集"流程）----
+// 背景：我们此前只 dlsym 一个固定符号 "Label::setString"（外加 Label 虚表），
+// 老内核（如 KAG3 时代的游戏）根本没有这个导出 → 直接失败，且只留一句 warn。
+// LunaHook 的做法是：先按模块名/RTTI 识别引擎族与版本，再套对应的目标集，失败要吵。
+// 这里先补"识别 + 候选探测 + 明确失败日志"（纯日志，不改行为），为后续按版本挂不同目标打基础。
+static const char* kDialogueSymbolCandidates[] = {
+        "Label::setString",                 // 已支持的构建（导出名）
+        "_ZN5Label9setStringEPKc",          // 同上，mangled
+        "_ZN5Label9setStringERKNS_6ttstrE", // 另一常见签名（ttstr 版）
+        "KAGParser::setText",
+        "TVPMainScene::update",
+};
+static const char* kEngineTraits[] = {
+        "KiriKiriZ", "krkrz", "KAGParser", "KAG3", "TVPMainScene", "TVP", ".tjs",
+};
+
+static bool fileContainsTrait(const char* path, const char* needle, size_t limitBytes) {
+    FILE* f = std::fopen(path, "rb");
+    if (f == nullptr) return false;
+    const size_t needleLen = std::strlen(needle);
+    std::vector<char> buf(1 << 20);
+    size_t total = 0;
+    std::string tail;
+    while (total < limitBytes) {
+        const size_t n = std::fread(buf.data(), 1, buf.size(), f);
+        if (n == 0) break;
+        total += n;
+        std::string chunk = tail;
+        chunk.append(buf.data(), n);
+        if (chunk.find(needle) != std::string::npos) {
+            std::fclose(f);
+            return true;
+        }
+        const size_t keep = needleLen > 1 ? needleLen - 1 : 0;
+        tail = chunk.size() > keep ? chunk.substr(chunk.size() - keep) : chunk;
+    }
+    std::fclose(f);
+    return false;
+}
+
+/**
+ * 记录"引擎身份 + 候选目标命中情况"。
+ * 纯诊断：dlsym 逐个候选、按 /proc/self/maps 找游戏自己的模块并扫特征串，
+ * 最后给出明确的"没有已知目标"结论（用户反复反馈 hook 不稳，缺少的就是这条线索）。
+ */
+static void logEngineIdentity(void* gameHandle) {
+    LOGI("extract identify: candidates=%zu", sizeof(kDialogueSymbolCandidates) /
+                                                 sizeof(kDialogueSymbolCandidates[0]));
+    for (const char* name : kDialogueSymbolCandidates) {
+        void* sym = gameHandle != nullptr ? dlsym(gameHandle, name) : nullptr;
+        LOGI("extract identify: dlsym %s -> %s", name, sym != nullptr ? "FOUND" : "missing");
+    }
+    // 扫游戏自己的模块（排除系统库）：特征串可区分 KiriKiriZ / 老 KAG3 等
+    FILE* maps = std::fopen("/proc/self/maps", "r");
+    if (maps == nullptr) return;
+    std::unordered_set<std::string> seen;
+    char line[512];
+    while (std::fgets(line, sizeof(line), maps) != nullptr) {
+        const char* slash = std::strchr(line, '/');
+        if (slash == nullptr) continue;
+        const char* nl = std::strchr(slash, '\n');
+        std::string path(slash, nl != nullptr ? static_cast<size_t>(nl - slash) : std::strlen(slash));
+        if (path.find(".so") == std::string::npos) continue;
+        if (path.find("/system/") != std::string::npos || path.find("/apex/") != std::string::npos) {
+            continue;
+        }
+        if (!seen.insert(path).second) continue;
+        std::string traits;
+        for (const char* t : kEngineTraits) {
+            if (fileContainsTrait(path.c_str(), t, 6u << 20)) {
+                if (!traits.empty()) traits += ",";
+                traits += t;
+            }
+        }
+        LOGI("extract identify: module=%s traits=[%s]", path.c_str(),
+             traits.empty() ? "-" : traits.c_str());
+    }
+    std::fclose(maps);
+}
+
 extern "C" bool krkr_bridge_got_hook(const char* library, const char* symbol,
                                      void* replacement, void** original);
 
@@ -821,7 +905,10 @@ extern "C" bool krkr_install_extract_hook(void* gameHandle, JNIEnv* env) {
 
     void* target = dlsym(gameHandle, kLabelSetString);
     if (target == nullptr) {
-        LOGW("extract hook: Label::setString not found in game lib");
+        // 失败要吵：先打印引擎身份与候选命中情况，再给出结论（对齐 LunaHook 的识别流程）
+        LOGW("extract hook: Label::setString not found in game lib → identifying engine");
+        logEngineIdentity(gameHandle);
+        __android_log_print(ANDROID_LOG_ERROR, "KrkrExtract", "extract hook: no known dialogue target matched (build lacks Label::setString)");
         return false;
     }
 
