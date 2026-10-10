@@ -219,15 +219,15 @@ internal fun TtsSettingsScreen() {
     EngineSettingsPage(EngineR.string.engine_ons_tts_title) {
         item {
             SettingsCard {
-                TtsStepRow(EngineR.string.engine_ons_tts_rate, steps, rate) {
+                PercentSliderRow(EngineR.string.engine_ons_tts_rate, rate, 0..100) {
                     rate = it
                     com.core.ons.OnsTtsEngines.setRate(ctx, it)
                 }
-                TtsStepRow(EngineR.string.engine_ons_tts_pitch, steps, pitch) {
+                PercentSliderRow(EngineR.string.engine_ons_tts_pitch, pitch, 0..100) {
                     pitch = it
                     com.core.ons.OnsTtsEngines.setPitch(ctx, it)
                 }
-                TtsStepRow(EngineR.string.engine_ons_tts_volume, steps, volume) {
+                PercentSliderRow(EngineR.string.engine_ons_tts_volume, volume, 0..100) {
                     volume = it
                     com.core.ons.OnsTtsEngines.setVolume(ctx, it)
                 }
@@ -391,18 +391,39 @@ internal fun TtsSettingsScreen() {
 }
 
 /** TTS 档位下拉（语速 / 音高 / 音量）。 */
+
+/**
+ * 百分比项：**进度条**（用户要求：所有百分比调节都用进度条，方便微调；原来这里是下拉）。
+ * 交互与设置页其它滑块一致：拖动只改本地状态，松手（onValueChangeFinished）才回调写盘。
+ */
 @Composable
-private fun TtsStepRow(
+private fun PercentSliderRow(
     titleRes: Int,
-    steps: List<Int>,
     value: Int,
-    onSelect: (Int) -> Unit,
+    range: IntRange,
+    onValue: (Int) -> Unit,
 ) {
-    OverlayDropdownPreference(
+    var local by remember(value) { androidx.compose.runtime.mutableFloatStateOf(value.toFloat()) }
+    ArrowPreference(
         title = stringResource(titleRes),
-        items = steps.map { it.toString() },
-        selectedIndex = steps.indexOf(value).coerceAtLeast(0),
-        onSelectedIndexChange = { i -> steps.getOrNull(i)?.let(onSelect) },
+        endActions = {
+            Text(
+                "${Math.round(local)}%",
+                style = androidx.compose.material3.MaterialTheme.typography.bodyMedium,
+                color = androidx.compose.material3.MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        },
+        onClick = { },
+        bottomAction = {
+            androidx.compose.material3.Slider(
+                value = local,
+                onValueChange = { local = it },
+                onValueChangeFinished = {
+                    onValue(Math.round(local).coerceIn(range.first, range.last))
+                },
+                valueRange = range.first.toFloat()..range.last.toFloat(),
+            )
+        },
     )
 }
 
