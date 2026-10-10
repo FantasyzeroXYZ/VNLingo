@@ -358,6 +358,10 @@ public abstract class ArtemisLauncherBaseActivity extends com.ies_net.artemis.Ar
             // OnsExtractPanel.raiseSideButtons() 提到最前保证可点）。
             if (virtualMouseMode && !panelExpanded) {
                 cursorWindowLp.flags &= ~android.view.WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE;
+                // 虚拟鼠标模式下**打开触摸接收**：触摸当触控板用
+                // （拖动移动光标、点按在光标处点击，见 EngineVirtualMouse.onTouchEvent）。
+                // 触摸模式下保持 NOT_TOUCHABLE，触摸零干扰地透传给游戏。
+                cursorWindowLp.flags &= ~android.view.WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE;
                 mouseKeyCatcher.setFocusable(true);
                 mouseKeyCatcher.setFocusableInTouchMode(true);
                 mouseKeyCatcher.requestFocus();
@@ -367,6 +371,8 @@ public abstract class ArtemisLauncherBaseActivity extends com.ies_net.artemis.Ar
                 applyImmersiveToCatcherWindow(mouseKeyCatcher);
             } else {
                 cursorWindowLp.flags |= android.view.WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE;
+                // 非鼠标模式：光标窗不接收触摸，触摸零干扰透传给游戏
+                cursorWindowLp.flags |= android.view.WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE;
             }
             getWindowManager().updateViewLayout(mouseKeyCatcher, cursorWindowLp);
         } catch (Throwable t) {

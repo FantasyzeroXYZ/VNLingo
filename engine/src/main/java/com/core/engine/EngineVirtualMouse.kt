@@ -120,6 +120,55 @@ class EngineVirtualMouse(
         cursorX += dx
         cursorY += dy
         clampCursor()
+        invalidate()   // 触摸拖动移动光标后必须重绘，否则光标看着不动
+    }
+
+    // ── 触摸当触控板用（用户要求） ──────────────────────────────────────────
+    // 虚拟鼠标模式下打开光标窗的触摸接收后：
+    //   * 单指拖动 → 相对移动光标（像笔记本触控板，不需要按到光标上）
+    //   * 单指点按 → 在**光标当前所在位置**触发一次点击（不是点哪里点哪里）
+    // 因此这两个手势都会被本层消费，不再透传给游戏；想直接触摸游戏就切回触摸模式
+    // （右缘「点击模式」键）。
+    private var touchDownX = 0f
+    private var touchDownY = 0f
+    private var touchLastX = 0f
+    private var touchLastY = 0f
+    private var touchMoved = false
+    private val touchSlop by lazy {
+        android.view.ViewConfiguration.get(context).scaledTouchSlop.toFloat()
+    }
+
+    override fun onTouchEvent(event: MotionEvent): Boolean {
+        if (!cursorVisible) return false
+        when (event.actionMasked) {
+            MotionEvent.ACTION_DOWN -> {
+                touchDownX = event.x
+                touchDownY = event.y
+                touchLastX = event.x
+                touchLastY = event.y
+                touchMoved = false
+                return true
+            }
+            MotionEvent.ACTION_MOVE -> {
+                val dx = event.x - touchLastX
+                val dy = event.y - touchLastY
+                touchLastX = event.x
+                touchLastY = event.y
+                if (Math.abs(event.x - touchDownX) > touchSlop ||
+                    Math.abs(event.y - touchDownY) > touchSlop) {
+                    touchMoved = true
+                }
+                if (dx != 0f || dy != 0f) moveBy(dx, dy)
+                return true
+            }
+            MotionEvent.ACTION_UP -> {
+                // 没怎么移动 = 点按 → 在光标处点击
+                if (!touchMoved) click()
+                return true
+            }
+            MotionEvent.ACTION_CANCEL -> return true
+        }
+        return super.onTouchEvent(event)
     }
 
     override fun click() {
