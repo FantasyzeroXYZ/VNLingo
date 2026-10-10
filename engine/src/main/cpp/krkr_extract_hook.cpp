@@ -1421,7 +1421,7 @@ extern "C" bool krkr_bridge_got_hook(const char* library, const char* symbol,
 extern "C" bool krkr_install_extract_hook(void* gameHandle, JNIEnv* env) {
     if (gameHandle == nullptr) return false;
     // 开关必须在最外层作用域声明（下面 env!=nullptr 分支与后续逻辑都要用）
-    static const bool kKrkrExtractEnabled = false;  // 用户点游戏仍闪退 → 全关（止血，未获同意不再开）
+    static const bool kKrkrExtractEnabled = false;  // 无法确认安全前保持关闭（用户可正常游玩）
     static const bool kEnableEngineIdentityLog = true;
     static const bool kEnableConsoleInlineHook = false;
     // 双开关：编译期硬开关（内核兼容性未确认前保持 false）+ 用户级开关（默认 false）。
