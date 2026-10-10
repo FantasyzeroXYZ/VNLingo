@@ -846,33 +846,49 @@ std::unordered_map<unsigned int, unsigned long>* glyphMapReady(void* face) {
 }
 
 /**
- * 异步建表（关键修复）：65504 次 FT_Get_Char_Index × 每个 face 若跑在**渲染线程**上，
- * 会长时间占住引擎主线程、拖住启动期上报（宿主等待 `KrkrBridge: launch UI forms ready`
- * 一直为 0 → 卡在"正在启动游戏"）。这里改为独立线程构建，渲染线程只做只读查询。
- * 每个 face 只建一次（attempts 记账防止重复起线程）。
+ * **非线程增量建表**（最终方案）：
+ *  - 一次性 65504×N 次 FT_Get_Char_Index 跑在渲染线程 → 卡启动（真机复现）；
+ *  - 改用 std::thread → 真机证明引擎进程里线程不可靠（二次调用从未发生）。
+ * 因此改为：每次 FT_Load_Glyph 钩子只处理 512 个码点，跨多次调用把整表建完。
+ * 既不打线程、也不阻塞启动；表未完成期间照常返回，不影响渲染。
  */
-void startGlyphMapBuild(void* face) {
+struct GlyphMapProgress {
+    std::unordered_map<unsigned int, unsigned long>* map = nullptr;
+    unsigned long next = 0x20;
+};
+std::unordered_map<void*, GlyphMapProgress> gGlyphMapProgress;
+static const unsigned long kGlyphMapSlice = 512;
+
+void glyphMapStep(void* face) {
     if (face == nullptr || gOrigFTGetCharIndex == nullptr) return;
+    GlyphMapProgress* st = nullptr;
     {
         std::lock_guard<std::mutex> lock(gGlyphMapMutex);
-        if (gGlyphMaps.count(face) != 0 || gGlyphMapAttempts.count(face) != 0) return;
-        gGlyphMapAttempts[face] = 1;
+        if (gGlyphMaps.count(face) != 0) return;   // 已建好
+        GlyphMapProgress& s = gGlyphMapProgress[face];
+        if (s.map == nullptr) {
+            s.map = new std::unordered_map<unsigned int, unsigned long>();
+            s.map->reserve(8192);
+            s.next = 0x20;
+        }
+        st = &s;
     }
-    std::thread([face] {
-        auto* map = new std::unordered_map<unsigned int, unsigned long>();
-        map->reserve(8192);
-        for (unsigned long code = 0x20; code <= 0xFFFF; ++code) {
-            if (code >= 0xD800 && code <= 0xDFFF) continue;  // 代理区无效码点
-            const unsigned long index = gOrigFTGetCharIndex(face, code);
-            if (index == 0) continue;
-            map->emplace(static_cast<unsigned int>(index), code);
-        }
-        {
-            std::lock_guard<std::mutex> lock(gGlyphMapMutex);
-            gGlyphMaps[face] = map;
-        }
-        LOGI("ft glyph map built(async): face=%p entries=%zu", face, map->size());
-    }).detach();
+    unsigned long code = st->next;
+    const unsigned long end = code + kGlyphMapSlice > 0xFFFF ? 0xFFFF : code + kGlyphMapSlice;
+    for (; code <= end; ++code) {
+        if (code >= 0xD800 && code <= 0xDFFF) continue;   // 代理区无效码点
+        const unsigned long index = gOrigFTGetCharIndex(face, code);
+        if (index == 0) continue;
+        st->map->emplace(static_cast<unsigned int>(index), code);
+    }
+    st->next = end + 1;
+    if (st->next > 0xFFFF) {
+        std::lock_guard<std::mutex> lock(gGlyphMapMutex);
+        gGlyphMaps[face] = st->map;
+        const size_t entries = st->map->size();
+        gGlyphMapProgress.erase(face);
+        LOGI("ft glyph map built(incremental): face=%p entries=%zu", face, entries);
+    }
 }
 
 /** 字形观察（GOT 与 inline 两条入口共用）。 */
@@ -931,7 +947,7 @@ void ftObserveGlyph(void* face, unsigned int glyphIndex) {
     if (!gHookInstalled.load(std::memory_order_relaxed)) return;
     const auto* map = glyphMapReady(face);
     if (map == nullptr) {
-        startGlyphMapBuild(face);   // 本线程不建表，立刻返回，避免拖住引擎
+        glyphMapStep(face);   // 每次只推进 512 个码点：不建线程、不阻塞
         return;
     }
     const auto it = map->find(glyphIndex);
@@ -1529,14 +1545,16 @@ extern "C" bool krkr_install_ft_probe(void* gameHandle, const char* library) {
     // 【入口即打】无条件的调用轨迹：确认是否被调用、参数、是否二次（延后）进入
     LOGI("ft probe: ENTER handle=%p library=%s", gameHandle,
          library != nullptr ? library : "(null)");
-    static const bool kEnableFtProbe = false;
+    static const bool kEnableFtProbe = true;   // 增量建表后重试：验证是否不再卡启动
     // 【运行时安装】真机证实：FT 链若在引擎启动期安装会卡住启动（宿主等不到 UI 就绪）。
     // 因此这里**不在启动期装**，改为由控制台活动 + 时间触发的"迟到安装"（见 krkrLateFtMaybe）。
     static const bool kInstallAtStartup = false;
     // 记录句柄/库名供迟到安装复用
     gKrkrLateHandle = gameHandle;
     gKrkrLateLibrary = library != nullptr ? library : "";
-    if (!kInstallAtStartup) {
+    static std::atomic<bool> sFirstInstallCall{true};
+    if (!kInstallAtStartup && sFirstInstallCall.exchange(false)) {
+        // 只跳过**首次**（启动期）调用；运行时迟到安装（第二次起）必须继续往下走。
         LOGI("ft probe: skip startup install (will install late, once engine is running)");
         return true;
     }
