@@ -3311,6 +3311,10 @@ public class OnsExtractPanel {
         if (tts != null) {
             try { tts.stop(); } catch (Throwable ignored) {}
         }
+        // **MultiTTS / HTTP-TTS 的音频走的是本地 MediaPlayer，不属于系统 TTS**：
+        // 只调 tts.stop() 对它完全无效（用户反馈：切句后"停不下来、继续念一段"）。
+        // 这里一并停掉 MediaPlayer（语音回放也走它，切句时同样应该停）。
+        stopVoice();
     }
 
     /**

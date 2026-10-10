@@ -247,6 +247,16 @@ public abstract class ArtemisLauncherBaseActivity extends com.ies_net.artemis.Ar
     private android.widget.FrameLayout panelKeyCatcher;
     private android.view.WindowManager.LayoutParams panelWindowLp;
 
+    /** 音量/静音键：本应用一律不消费，交还系统（用户要求：恢复音量键的正常功能）。 */
+    private static boolean isVolumeKey(android.view.KeyEvent event) {
+        if (event == null) return false;
+        int code = event.getKeyCode();
+        return code == android.view.KeyEvent.KEYCODE_VOLUME_UP
+                || code == android.view.KeyEvent.KEYCODE_VOLUME_DOWN
+                || code == android.view.KeyEvent.KEYCODE_VOLUME_MUTE
+                || code == android.view.KeyEvent.KEYCODE_MUTE;
+    }
+
     /**
      * 面板窗按键路由（面板展开时该窗可聚焦）：重映射 →「面板动作表」；
      * 未消费的键再交**虚拟鼠标**（否则鼠标模式下 A/方向键全被面板吃掉，
@@ -254,6 +264,9 @@ public abstract class ArtemisLauncherBaseActivity extends com.ies_net.artemis.Ar
      * 再未消费才交游戏映射链，保证面板收起瞬间不会吞掉游戏按键。
      */
     private boolean routePanelKey(android.view.KeyEvent event) {
+        // 音量键**不消费**：交还给系统去调手机音量（用户要求：不要让本应用占用音量键）。
+        // 之前这里无论如何都 return true，把音量键也吞了 → 面板/鼠标窗持焦时系统音量键失效。
+        if (isVolumeKey(event)) return false;
         KeyEvent mapped = com.core.engine.GamepadRemap.apply(event);
         if (extractPanel != null && mapped != null && extractPanel.handleKey(mapped)) return true;
         // 面板没消费的动作落到虚拟鼠标：面板展开时也能用光标点侧键/面板控件
@@ -310,6 +323,8 @@ public abstract class ArtemisLauncherBaseActivity extends com.ies_net.artemis.Ar
      * EmulateKeyEvent 映射），保证鼠标模式下 ENTER/ESC/SKIP 等仍可用。
      */
     private boolean routeMouseKey(android.view.KeyEvent event) {
+        // 音量键不消费：还给系统调手机音量（同上）。
+        if (isVolumeKey(event)) return false;
         KeyEvent mapped = com.core.engine.GamepadRemap.apply(event);
         // 诊断：确认「我们的可聚焦窗口能否收到手柄事件」（能否用软件接收 + 再转发给内核）
         Log.i("YukiArtemis", "mouse catcher key code=" + event.getKeyCode()
