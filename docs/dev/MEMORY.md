@@ -1300,3 +1300,25 @@
       修复：**显示区 = 选区尺寸 × 倍率**（超屏时按比例整体缩小并保宽高比），
       位置改为"优先选区正下方 → 上方 → 屏幕另一侧"并整体钳进屏内（含控制条高度），
       保证不遮挡选区；`＋/－` 改变倍率后按新尺寸重建窗口。
+
+## KRKR 文本提取：本会话查明的六条硬教训（Yosuga no Sora / Kazura Uta 真机）
+
+1. **选错重载会伪装成"内核不支持"**：引擎实际调用的是
+   `TVPConsoleLog(const tTJSString&, bool)`（`_Z13TVPConsoleLogRKN3TJS10tTJSStringEb`），
+   而我们只钩了 `const tjs_char*` 版（`_ZN3TJS13TVPConsoleLogEPKDs`）→ 钩子"已武装"却永不触发。
+   多签名函数必须逐个挂钩，且**每个目标各自一份 trampoline**（共用会跳错返回点）。
+2. **patch.tjs 在老内核上不会被"执行"**：overlay 里能看到它被 open（诊断 `last_open`），
+   但塞进去的 `Debug.message` 从不出现在控制台，而引擎自身日志能到 → 只能走引擎内 hook。
+3. **字形反查表必须按 FT_Face 分别建**：全进程单表 + 用第一个 face 建表时，
+   真机只有 166 条条目，对白字体（另一个 face）的字形号全部查不到（有字形流、零文本）。
+   改为按 face 建表后同一游戏为 **42387 条**，字形号 100% 命中并还原出码点。
+4. **dlsym 命中随时机变化**（同机同游戏，两次运行一次 FOUND、一次 missing）：
+   启动早期解析符号不可靠 → 多套候选 + 特征串识别（LunaHook 同思路）+ 失败要吵。
+5. **引擎内 hook 的重活绝不能跑在渲染/启动关键路径上**（本会话回归的根因）：
+   在 `FT_Load_Glyph` 钩子（渲染线程）里同步建 65504×N 次 cmap 反查 → 占住引擎主线程
+   → 宿主等待的 `KrkrBridge: launch UI forms ready` 恒为 0 → **两个 KRKR 游戏都卡在"正在启动游戏"**。
+   改为独立线程异步建表（渲染线程只做只读查询）后恢复正常。对齐 LunaHook：等引擎就绪、旁路线程干活。
+6. **新钩子必须带独立开关 + 双条件回归验证**：本会话把 KRKR 链拆成
+   `kEnableEngineIdentityLog` / `kEnableConsoleInlineHook` / `kEnableFtProbe` 三项 bisect 开关，
+   每次都用「**游戏能否正常进入** + 面板是否出字」验证；否则一处阻塞就会以"游戏打不开"的形式暴露，
+   且很难定位（本次正是靠"只关某一项"的对照实验才锁定到 C 段）。
