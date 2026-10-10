@@ -442,14 +442,12 @@ public abstract class ArtemisLauncherBaseActivity extends com.ies_net.artemis.Ar
 
     /** 光标悬停面板窗口时点面板控件（合成触摸派发给面板根视图），否则注入游戏。 */
     private boolean virtualMouseOverlayClick(float x, float y) {
-        android.view.View panelView = extractPanelView;
-        if (panelView == null || panelView.getWidth() <= 0) return false;
-        int[] loc = new int[2];
-        panelView.getLocationOnScreen(loc);
-        if (x < loc[0] || x >= loc[0] + panelView.getWidth()
-                || y < loc[1] || y >= loc[1] + panelView.getHeight()) return false;
-        dispatchTapToView(panelView, x - loc[0], y - loc[1]);
-        return true;
+        // 统一走共享面板的命中逻辑（先右缘侧键、再面板本体：面板上非可点控件处点一下
+        // 即收起）。之前本方法只看面板 view 自身，导致鼠标模式点右侧「剧情文本框」侧键
+        // 等于点进游戏画面、剧情文本框关不掉（Kirikiroid 早已用 dispatchCursorClick）。
+        // 未命中就不消费：交给宿主注入游戏画面，不要在面板隐藏时再往面板里塞触摸
+        // （隐藏面板仍持有旧尺寸，误派发会让面板被"莫名点开/点关"）。
+        return extractPanel != null && extractPanel.dispatchCursorClick(x, y);
     }
 
     /** 在视图坐标处合成完整触摸（down 立即、up 延时 60ms）。 */

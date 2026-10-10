@@ -531,6 +531,12 @@ public class OnsExtractPanel {
     public void togglePanel() {
         expanded = !expanded;
         panel.setVisibility(expanded ? View.VISIBLE : View.GONE);
+        // 诊断：右侧「剧情文本框」按键与手柄 RB 都走这里，日志用于定位
+        // 「点击后收不起来」这类宿主侧问题（窗口承载/触摸路由）。
+        android.util.Log.i("OnsExtractPanel", "togglePanel expanded=" + expanded
+                + " panelVisibility=" + (panel.getVisibility() == View.VISIBLE ? "VISIBLE" : "GONE")
+                + " panelAttached=" + (panel.getParent() != null)
+                + " panelSize=" + panel.getWidth() + "x" + panel.getHeight());
         if (expanded) {
             // refresh 先行：apply* 任何一环异常都不能挡住内容显示（窗口承载宿主
             // 实测 applyAdaptiveHeight 一类的尺寸同步异常会吞掉 refresh）
@@ -2587,6 +2593,10 @@ public class OnsExtractPanel {
                 dispatchTap(target, x, y);
                 return true;
             }
+            // 面板本体上、但不是任何可点控件：视为「点一下收起剧情文本框」。
+            // 用户反馈：显示中的剧情文本框点不掉（鼠标模式下尤其明显）。
+            togglePanel();
+            return true;
         }
         return false;
     }
