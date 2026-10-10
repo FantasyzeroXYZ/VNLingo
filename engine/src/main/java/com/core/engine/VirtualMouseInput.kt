@@ -89,6 +89,9 @@ class VirtualMouseInput(
         clickHeldCode = code
         handler.removeCallbacks(clickStepper)
         handler.postDelayed(clickStepper, CLICK_REPEAT_DELAY_MS)
+        // 诊断：确认"按住连点"的定时器已挂上（单次按键时它会被 ACTION_UP 立刻撤销，
+        // 因此只有长按才看得到后面的 click repeat tick）。
+        android.util.Log.i("YukiVmouse", "click repeat armed code=$code delay=$CLICK_REPEAT_DELAY_MS")
     }
 
     private fun stopClickRepeat() {

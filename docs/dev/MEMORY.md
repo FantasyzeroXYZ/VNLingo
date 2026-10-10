@@ -1101,3 +1101,17 @@
    还留着早先要求删掉的拖拽手柄圆钮），RPGM 改用 Tyrano 版；`rclick`/长按右键语义两边一致。
    遗留：① Tyrano/RPGM 是否要装左侧按键列（EngineLeftButtons）待定——它们目前只有右缘列；
    ② 这两处改动在真机上未验证（设备库里只有 KIRIKIRI/ONS/ARTEMIS 游戏）。
+24. **覆盖层统一入口落地（2026-10-10，goal 完成）**：
+   - `com.core.engine.VirtualMouseController`：虚拟鼠标宿主无关接口
+     （handleKey/handleMotion/isCursorVisible/showCursor/hideCursor）；
+     `EngineVirtualMouse`（视图宿主）与 `com.core.tyrano.VirtualMouseLayer`（Web 宿主）都实现它。
+   - `com.core.engine.EngineOverlayRouting`：**唯一**的覆盖层路由/装配入口
+     routeKey（面板优先→虚拟鼠标）、routeMotion（面板展开全吞→虚拟鼠标）、
+     routeCursorClick（平台控件优先，未命中由宿主注入游戏）、applyImmersive（沉浸式）。
+   - 五个宿主已全部迁移：ONScripter / KirikiroidLauncher / ArtemisLauncher / TyranoActivity /
+     RpgMakerActivity。RPGM 的重复层已删除（改用 Tyrano 版，顺带获得手柄输入）。
+   - 真机验证：Artemis（R1 开/关面板 ✓、手柄源 A×3 = 3 组干净 DOWN/UP ✓、连点 armed/撤销 ✓）；
+     ONS ESG-13556（面板开关 ✓、vmouse 消费 A ✓）。Tyrano/RPGM 仅编译级验证
+     （设备无该类游戏）。
+   - 连点证据链：按下 → `click repeat armed code=96 delay=320`；抬起 → 无 tick（单击只点一次）；
+     按住 ≥320ms → 同一路径产生 `click repeat tick`（真机需人工按住手柄确认）。
