@@ -192,7 +192,7 @@ class GameSaveManager(private val context: Context) {
         val directory = resolveSaveLocation(game).directory ?: return emptyList()
         if (!directory.isDirectory) return emptyList()
         return buildList {
-            collectFiles(directory, this, excludeFor(game.engine))
+            collectFiles(directory, this, excludeFor(game.engine, directory))
         }
     }
 
@@ -213,7 +213,7 @@ class GameSaveManager(private val context: Context) {
             ?: throw GameSaveException(SaveErrorCode.CREATE_EXPORT_ZIP)
         ZipOutputStream(output).use { zip ->
             val entries = mutableSetOf<String>()
-            val count = writeZipContents(source, source, zip, entries, excludeFor(game.engine), rename)
+            val count = writeZipContents(source, source, zip, entries, excludeFor(game.engine, source), rename)
             if (count == 0) throw GameSaveException(SaveErrorCode.NO_EXPORTABLE_FILES)
             return count
         }
@@ -282,7 +282,7 @@ class GameSaveManager(private val context: Context) {
             // 需先剥掉再复制，否则会落成 savedata/save/... 多套一层导致引擎读不到。
             // 仅 RPG Maker MV/MZ 生效（见 unwrapOuterDirs，其它引擎原样返回）。
             val source = unwrapOuterDirs(temp, game.engine)
-            val copied = copyDirectoryContents(source, staging, excludeFor(game.engine))
+            val copied = copyDirectoryContents(source, staging, excludeFor(game.engine, source))
             if (copied == 0) throw GameSaveException(SaveErrorCode.NO_FILES_IN_ZIP)
             if (destination.exists()) {
                 // 走到这里备份必已被开头恢复步骤消费（只剩旧存档或不存在），可安全删除
@@ -530,7 +530,7 @@ class GameSaveManager(private val context: Context) {
      */
     @Throws(IOException::class)
     private fun restoreExcludedFromBackup(backup: File, destination: File, engine: EngineType) {
-        val exclude = excludeFor(engine)
+        val exclude = excludeFor(engine, backup)
         val moved = mutableListOf<Pair<File, File>>()
         try {
             fun restoreRecursive(currentBackup: File, currentDest: File) {
@@ -558,7 +558,7 @@ class GameSaveManager(private val context: Context) {
 
     private fun clearSaveDirectory(directory: File, engine: EngineType): Int {
         var deleted = 0
-        val exclude = excludeFor(engine)
+        val exclude = excludeFor(engine, directory)
         directory.listFiles().orEmpty().forEach { child ->
             if (exclude(child.name)) return@forEach
             if (child.deleteRecursively()) deleted++
@@ -575,7 +575,13 @@ class GameSaveManager(private val context: Context) {
         return name
     }
 
-    private fun excludeFor(engine: EngineType): (String) -> Boolean = { name ->
+    /**
+     * 排除规则：返回 true = 该名字**不属于存档**（列表/导出/导入/云同步都要跳过）。
+     *
+     * @param root 本次遍历的存档根目录。Artemis 的缩略图需要判断"有没有同名 .dat 配对"，
+     *   因此必须知道根目录；传 null 时仅按名字判断（旧行为）。
+     */
+    private fun excludeFor(engine: EngineType, root: File? = null): (String) -> Boolean = { name ->
         val lower = name.lowercase(Locale.ROOT)
         // MV/MZ 存档目录内的 original/ 是格式转化/互通留底，不参与列表计数/导出/导入/删除
         (RpgSaveFormat.isRpgWebEngine(engine) && lower == RpgSaveFormat.ORIGINAL_DIR) ||
@@ -583,20 +589,40 @@ class GameSaveManager(private val context: Context) {
             // Artemis：白名单——只认游戏根下的 *.dat（存档），截图/语音/资源包与一切子目录
             // 都不算存档（用户实测：整目录导出会把 screenshots/ 与 artemis_extract/voice/
             // 一起打进 ZIP）。目录名不以 .dat 结尾，因此递归也不会进入任何子目录。
-            (engine == EngineType.ARTEMIS && !lower.endsWith(".dat")) ||
+            (engine == EngineType.ARTEMIS && !lower.endsWith(".dat") &&
+                !isPairedArtemisThumbnail(engine, root, name)) ||
             // 图片/音频一律不算存档、不导出、不上传（用户要求：截图与语音不进存档管理；
             // 截图有自己的「截图管理」页，语音不保留）。注意不含 .bmp：ONS 的存档缩略图
             // 就是 save*.bmp，属于存档本体。
-            isMediaFileName(lower) ||
+            // Artemis 的缩略图是 saveNNNN.png，属于存档本体，由上面的配对规则放行，
+            // 因此这里对 Artemis 也要跳过"图片一律排除"。
+            (isMediaFileName(lower) && !isPairedArtemisThumbnail(engine, root, name)) ||
             // AVG32/UK2 存档目录即游戏根：白名单之外的文件（含游戏资源）一律排除，
             // 导入交换后由 restoresExcludedFromBackup 从备份移回。
             (engine == EngineType.AVG32 && lower != AVG32_SAVE_FILE_NAME) ||
             (engine == EngineType.UK2 && !UK2_SAVE_NAME_RE.matches(lower))
     }
 
+    /**
+     * Artemis 的存档缩略图：`saveNNNN.png`，且同目录存在配对的 `saveNNNN.dat`。
+     *
+     * 用户实机给到的证据：`save0001.dat`(40KB) 旁边有 `save0001.png`(30KB)，成对出现，
+     * 缺了缩略图就不是完整存档（以前因为"图片一律排除"被丢掉）。
+     * 只放行**有配对 .dat** 的 png，其它图片（截图、资源）仍一律排除。
+     */
+    private fun isPairedArtemisThumbnail(engine: EngineType, root: File?, name: String): Boolean {
+        if (engine != EngineType.ARTEMIS || root == null) return false
+        if (!ARTEMIS_SAVE_THUMB_RE.matches(name)) return false
+        val dat = name.substringBeforeLast('.') + ".dat"
+        return File(root, dat).isFile
+    }
+
     /** 图片/音频扩展名：这些文件不属于存档，列表/导出/导入/云同步都要跳过。 */
     private fun isMediaFileName(lower: String): Boolean =
         MEDIA_EXTENSIONS.any { lower.endsWith(it) }
+
+    /** Artemis 存档缩略图命名：saveNNNN.png（与 saveNNNN.dat 成对，属于存档本体）。 */
+    private val ARTEMIS_SAVE_THUMB_RE = Regex("(?i)^save\\d+\\.png$")
 
     private val MEDIA_EXTENSIONS = listOf(
         ".png", ".jpg", ".jpeg", ".webp", ".gif", ".avif",
