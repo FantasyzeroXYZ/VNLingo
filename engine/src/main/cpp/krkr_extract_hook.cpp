@@ -1369,6 +1369,16 @@ extern "C" bool krkr_install_extract_hook(void* gameHandle, JNIEnv* env) {
     static const bool kKrkrExtractEnabled = false;  // 用户实测：开着就闪退/卡启动 → 全关（已验证可用基线）
     static const bool kEnableEngineIdentityLog = true;
     static const bool kEnableConsoleInlineHook = false;
+    // 双开关：编译期硬开关（内核兼容性未确认前保持 false）+ 用户级开关（默认 false）。
+    // 只有两者都放开才安装 → 默认状态下绝不会影响游戏启动。
+    if (!kKrkrExtractEnabled) {
+        LOGW("krkr extract hooks DISABLED (hard switch)");
+        return false;
+    }
+    if (!krkr_extract_user_enabled()) {
+        LOGI("krkr extract hooks not installed (user switch off, default)");
+        return false;
+    }
     // 记录句柄：迟到安装 FT 链需要它（库名未知时由迟到安装自行回退/探测）
     if (gKrkrLateHandle == nullptr) gKrkrLateHandle = gameHandle;
     // 注：曾用"后台线程延后 20s 安装"来避开启动关键路径，但真机证实
