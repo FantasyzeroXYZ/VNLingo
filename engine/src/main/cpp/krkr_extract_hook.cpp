@@ -813,30 +813,42 @@ std::mutex gGlyphMapMutex;
 std::unordered_map<void*, std::unordered_map<unsigned int, unsigned long>*> gGlyphMaps;
 std::unordered_map<void*, unsigned> gGlyphMapAttempts;
 
-std::unordered_map<unsigned int, unsigned long>* glyphMapFor(void* face) {
-    if (face == nullptr || gOrigFTGetCharIndex == nullptr) return nullptr;
-    {
-        std::lock_guard<std::mutex> lock(gGlyphMapMutex);
-        auto it = gGlyphMaps.find(face);
-        if (it != gGlyphMaps.end()) return it->second;
-    }
+/** 只读查询：表就绪则返回，否则 nullptr（**绝不在渲染线程建表**）。 */
+std::unordered_map<unsigned int, unsigned long>* glyphMapReady(void* face) {
+    if (face == nullptr) return nullptr;
     std::lock_guard<std::mutex> lock(gGlyphMapMutex);
     auto it = gGlyphMaps.find(face);
-    if (it != gGlyphMaps.end()) return it->second;
-    unsigned& attempts = gGlyphMapAttempts[face];
-    if (attempts >= 5) return nullptr;   // 字型表尚未就绪时不反复扫
-    ++attempts;
-    auto* map = new std::unordered_map<unsigned int, unsigned long>();
-    map->reserve(8192);
-    for (unsigned long code = 0x20; code <= 0xFFFF; ++code) {
-        if (code >= 0xD800 && code <= 0xDFFF) continue;  // 代理区无效码点
-        const unsigned long index = gOrigFTGetCharIndex(face, code);
-        if (index == 0) continue;
-        map->emplace(static_cast<unsigned int>(index), code);
+    return it == gGlyphMaps.end() ? nullptr : it->second;
+}
+
+/**
+ * 异步建表（关键修复）：65504 次 FT_Get_Char_Index × 每个 face 若跑在**渲染线程**上，
+ * 会长时间占住引擎主线程、拖住启动期上报（宿主等待 `KrkrBridge: launch UI forms ready`
+ * 一直为 0 → 卡在"正在启动游戏"）。这里改为独立线程构建，渲染线程只做只读查询。
+ * 每个 face 只建一次（attempts 记账防止重复起线程）。
+ */
+void startGlyphMapBuild(void* face) {
+    if (face == nullptr || gOrigFTGetCharIndex == nullptr) return;
+    {
+        std::lock_guard<std::mutex> lock(gGlyphMapMutex);
+        if (gGlyphMaps.count(face) != 0 || gGlyphMapAttempts.count(face) != 0) return;
+        gGlyphMapAttempts[face] = 1;
     }
-    LOGI("ft glyph map built: face=%p entries=%zu attempts=%u", face, map->size(), attempts);
-    gGlyphMaps[face] = map;
-    return map;
+    std::thread([face] {
+        auto* map = new std::unordered_map<unsigned int, unsigned long>();
+        map->reserve(8192);
+        for (unsigned long code = 0x20; code <= 0xFFFF; ++code) {
+            if (code >= 0xD800 && code <= 0xDFFF) continue;  // 代理区无效码点
+            const unsigned long index = gOrigFTGetCharIndex(face, code);
+            if (index == 0) continue;
+            map->emplace(static_cast<unsigned int>(index), code);
+        }
+        {
+            std::lock_guard<std::mutex> lock(gGlyphMapMutex);
+            gGlyphMaps[face] = map;
+        }
+        LOGI("ft glyph map built(async): face=%p entries=%zu", face, map->size());
+    }).detach();
 }
 
 int hookedFTLoadGlyph(void* face, unsigned int glyphIndex, int loadFlags) {
@@ -847,8 +859,11 @@ int hookedFTLoadGlyph(void* face, unsigned int glyphIndex, int loadFlags) {
              glyphIndex, err);
     }
     if (!gHookInstalled.load(std::memory_order_relaxed)) return err;
-    const auto* map = glyphMapFor(face);
-    if (map == nullptr) return err;
+    const auto* map = glyphMapReady(face);
+    if (map == nullptr) {
+        startGlyphMapBuild(face);   // 本线程不建表，立刻返回，避免拖住引擎
+        return err;
+    }
     const auto it = map->find(glyphIndex);
     // B3 诊断：字形还原是否真的命中（第 9 轮关键埋点）——
     //   hit 增长 → 字形→码点通了，问题在后续判页/上行；
@@ -1419,7 +1434,7 @@ static bool gFtProbeInstalled = false;
 
 extern "C" bool krkr_install_ft_probe(void* gameHandle, const char* library) {
     // C 段开关（bisect）：FT 字形链暂不安装（GOT 钩子 + 反查表 + 停顿直发）
-    static const bool kEnableFtProbe = false;
+    static const bool kEnableFtProbe = true;   // bisect：单独验证 C 段
     if (!kEnableFtProbe) {
         LOGI("ft probe: DISABLED (bisect)");
         return false;
