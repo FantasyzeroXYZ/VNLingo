@@ -1151,6 +1151,29 @@ public class OnsExtractPanel {
                 transView.setText("");
             }
         }
+        // 用户要求：**切换对白时上一条 TTS 立即停止**，绝不允许两条语音同时出声
+        // （否则 TTS 会盖住游戏语音，听不见对白语音）。
+        //
+        // 关键点：这个停止必须放在"入口"处、且在所有提前 return 之前 ——
+        // autoPlayForNewSentence() 内部有多处 early return（自动朗读关闭 / 补念分支 /
+        // 同句去重），把 stopTts() 放在里面时，"切到有语音的新句"这类情况根本走不到，
+        // 于是上一条 TTS 继续念、压住新句的游戏语音。
+        //
+        // 只对"真正换了句"生效：同一句逐字/逐段变长（新文本以上一次为前缀）不打断，
+        // 否则会把自己念到一半的同一句掐掉。
+        {
+            final String cur = sentence == null ? "" : sentence;
+            final String ref = pendingSpokenSentence != null
+                    ? pendingSpokenSentence
+                    : (lastSpokenSentence == null ? "" : lastSpokenSentence);
+            if (!cur.isEmpty() && !ref.isEmpty() && !cur.equals(ref) && !cur.startsWith(ref)) {
+                android.util.Log.i(TAG, "line switched → stop previous TTS immediately");
+                stopTts();
+                main.removeCallbacks(autoSpeakJob);
+                pendingSpokenSentence = null;
+                pendingSpokenSuffix = null;
+            }
+        }
         // 自动朗读在面板隐藏时也要生效（TTS 直呼线程安全）；配对语音由游戏播放，不重复播。
         // 生效判定在 autoPlayForNewSentence 内（面板「自动」快调 OR 设置页「自动朗读」全局开关）
         autoPlayForNewSentence(sentence);
