@@ -1292,7 +1292,27 @@ extern "C" bool krkr_bridge_got_hook(const char* library, const char* symbol,
  * @return 是否成功挂钩
  */
 extern "C" bool krkr_install_extract_hook(void* gameHandle, JNIEnv* env) {
-    if (gameHandle == nullptr || env == nullptr) return false;
+    if (gameHandle == nullptr) return false;
+    // 开关必须在最外层作用域声明（下面 env!=nullptr 分支与后续逻辑都要用）
+    static const bool kKrkrExtractEnabled = true;   // 总开关（延后安装版）
+    static const bool kEnableEngineIdentityLog = true;
+    static const bool kEnableConsoleInlineHook = true;    // 延后 20s 安装
+    // 【延后安装】宿主在引擎启动早期就调用本函数；此刻挂引擎热函数会拖住启动期上报
+    // （宿主等 `KrkrBridge: launch UI forms ready`，实测两个 KRKR 游戏都卡在"正在启动游戏"）。
+    // 因此：先缓存 JNI 引用（env 只在本次调用有效），再交给后台线程等引擎就绪后安装。
+    {
+        static std::atomic<bool> sDeferred{false};
+        if (!sDeferred.exchange(true)) {
+            std::thread([gameHandle] {
+                std::this_thread::sleep_for(std::chrono::seconds(20));
+                LOGI("krkr extract: deferred install begins (engine should be ready)");
+                krkr_install_extract_hook(gameHandle, nullptr);
+            }).detach();
+        }
+    }
+    if (env == nullptr) {
+        // 延后进入：跳过 JNI 缓存（首次调用已完成），直接挂勾子
+    } else {
     // ⚠️⚠️ 紧急开关（回归止血）：本会话新增的 KRKR 识别/钩子链导致 **两个 KRKR 游戏都卡在
     // "正在启动游戏"**（宿主日志：`Kirikiroid2: direct game launch waits for native scene
     // transition` + `KrkrBridge: launch UI forms ready count=0`），即引擎始终不上报 UI 就绪。
@@ -1302,9 +1322,9 @@ extern "C" bool krkr_install_extract_hook(void* gameHandle, JNIEnv* env) {
     //   A 引擎识别日志（同步读 maps/扫模块/转储符号，最可疑）
     //   B TVPConsoleLog inline hook（核心提取通道）
     //   C FT 字形链（GOT + 按-face 反查表 + 停顿直发）
-    static const bool kKrkrExtractEnabled = false;  // 总开关：用户实测两个 KRKR 游戏仍进不去 → 全关
+    static const bool kKrkrExtractEnabled = true;   // 总开关（延后安装版）
     static const bool kEnableEngineIdentityLog = true;
-    static const bool kEnableConsoleInlineHook = false;
+    static const bool kEnableConsoleInlineHook = true;    // 延后 20s 安装
     if (!kKrkrExtractEnabled) {
         LOGW("krkr extract hooks DISABLED (regression emergency switch)");
         return false;
@@ -1330,6 +1350,7 @@ extern "C" bool krkr_install_extract_hook(void* gameHandle, JNIEnv* env) {
             LOGW("onKrkrText method unresolved; text extraction disabled");
             return false;
         }
+    }
     }
 
     // ① 无条件打印引擎身份与候选目标命中情况（对齐 LunaHook 的"先识别引擎"）：
@@ -1433,11 +1454,22 @@ extern "C" bool krkr_install_extract_hook(void* gameHandle, JNIEnv* env) {
 static bool gFtProbeInstalled = false;
 
 extern "C" bool krkr_install_ft_probe(void* gameHandle, const char* library) {
-    // C 段开关（bisect）：FT 字形链暂不安装（GOT 钩子 + 反查表 + 停顿直发）
-    static const bool kEnableFtProbe = false;   // FT 探针是独立入口，必须一并关
+    static const bool kEnableFtProbe = true;    // 延后 20s 安装
     if (!kEnableFtProbe) {
-        LOGI("ft probe: DISABLED (bisect)");
+        LOGI("ft probe: DISABLED");
         return false;
+    }
+    {
+        static std::atomic<bool> sDeferred{false};
+        if (!sDeferred.exchange(true)) {
+            std::string lib = library != nullptr ? library : "";
+            std::thread([gameHandle, lib] {
+                std::this_thread::sleep_for(std::chrono::seconds(20));
+                LOGI("ft probe: deferred install begins (engine should be ready)");
+                krkr_install_ft_probe(gameHandle, lib.empty() ? nullptr : lib.c_str());
+            }).detach();
+            return true;
+        }
     }
     if (gameHandle == nullptr || library == nullptr) return false;
     if (gFtProbeInstalled) return true;
