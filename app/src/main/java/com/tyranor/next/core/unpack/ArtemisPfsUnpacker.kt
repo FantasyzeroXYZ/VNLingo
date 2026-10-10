@@ -356,6 +356,11 @@ object ArtemisPfsUnpacker {
     private fun isArtemisStartupSystemFile(lowerRelPath: String): Boolean {
         if (!lowerRelPath.startsWith("system/")) return false
         if (lowerRelPath.contains("/../")) return false
+        // `system/extend/` 是**覆盖目录**：官方补丁/用户会把覆盖文件放在这里（例如本作的
+        // `system/extend/auth.lua`，文件头写着「不用时请删除」，0 字节即可关闭 Steam 认证，
+        // 进而影响 init.steam 与语言路径）。把 PFS 里的同名文件解到这里会**覆盖掉**这些覆盖，
+        // 实测直接导致「设置页里没有日本語行」（PC 数据 + 空 auth.lua 有日语，我们解包后没了）。
+        if (lowerRelPath.startsWith("system/extend/")) return false
         return lowerRelPath.endsWith(".iet") ||
             lowerRelPath.endsWith(".lua") ||
             lowerRelPath.endsWith(".asb") ||
