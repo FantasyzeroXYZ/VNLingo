@@ -135,6 +135,7 @@
     <string name="engine_ons_side_screenshot">截图</string>
     <string name="engine_ons_side_magnifier">放大镜</string>
     <string name="engine_ons_side_settings">游戏设置</string>
+    <string name="engine_ons_settings_game_volume">游戏音量（软件内）</string>
     <string name="engine_ons_settings_title">游戏设置</string>
     <string name="engine_ons_state_on">开</string>
     <string name="engine_ons_state_off">关</string>

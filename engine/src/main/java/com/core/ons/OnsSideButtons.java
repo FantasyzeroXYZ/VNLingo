@@ -191,8 +191,8 @@ public class OnsSideButtons {
                 R.string.engine_ons_side_magnifier, () -> OnsMagnifier.toggle(activity)));
         column.addView(button(activity, R.drawable.ic_settings,
                 R.string.engine_ons_side_settings, onSettings));
-        column.addView(button(activity, R.drawable.ic_volume,
-                R.string.engine_ons_side_volume, () -> showVolumePopup(activity)));
+        // 音量已并入「游戏设置」悬浮框里的进度条（用户要求：只调软件内游戏音量、
+        // 且以进度条微调），右缘不再单独放系统音量键。
         if (onMouseModeToggle != null && mouseMode != null) {
             column.addView(clickModeButton(activity, onMouseModeToggle, mouseMode));
         }

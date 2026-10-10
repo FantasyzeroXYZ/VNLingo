@@ -79,6 +79,71 @@ public final class SettingsWidgets {
     }
 
     /**
+     * 进度条行：图标 + 标题 + 当前值文字（第一行），下面整行 SeekBar（第二行）。
+     *
+     * 用户要求：设置悬浮框里所有**百分比**类调节（音量/透明度/语速…）都用进度条，
+     * 方便微调；下拉档位只能选固定几档，太粗。
+     *
+     * @param valueFmt 当前值文字格式（如「%d%%」）；显示时用 value 填充
+     */
+    public static LinearLayout sliderRow(Activity activity, int iconRes, CharSequence label,
+                                         int min, int max, int value, String valueFmt,
+                                         IntConsumer onChange) {
+        LinearLayout box = new LinearLayout(activity);
+        box.setOrientation(LinearLayout.VERTICAL);
+        box.setPadding(0, dp(activity, 6), 0, dp(activity, 2));
+
+        LinearLayout head = new LinearLayout(activity);
+        head.setOrientation(LinearLayout.HORIZONTAL);
+        head.setGravity(Gravity.CENTER_VERTICAL);
+        if (iconRes != 0) {
+            ImageView icon = new ImageView(activity);
+            icon.setImageResource(iconRes);
+            icon.setLayoutParams(new LinearLayout.LayoutParams(dp(activity, 20), dp(activity, 20)));
+            head.addView(icon);
+        }
+        TextView title = new TextView(activity);
+        title.setText(label);
+        title.setTextColor(TEXT_BODY);
+        title.setTextSize(14);
+        title.setSingleLine(true);
+        if (iconRes != 0) title.setPadding(dp(activity, 12), 0, dp(activity, 8), 0);
+        head.addView(title, new LinearLayout.LayoutParams(
+                0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f));
+        TextView valueView = new TextView(activity);
+        valueView.setTextColor(TEXT_BODY);
+        valueView.setTextSize(13);
+        head.addView(valueView);
+        box.addView(head);
+
+        android.widget.SeekBar bar = new android.widget.SeekBar(activity);
+        final int span = Math.max(1, max - min);
+        bar.setMax(span);
+        bar.setProgress(Math.max(0, Math.min(span, value - min)));
+        valueView.setText(String.format(valueFmt, value));
+        bar.setOnSeekBarChangeListener(new android.widget.SeekBar.OnSeekBarChangeListener() {
+            @Override
+            public void onProgressChanged(android.widget.SeekBar sb, int progress, boolean fromUser) {
+                int v = min + progress;
+                valueView.setText(String.format(valueFmt, v));
+                if (fromUser) onChange.accept(v);
+            }
+
+            @Override
+            public void onStartTrackingTouch(android.widget.SeekBar sb) {
+            }
+
+            @Override
+            public void onStopTrackingTouch(android.widget.SeekBar sb) {
+                onChange.accept(min + sb.getProgress());
+            }
+        });
+        box.addView(bar, new LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT));
+        return box;
+    }
+
+    /**
      * 开关行：可选图标 + 标题 + Switch（布尔项不用文字行点按切换）。
      */
     public static LinearLayout switchRow(Activity activity, int iconRes, CharSequence label,

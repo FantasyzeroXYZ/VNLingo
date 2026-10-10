@@ -69,6 +69,8 @@ public class OnsExtractPanel {
     private static final String KEY_TTS_AUTO = "tts_auto";
     private static final String KEY_LISTENING = "listening_mode";
     private static final String KEY_OPACITY = "panel_opacity";
+    /** 软件内"游戏音量"（0..100，百分比；不影响手机系统音量）。 */
+    private static final String KEY_GAME_VOLUME = "game_volume";
     private static final String KEY_TTS_MULTI = "tts_multi";
     /** TTS 语速（百分比 int，50..150；系统 TTS setSpeechRate 与 MultiTTS speed 共用）。 */
     private static final String KEY_TTS_RATE = "tts_rate";
@@ -188,8 +190,28 @@ public class OnsExtractPanel {
                 t.setDaemon(true);
                 return t;
             });
-    /** 面板不透明百分比（OPACITY_STEPS 档位之一，持久化）。 */
+    /** 面板不透明百分比（1..100，持久化）。 */
     private int panelOpacity;
+    /**
+     * 软件内**游戏音量**百分比（0..100，持久化）。
+     *
+     * 用户要求：音量键只调"这个软件里的游戏音量"，不要去动手机系统音量。
+     * 各引擎的落地方式不同（宿主通过 {@link #setGameVolumeHook} 接），
+     * 面板只负责 UI 与持久化。
+     */
+    private int gameVolume;
+    private java.util.function.IntConsumer gameVolumeHook;
+
+    /** 宿主接入"把百分比音量应用到引擎"（0..100）。 */
+    public void setGameVolumeHook(java.util.function.IntConsumer hook) {
+        gameVolumeHook = hook;
+        if (hook != null) hook.accept(gameVolume);
+    }
+
+    /** 当前游戏音量百分比（0..100）。 */
+    public int getGameVolume() {
+        return gameVolume;
+    }
     private TextView opacityToggle;
     private LinearLayout actionsRow;
     private android.widget.HorizontalScrollView actionsScrollView;
@@ -206,6 +228,7 @@ public class OnsExtractPanel {
         ttsLoop = prefs.getInt(KEY_TTS_LOOP, 0);
         listeningMode = prefs.getBoolean(KEY_LISTENING, false);
         panelOpacity = prefs.getInt(KEY_OPACITY, OPACITY_STEPS[0]);
+        gameVolume = prefs.getInt(KEY_GAME_VOLUME, 100);
         // 词典库提前打开（导入/查词共用；后台线程 search 不依赖 context）
         OnsDictStore.get().init(activity);
         // 音频不再保留：清掉旧版本遗留的语音缓存目录（历史回放改走档案按名补读 / TTS）
@@ -743,21 +766,16 @@ public class OnsExtractPanel {
                     return multiTtsEnabled;
                 }));
 
-        // 语速行：下拉选择档位（系统 TTS 与 MultiTTS 共用）
-        final java.util.List<String> rateLabels = new java.util.ArrayList<>();
-        for (int step : RATE_STEPS) {
-            rateLabels.add(activity.getString(R.string.engine_ons_extract_opacity_fmt, step));
-        }
-        LinearLayout rateRow = SettingsWidgets.dropdownRow(activity, R.drawable.ic_volume,
-                activity.getString(R.string.engine_ons_extract_rate), rateLabels,
-                stepIndex(RATE_STEPS, ttsRate), position -> {
-                    ttsRate = RATE_STEPS[position];
+        // 语速：进度条（用户要求百分比类一律用进度条微调，下拉档位太粗）
+        box.addView(SettingsWidgets.sliderRow(activity, R.drawable.ic_volume,
+                activity.getString(R.string.engine_ons_extract_rate), 25, 300, ttsRate, "%d%%",
+                value -> {
+                    ttsRate = value;
                     p.edit().putInt(KEY_TTS_RATE, ttsRate).apply();
                     if (tts != null) {
                         try { tts.setSpeechRate(ttsRate / 100f); } catch (Throwable ignored) {}
                     }
-                });
-        box.addView(rateRow);
+                }));
 
         // 翻译 / 词典 / 云同步设置已移至应用「设置」页（产品调整：游戏内不再放配置类条目）
         TextView movedHint = new TextView(activity);
@@ -782,23 +800,29 @@ public class OnsExtractPanel {
                     return OnsHistoryOverlay.showing();
                 }));
 
-        // 透明度行：下拉选择档位
-        final java.util.List<String> opacityLabels = new java.util.ArrayList<>();
-        for (int step : OPACITY_STEPS) {
-            opacityLabels.add(activity.getString(R.string.engine_ons_extract_opacity_fmt, step));
-        }
-        LinearLayout opacityRow = SettingsWidgets.dropdownRow(activity, R.drawable.ic_settings,
-                activity.getString(R.string.engine_ons_extract_opacity), opacityLabels,
-                stepIndex(OPACITY_STEPS, panelOpacity), position -> {
-                    panelOpacity = OPACITY_STEPS[position];
+        // 游戏音量：进度条（**只调本软件里的游戏音量，不动手机系统音量**）
+        box.addView(SettingsWidgets.sliderRow(activity, R.drawable.ic_volume,
+                activity.getString(R.string.engine_ons_settings_game_volume), 0, 100, gameVolume,
+                "%d%%", value -> {
+                    gameVolume = value;
+                    p.edit().putInt(KEY_GAME_VOLUME, gameVolume).apply();
+                    if (gameVolumeHook != null) {
+                        try { gameVolumeHook.accept(gameVolume); } catch (Throwable ignored) {}
+                    }
+                }));
+
+        // 透明度：进度条（1..100，连续可调）
+        box.addView(SettingsWidgets.sliderRow(activity, R.drawable.ic_settings,
+                activity.getString(R.string.engine_ons_extract_opacity), 10, 100, panelOpacity,
+                "%d%%", value -> {
+                    panelOpacity = value;
                     ttsPrefs().edit().putInt(KEY_OPACITY, panelOpacity).apply();
                     if (opacityToggle != null) {
                         opacityToggle.setText(activity.getString(
                                 R.string.engine_ons_extract_opacity_fmt, panelOpacity));
                     }
                     applyOpacity();
-                });
-        box.addView(opacityRow);
+                }));
 
         // 分区较多，内容整体可滚动（AlertDialog 不自动给自定义视图加滚动）
         android.widget.ScrollView scroller = new android.widget.ScrollView(activity);
