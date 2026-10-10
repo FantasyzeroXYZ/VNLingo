@@ -3184,10 +3184,13 @@ public class OnsExtractPanel {
     private boolean ttsInitFailed;
 
     private void ensureTts() {
-        // MultiTTS 作为系统 TTS 引擎绑定仅在高级引擎=MultiTTS 时生效
-        String desired = multiTtsEnabled
-                && OnsTtsEngines.ENGINE_MULTI.equals(OnsTtsEngines.engine(activity))
-                ? MULTI_TTS_PACKAGE : null;
+        // 系统 TTS 用哪个引擎：优先用户显式选择（不需要权限，直接传给构造函数），
+        // 其次才是「高级引擎=MultiTTS」时的 MultiTTS 包名，否则跟随系统默认（null）。
+        String chosen = OnsTtsEngines.systemEngine(activity);
+        String desired = !chosen.isEmpty() ? chosen
+                : (multiTtsEnabled
+                   && OnsTtsEngines.ENGINE_MULTI.equals(OnsTtsEngines.engine(activity))
+                   ? MULTI_TTS_PACKAGE : null);
         if (tts != null && (activeTtsEngine == null
                 ? desired == null : activeTtsEngine.equals(desired))) return;
         if (tts != null) {

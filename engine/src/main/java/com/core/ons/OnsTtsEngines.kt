@@ -36,6 +36,8 @@ object OnsTtsEngines {
     private const val KEY_MULTI_HOST = "multi_host" // MultiTTS 服务地址 host:port
     /** TTS 流式播放：HTTP 类引擎边收边播（不等整段合成完），降低起播延迟。 */
     private const val KEY_STREAM = "tts_streaming"
+    /** 系统 TTS 用哪个引擎包名（"" = 跟随系统默认）。 */
+    private const val KEY_SYSTEM_ENGINE = "system_engine"
 
     /** 默认 HTTP 模板：TTS Server / LunaTranslator 兼容格式。 */
     const val DEFAULT_HTTP_TEMPLATE = "http://127.0.0.1:1221/api/tts?text={text}"
@@ -83,6 +85,43 @@ object OnsTtsEngines {
     @JvmStatic
     fun setStreaming(context: Context, value: Boolean) {
         prefs(context).edit().putBoolean(KEY_STREAM, value).apply()
+    }
+
+    /**
+     * 系统 TTS 使用哪个引擎（包名；空串 = 跟随系统默认）。
+     *
+     * 用 `TextToSpeech(context, listener, packageName)` 直接指定，**不需要任何特殊权限**；
+     * 相比改系统默认（`Settings.Secure.tts_default_synth` 需要 WRITE_SECURE_SETTINGS），
+     * 这样既满足"进一步设置系统 TTS 的引擎"，又不影响其它应用。
+     */
+    @JvmStatic
+    fun systemEngine(context: Context): String =
+        prefs(context).getString(KEY_SYSTEM_ENGINE, "")?.orEmpty() ?: ""
+
+    @JvmStatic
+    fun setSystemEngine(context: Context, pkg: String) {
+        prefs(context).edit().putString(KEY_SYSTEM_ENGINE, pkg ?: "").apply()
+    }
+
+    /** 已安装的 TTS 引擎包名（含系统默认；用我们声明的 TTS_SERVICE 可见性查询）。 */
+    @JvmStatic
+    fun installedEngines(context: Context): List<String> {
+        val out = LinkedHashSet<String>()
+        try {
+            val intent = android.content.Intent(
+                android.speech.tts.TextToSpeech.Engine.INTENT_ACTION_TTS_SERVICE)
+            for (ri in context.packageManager.queryIntentServices(intent, 0)) {
+                ri.serviceInfo?.packageName?.let { out.add(it) }
+            }
+        } catch (t: Throwable) {
+        }
+        try {
+            val def = android.provider.Settings.Secure.getString(
+                context.contentResolver, "tts_default_synth")
+            if (def != null && def.isNotEmpty()) out.add(def)
+        } catch (t: Throwable) {
+        }
+        return out.toList()
     }
 
     /** 发音人：multi = 「目录/名字」；system = Voice.name；http = 模板内自行指定。 */

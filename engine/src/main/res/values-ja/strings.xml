@@ -137,6 +137,9 @@
     <string name="engine_ons_side_settings">ゲーム設定</string>
     <string name="engine_ons_tts_engine_not_ready">TTS エンジン未準備（既定の TTS エンジン/音声を確認）</string>
     <string name="engine_ons_tts_lang_unsupported">言語/音声が利用できません（エンジン/音声を変更）</string>
+    <string name="engine_ons_tts_sys_engine">システム TTS エンジン</string>
+    <string name="engine_ons_tts_sys_engine_default">システム既定に従う</string>
+    <string name="engine_ons_tts_sys_settings">システム TTS 設定を開く</string>
     <string name="engine_ons_tts_streaming">TTS ストリーミング再生（低遅延）</string>
     <string name="engine_ons_settings_game_volume">ゲーム音量（アプリ内）</string>
     <string name="engine_ons_magnifier_select_hint">拡大したい範囲をドラッグで選択し、指を離して確定</string>

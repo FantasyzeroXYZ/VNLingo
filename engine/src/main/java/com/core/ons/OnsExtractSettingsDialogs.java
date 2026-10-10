@@ -186,6 +186,18 @@ public final class OnsExtractSettingsDialogs {
         showVoicePicker(activity, engine, onChanged);
     }
 
+    /** TTS 引擎显示名：应用名（读不到就退回包名，避免下拉里出现空白项）。 */
+    static String ttsEngineLabel(android.content.Context context, String pkg) {
+        try {
+            android.content.pm.PackageManager pm = context.getPackageManager();
+            android.content.pm.ApplicationInfo ai = pm.getApplicationInfo(pkg, 0);
+            CharSequence label = pm.getApplicationLabel(ai);
+            if (label != null && label.length() > 0) return label.toString();
+        } catch (Throwable ignored) {
+        }
+        return pkg;
+    }
+
     /**
      * TTS 试听（独立页「试听」行与弹窗共用）：系统引擎直呼 TextToSpeech，
      * HTTP / MultiTTS 走合成后本地播放。
@@ -1571,6 +1583,38 @@ public final class OnsExtractSettingsDialogs {
                     syncVoice.run();
                 });
         box.addView(engineRow);
+
+        // 系统 TTS 的**具体引擎**（包名）下拉：「跟随系统默认」+ 已安装引擎。
+        // 不需要 WRITE_SECURE_SETTINGS：把包名传给 TextToSpeech 构造函数即可，也不影响别的应用。
+        {
+            final java.util.List<String> pkgs =
+                    new java.util.ArrayList<>(OnsTtsEngines.installedEngines(activity));
+            final java.util.List<String> labels = new java.util.ArrayList<>();
+            labels.add(activity.getString(R.string.engine_ons_tts_sys_engine_default));
+            for (String p : pkgs) labels.add(ttsEngineLabel(activity, p));
+            int sel = 0;
+            String cur = OnsTtsEngines.systemEngine(activity);
+            if (!cur.isEmpty()) {
+                int idx = pkgs.indexOf(cur);
+                if (idx >= 0) sel = idx + 1;
+            }
+            box.addView(SettingsWidgets.dropdownRow(activity, R.drawable.ic_volume,
+                    activity.getString(R.string.engine_ons_tts_sys_engine), labels, sel,
+                    position -> OnsTtsEngines.setSystemEngine(activity,
+                            position <= 0 ? "" : pkgs.get(position - 1))));
+        }
+        // 进入系统 TTS 设置（装语音数据/改系统默认；我们只影响本应用）
+        LinearLayout sysSettingsRow = settingNavRow(activity, R.drawable.ic_settings,
+                R.string.engine_ons_tts_sys_settings, null);
+        sysSettingsRow.setOnClickListener(v -> {
+            try {
+                android.content.Intent i = new android.content.Intent("com.android.settings.TTS_SETTINGS");
+                i.addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK);
+                activity.startActivity(i);
+            } catch (Throwable ignored) {
+            }
+        });
+        box.addView(sysSettingsRow);
         box.addView(testHint, matchWrap());
         box.addView(testField, matchWrap());
         box.addView(httpHint, matchWrap());
