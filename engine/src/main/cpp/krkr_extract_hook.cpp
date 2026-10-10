@@ -36,27 +36,12 @@
 #include <sys/mman.h>
 #include <unistd.h>
 #include <unordered_map>
-#include <unordered_set>
-#include <vector>
-#include <cstdio>
-#include <cstdlib>
-
-// 前向声明（全局作用域）：迟到安装需要直接调用 FT 安装体
-bool krkr_do_install_ft_hooks(void* gameHandle, const char* library);
 
 #define TAG "KrkrExtract"
 #define LOGI(...) __android_log_print(ANDROID_LOG_INFO, TAG, __VA_ARGS__)
 #define LOGW(...) __android_log_print(ANDROID_LOG_WARN, TAG, __VA_ARGS__)
 
 namespace {
-
-// 前向声明：迟到安装需要调用它（定义在本文件后部，位于匿名命名空间之外）
-extern "C" bool krkr_install_ft_probe(void* gameHandle, const char* library);
-void krkrLateFtMaybe();   // 定义在本文件中部（运行时迟到安装 FT 链）
-extern void* gKrkrLateHandle;      // 运行时迟到安装所需的引擎句柄
-extern std::string gKrkrLateLibrary;
-
-
 
 // cocos2d::Label::setString(const std::string&) —— 三个版本符号一致（llvm-nm 核实）
 constexpr const char* kLabelSetString = "_ZN7cocos2d5Label9setStringERKSs";
@@ -106,20 +91,6 @@ extern "C" void krkr_set_extract_diag(bool enabled) {
     gDiagEnabled.store(enabled, std::memory_order_relaxed);
 }
 
-// ---- 用户级启用开关（默认关闭）----
-// 本会话多次证明：这些钩子在部分 KRKR 内核上会影响引擎启动。因此默认**不装**，
-// 只有用户在界面上显式开启（经 JNI 调用 krkr_set_extract_user_enabled(true)）才安装。
-static std::atomic<bool> gExtractUserEnabled{false};
-
-extern "C" void krkr_set_extract_user_enabled(bool enabled) {
-    gExtractUserEnabled.store(enabled, std::memory_order_relaxed);
-    LOGI("krkr extract: user enabled = %d", enabled ? 1 : 0);
-}
-
-extern "C" bool krkr_extract_user_enabled() {
-    return gExtractUserEnabled.load(std::memory_order_relaxed);
-}
-
 static bool diagEnabled() { return gDiagEnabled.load(std::memory_order_relaxed); }
 
 // 首个 UTF-8 码点（诊断日志用：只打首码点与长度，避免中文全文刷屏/编码噪音）
@@ -129,106 +100,6 @@ unsigned long ftUtf8FirstCode(const std::string& s);
 const char* cowData(const void* legacyString) {
     if (legacyString == nullptr) return nullptr;
     return *reinterpret_cast<char* const*>(legacyString);
-}
-
-void emitText(const char* text);                  // 定义在本文件后部
-extern "C" bool krkr_engine_ready();             // 由 krkr_bridge.cpp 提供（引擎是否已就绪）
-
-// ---- 文本入队 / 排空（核心设计）----
-// 引擎热路径（TVPConsoleLog 等）**绝不同步调 JNI**：启动期的同步 JNI 会阻塞引擎
-// update 线程、使 TVPMainScene 的就绪判定跑不到（实测：launch UI forms ready 恒为 0 → 卡启动）。
-// 因此热路径只入队；等引擎就绪后再由 krkr_drain_text_queue() 排空上行。
-std::mutex gQueueMutex;
-std::vector<std::string> gTextQueue;
-
-/** 含 CJK（假名/汉字/全角）判定：与 NativeBridge.onKrkrText 的过滤保持一致。 */
-bool looksLikeDialogue(const char* s) {
-    if (s == nullptr) return false;
-    size_t i = 0;
-    const size_t n = std::strlen(s);
-    while (i < n) {
-        const unsigned char c = static_cast<unsigned char>(s[i]);
-        unsigned int cp = 0;
-        size_t len = 1;
-        if (c < 0x80) { cp = c; }
-        else if ((c & 0xE0) == 0xC0) { cp = c & 0x1F; len = 2; }
-        else if ((c & 0xF0) == 0xE0) { cp = c & 0x0F; len = 3; }
-        else if ((c & 0xF8) == 0xF0) { cp = c & 0x07; len = 4; }
-        else { ++i; continue; }
-        if (i + len > n) break;
-        for (size_t k = 1; k < len; ++k) cp = (cp << 6) | (static_cast<unsigned char>(s[i + k]) & 0x3F);
-        i += len;
-        if ((cp >= 0x3040 && cp <= 0x30FF) || (cp >= 0x4E00 && cp <= 0x9FFF) ||
-            (cp >= 0xFF00 && cp <= 0xFFEF)) {
-            return true;
-        }
-    }
-    return false;
-}
-
-/** 洁净判定：拒绝乱码（含 U+FFFD、控制字符比例过高、非 UTF-8 序列）。 */
-bool looksCleanText(const char* s, size_t n) {
-    size_t i = 0;
-    size_t cps = 0, good = 0, bad = 0;
-    while (i < n) {
-        const unsigned char c = static_cast<unsigned char>(s[i]);
-        unsigned int cp = 0;
-        size_t len = 1;
-        if (c < 0x80) { cp = c; }
-        else if ((c & 0xE0) == 0xC0) { cp = c & 0x1F; len = 2; }
-        else if ((c & 0xF0) == 0xE0) { cp = c & 0x0F; len = 3; }
-        else if ((c & 0xF8) == 0xF0) { cp = c & 0x07; len = 4; }
-        else { ++bad; ++i; continue; }
-        if (i + len > n) { ++bad; break; }
-        for (size_t k = 1; k < len; ++k) {
-            const unsigned char cc = static_cast<unsigned char>(s[i + k]);
-            if ((cc & 0xC0) != 0x80) { ++bad; break; }
-            cp = (cp << 6) | (cc & 0x3F);
-        }
-        i += len;
-        ++cps;
-        const bool printable =
-                (cp >= 0x20 && cp < 0x7F) ||
-                (cp >= 0x3000 && cp <= 0x30FF) ||     // 日文标点/假名
-                (cp >= 0x4E00 && cp <= 0x9FFF) ||     // 汉字
-                (cp >= 0xFF00 && cp <= 0xFFEF) ||     // 全角
-                (cp >= 0x2000 && cp <= 0x206F);       // 通用标点
-        if (cp == 0xFFFD) { return false; }           // 替换符 → 乱码
-        if (printable) { ++good; }
-    }
-    if (cps < 2) return false;
-    return bad == 0 && good * 10 >= cps * 9;          // 90% 以上可打印
-}
-
-/** 作为**对白**上行：洁净 + 含 CJK 才加 [FTLN] 前缀；否则**不上行**（避免乱码污染）。 */
-std::string asDialogueOrRaw(const char* text) {
-    std::string s = text != nullptr ? text : "";
-    if (s.empty()) return s;
-    if (!looksCleanText(s.c_str(), s.size())) {
-        return std::string();                          // 乱码：丢弃
-    }
-    if (looksLikeDialogue(s.c_str())) return std::string("[FTLN]") + s;
-    return s;
-}
-
-extern "C" void krkr_drain_text_queue();   // 前置声明
-
-void enqueueText(const char* text) {
-    if (text == nullptr) return;
-    std::lock_guard<std::mutex> lock(gQueueMutex);
-    if (gTextQueue.size() >= 256) gTextQueue.erase(gTextQueue.begin());   // 有界
-    gTextQueue.emplace_back(text);
-}
-
-/** 排空队列并逐条上行（只在"引擎已就绪"之后调用）。 */
-extern "C" void krkr_drain_text_queue() {
-    std::vector<std::string> pending;
-    {
-        std::lock_guard<std::mutex> lock(gQueueMutex);
-        if (gTextQueue.empty()) return;
-        pending.swap(gTextQueue);
-    }
-    for (const std::string& s : pending) emitText(s.c_str());
 }
 
 void emitText(const char* text) {
@@ -290,7 +161,6 @@ void hookedLabelSetString(void* self, const void* legacyString) {
     if (gLastText == text) return;
     gLastText.assign(text);
     emitText(text);
-    krkrLateFtMaybe();   // Label 活动 = 引擎已在运行 → 触发 FT 链迟到安装
 }
 
 void* shadowhookLib() {
@@ -394,7 +264,6 @@ FTLoadCharFn gOrigFTLoadChar = nullptr;
 // 实测（tsukikage）：对白渲染只经 FT_Load_Glyph(face, glyph_index)，码点→字形索引
 // 的映射在字体装载期一次性完成（FT_Get_Char_Index 只承载控制台文本）。故再补
 // FT_Load_Glyph 钩子 + 惰性反向映射（glyph_index → 码点）还原字符流。
-using FTLayoutGlyphFnAlias = int (*)(void* face, unsigned int glyphIndex, int loadFlags);
 using FTLoadGlyphFn = int (*)(void* face, unsigned int glyphIndex, int loadFlags);
 FTLoadGlyphFn gOrigFTLoadGlyph = nullptr;
 using FTGetFirstCharFn = unsigned long (*)(void* face, unsigned int* agindex);
@@ -713,14 +582,8 @@ void deriveAndMaybeEmitLocked(bool pageEnd, const std::string& snap) {
 void flushTimerLoop() {
     // 400ms 轮询 + 锁内只拷 512 字节尾部快照、推导在锁外：ARM 转译下
     // O(n²) 推导全速跑会饿死持同一锁的游戏渲染线程（实测 KRKR 主线程 ANR）
-    LOGI("flush thread: started (diag=%d)", diagEnabled() ? 1 : 0);
-    uint64_t heartbeat = 0;
     while (gFlushThreadRunning.load(std::memory_order_relaxed)) {
         std::this_thread::sleep_for(std::chrono::milliseconds(400));
-        // 心跳：证明线程活着并持续轮询（第 10 轮排查用；25 tick ≈ 10s 一条，不刷屏）
-        if (++heartbeat % 25 == 0) {
-            LOGI("flush thread: alive tick=%llu", static_cast<unsigned long long>(heartbeat));
-        }
         std::string snap;
         std::string rawCopy;
         size_t rawSize = 0;
@@ -819,72 +682,9 @@ std::string ftDerivePage(const std::string& raw) {
  * 码点入流唯一入口（FT_Get_Char_Index 与 FT_Load_Char 两条 GOT 通道共用）：
  * gPrevCode 相邻去重保证同一字符被两条路径重复喂入时只算一次。
  */
-/**
- * 保底直发（第⑪步，LunaHook 系工具的朴素做法）：
- * 不依赖判页线程（真机上它启动后即不再推进），直接在字形流侧判断"停顿" ——
- * 文本停顿 ≥400ms 且尾部有**新内容**、且含 CJK（与 NativeBridge 的过滤一致）→ 立即上行 [FTLN]。
- * 目的：先让面板**出字**（验收点），再谈更精细的判页。
- */
-std::string gLastDirectEmitted;
-std::atomic<uint64_t> gDirectEmitCalls{0};
-
-bool ftHasCjkUtf8(const std::string& s) {
-    size_t i = 0;
-    while (i < s.size()) {
-        unsigned char c = static_cast<unsigned char>(s[i]);
-        unsigned int cp = 0;
-        size_t len = 1;
-        if (c < 0x80) { cp = c; }
-        else if ((c & 0xE0) == 0xC0) { cp = c & 0x1F; len = 2; }
-        else if ((c & 0xF0) == 0xE0) { cp = c & 0x0F; len = 3; }
-        else if ((c & 0xF8) == 0xF0) { cp = c & 0x07; len = 4; }
-        else { ++i; continue; }
-        if (i + len > s.size()) break;
-        for (size_t k = 1; k < len; ++k) cp = (cp << 6) | (static_cast<unsigned char>(s[i + k]) & 0x3F);
-        i += len;
-        // 日文假名 / CJK 汉字 / 全角标点 → 视为对白候选
-        if ((cp >= 0x3040 && cp <= 0x30FF) || (cp >= 0x4E00 && cp <= 0x9FFF) ||
-            (cp >= 0xFF00 && cp <= 0xFFEF)) {
-            return true;
-        }
-    }
-    return false;
-}
-
-void ftMaybeEmitIdle() {
-    std::string line;
-    {
-        std::lock_guard<std::mutex> lock(gLineMutex);
-        const auto now = std::chrono::steady_clock::now();
-        if (now - gLastCharAt < std::chrono::milliseconds(400)) return;   // 还在打字/重绘
-        if (gRawBuf.empty()) return;
-        line = gRawBuf.size() > 512 ? gRawBuf.substr(gRawBuf.size() - 512) : gRawBuf;
-        if (line == gLastDirectEmitted) return;                            // 无新内容
-        if (!ftHasCjkUtf8(line)) return;                                   // 与桥上过滤一致
-        gLastDirectEmitted = line;
-    }
-    const uint64_t n = gDirectEmitCalls.fetch_add(1, std::memory_order_relaxed) + 1;
-    LOGI("ft line(direct#%llu): %.80s", static_cast<unsigned long long>(n), line.c_str());
-    std::string out = "[FTLN]";
-    out += line;
-    emitText(out.c_str());   // 锁外做 JNI，避免长时间持锁
-}
-
 void ftOnCode(unsigned long code) {
     if (!gHookInstalled.load(std::memory_order_relaxed)) return;
-    // ★ 启动期零开销：引擎就绪前不接字符流、不跑判页状态机。
-    // 依据：本文件的既有注释——"O(n²) 推导全速跑会饿死持同一锁的游戏渲染线程（实测 KRKR 主线程 ANR）"；
-    // 实测：FT 链一开（即使只留 GOT 钩子）启动期引擎的大量字形调用会把 `launch UI forms ready`
-    // 卡在 0 → 一直停在"正在启动游戏"。就绪前直接返回即可根治。
-    if (!krkr_engine_ready()) return;
     if (code < 0x20 || code >= 0x110000 || code == gPrevCode) return;
-    // B3 诊断：码点入流计数（与 ft glyph map HIT 对照，判断"命中后是否真的进流"）
-    static std::atomic<uint64_t> onCodeCalls{0};
-    const uint64_t oc = onCodeCalls.fetch_add(1, std::memory_order_relaxed) + 1;
-    if (diagEnabled() && (oc <= 20 || oc % 200 == 0)) {
-        LOGI("ft oncode: calls=%llu code=U+%04lX raw=%zu", static_cast<unsigned long long>(oc),
-             code & 0x1FFFFFul, gRawBuf.size());
-    }
     const auto now = std::chrono::steady_clock::now();
     std::lock_guard<std::mutex> lock(gLineMutex);
     ftFeedCharLocked(code);
@@ -909,8 +709,6 @@ void ftOnCode(unsigned long code) {
         if (gRawBuf.size() > 2048) gRawBuf.clear();
     }
     gLastCharAt = now;
-    // 保底直发：每次字形入流后顺带检查"是否已停顿"（锁内已在上面释放）
-    ftMaybeEmitIdle();
 }
 
 unsigned long hookedFTGetCharIndex(void* face, unsigned long code) {
@@ -937,154 +735,45 @@ unsigned long hookedFTLoadChar(void* face, unsigned long code, int flags) {
 // 映射在字体装载期由引擎自己建立（码点→字形），运行期只剩字形索引；
 // 这里用「让内核自己回答」的方式重建：对 BMP 区间逐码点问 gOrigFTGetCharIndex，
 // 取该字形索引的首次命中码点。65504 次 cmap 二分查找，一次性、毫秒级。
-//
-// **按 FT_Face 分别建表**（真机教训）：Yosuga 的对白字体与系统回退字体是两个不同的 face，
-// 之前全进程只建一份、且用**第一个**遇到的 face → 对白字体的字形号查不到 → 有字形无文本
-// （日志表现：glyph 有 calls，却 known=166/nextchar=0）。现在每个 face 各建一份。
 std::mutex gGlyphMapMutex;
-std::unordered_map<void*, std::unordered_map<unsigned int, unsigned long>*> gGlyphMaps;
-std::unordered_map<void*, unsigned> gGlyphMapAttempts;
+unsigned gGlyphMapBuildAttempts = 0;
 
-/** 只读查询：表就绪则返回，否则 nullptr（**绝不在渲染线程建表**）。 */
-std::unordered_map<unsigned int, unsigned long>* glyphMapReady(void* face) {
-    if (face == nullptr) return nullptr;
+void maybeBuildGlyphMap(void* face) {
+    if (gGlyphToCode.load(std::memory_order_acquire) != nullptr) return;
+    if (gOrigFTGetCharIndex == nullptr || face == nullptr) return;
     std::lock_guard<std::mutex> lock(gGlyphMapMutex);
-    auto it = gGlyphMaps.find(face);
-    return it == gGlyphMaps.end() ? nullptr : it->second;
-}
-
-/**
- * **非线程增量建表**（最终方案）：
- *  - 一次性 65504×N 次 FT_Get_Char_Index 跑在渲染线程 → 卡启动（真机复现）；
- *  - 改用 std::thread → 真机证明引擎进程里线程不可靠（二次调用从未发生）。
- * 因此改为：每次 FT_Load_Glyph 钩子只处理 512 个码点，跨多次调用把整表建完。
- * 既不打线程、也不阻塞启动；表未完成期间照常返回，不影响渲染。
- */
-struct GlyphMapProgress {
-    std::unordered_map<unsigned int, unsigned long>* map = nullptr;
-    unsigned long next = 0x20;
-};
-std::unordered_map<void*, GlyphMapProgress> gGlyphMapProgress;
-static const unsigned long kGlyphMapSlice = 512;
-
-void glyphMapStep(void* face) {
-    if (face == nullptr || gOrigFTGetCharIndex == nullptr) return;
-    GlyphMapProgress* st = nullptr;
-    {
-        std::lock_guard<std::mutex> lock(gGlyphMapMutex);
-        if (gGlyphMaps.count(face) != 0) return;   // 已建好
-        GlyphMapProgress& s = gGlyphMapProgress[face];
-        if (s.map == nullptr) {
-            s.map = new std::unordered_map<unsigned int, unsigned long>();
-            s.map->reserve(8192);
-            s.next = 0x20;
-        }
-        st = &s;
-    }
-    unsigned long code = st->next;
-    const unsigned long end = code + kGlyphMapSlice > 0xFFFF ? 0xFFFF : code + kGlyphMapSlice;
-    for (; code <= end; ++code) {
-        if (code >= 0xD800 && code <= 0xDFFF) continue;   // 代理区无效码点
+    if (gGlyphToCode.load(std::memory_order_acquire) != nullptr) return;
+    if (gGlyphMapBuildAttempts >= 5) return;  // 字型表尚未就绪时不反复扫
+    ++gGlyphMapBuildAttempts;
+    auto* map = new std::unordered_map<unsigned int, unsigned long>();
+    map->reserve(8192);
+    for (unsigned long code = 0x20; code <= 0xFFFF; ++code) {
+        if (code >= 0xD800 && code <= 0xDFFF) continue;  // 代理区无效码点
         const unsigned long index = gOrigFTGetCharIndex(face, code);
         if (index == 0) continue;
-        st->map->emplace(static_cast<unsigned int>(index), code);
+        map->emplace(static_cast<unsigned int>(index), code);
     }
-    st->next = end + 1;
-    if (st->next > 0xFFFF) {
-        std::lock_guard<std::mutex> lock(gGlyphMapMutex);
-        gGlyphMaps[face] = st->map;
-        const size_t entries = st->map->size();
-        gGlyphMapProgress.erase(face);
-        LOGI("ft glyph map built(incremental): face=%p entries=%zu", face, entries);
+    LOGI("ft glyph map built: face=%p entries=%zu attempts=%u", face, map->size(), gGlyphMapBuildAttempts);
+    if (!map->empty()) {
+        gGlyphToCode.store(map, std::memory_order_release);
     }
 }
-
-/** 字形观察（GOT 与 inline 两条入口共用）。 */
-void ftObserveGlyph(void* face, unsigned int glyphIndex);
 
 int hookedFTLoadGlyph(void* face, unsigned int glyphIndex, int loadFlags) {
     const int err = gOrigFTLoadGlyph != nullptr ? gOrigFTLoadGlyph(face, glyphIndex, loadFlags) : 0;
-    ftObserveGlyph(face, glyphIndex);
-    return err;
-}
-
-/** inline hook 版替换函数：trampoline 就是"原函数"（含被搬移的入口指令）。 */
-static FTLayoutGlyphFnAlias gFtLoadGlyphTrampoline = nullptr;
-
-int hookedFTLoadGlyphInline(void* face, unsigned int glyphIndex, int loadFlags) {
-    const int err = gFtLoadGlyphTrampoline != nullptr
-            ? gFtLoadGlyphTrampoline(face, glyphIndex, loadFlags)
-            : 0;
-    ftObserveGlyph(face, glyphIndex);
-    return err;
-}
-
-// ---- 运行时（迟到）安装 FT 链 ----
-void* gKrkrLateHandle = nullptr;
-std::string gKrkrLateLibrary;
-std::atomic<bool> gKrkrLateDone{false};
-std::chrono::steady_clock::time_point gKrkrFirstConsoleAt{};
-std::atomic<bool> gKrkrConsoleSeen{false};
-
-/**
- * 由控制台活动触发的迟到安装：只有"引擎已在运行（有控制台输出）且距离首次输出≥30s"时才装，
- * 从而彻底避开启动关键路径；且不使用 std::thread（引擎进程里线程不可靠）。
- * 安装内容与启动期相同，但此时引擎已就绪，不会再卡启动。
- */
-void krkrLateFtMaybe() {
-    if (gKrkrLateDone.load(std::memory_order_relaxed)) return;
-    if (gKrkrLateHandle == nullptr) return;
-    const auto now = std::chrono::steady_clock::now();
-    if (!gKrkrConsoleSeen.exchange(true)) {
-        gKrkrFirstConsoleAt = now;
-        return;
-    }
-    if (now - gKrkrFirstConsoleAt < std::chrono::seconds(5)) return;   // 5s：游戏早期活动即可触发
-    if (gKrkrLateDone.exchange(true)) return;
-    LOGI("ft probe: LATE install triggered (engine running, label/console active ≥30s)");
-    krkr_install_ft_probe(gKrkrLateHandle,
-                          gKrkrLateLibrary.empty() ? "libfreetype.so" : gKrkrLateLibrary.c_str());
-}
-
-/** 字形观察（GOT 通道 hookedFTLoadGlyph 与 inline 通道 hookedFTLoadGlyphInline 共用）。 */
-void ftObserveGlyph(void* face, unsigned int glyphIndex) {
     const uint64_t calls = gFtGlyphCalls.fetch_add(1, std::memory_order_relaxed) + 1;
     if (diagEnabled() && (calls <= 20 || calls % 500 == 0)) {
-        LOGI("ft glyph: calls=%llu index=%u", static_cast<unsigned long long>(calls), glyphIndex);
+        LOGI("ft glyph: calls=%llu index=%u err=%d", static_cast<unsigned long long>(calls),
+             glyphIndex, err);
     }
-    if (!gHookInstalled.load(std::memory_order_relaxed)) return;
-    const auto* map = glyphMapReady(face);
-    if (map == nullptr) {
-        // 启动期**绝不建表**：整表要 65504×N 次 cmap 查询，即便增量（512/次）也会拖住启动
-        //（实测：FT 链一开，launch UI forms ready 恒为 0 → 卡"正在启动游戏"）。
-        // 引擎就绪后再开始增量建表：既不打线程，也不影响启动。
-        if (!krkr_engine_ready()) return;
-        glyphMapStep(face);   // 就绪后每次推进 512 个码点
-        return;
-    }
+    if (!gHookInstalled.load(std::memory_order_relaxed)) return err;
+    if (gGlyphToCode.load(std::memory_order_acquire) == nullptr) maybeBuildGlyphMap(face);
+    const auto* map = gGlyphToCode.load(std::memory_order_acquire);
+    if (map == nullptr) return err;
     const auto it = map->find(glyphIndex);
-    // B3 诊断：字形还原是否真的命中（第 9 轮关键埋点）——
-    //   hit 增长 → 字形→码点通了，问题在后续判页/上行；
-    //   miss 增长 → cmap 反查仍对不上（字体/face 选错或字形索引非 cmap 域）。
-    static std::atomic<uint64_t> hits{0};
-    static std::atomic<uint64_t> misses{0};
-    if (it != map->end()) {
-        const uint64_t h = hits.fetch_add(1, std::memory_order_relaxed) + 1;
-        if (diagEnabled() && (h <= 20 || h % 200 == 0)) {
-            LOGI("ft glyph map HIT: idx=%u → U+%04lX (hits=%llu misses=%llu)", glyphIndex,
-                 it->second, static_cast<unsigned long long>(h),
-                 static_cast<unsigned long long>(misses.load(std::memory_order_relaxed)));
-        }
-        ftOnCode(it->second);
-        gPrevCode = it->second;
-    } else {
-        const uint64_t m = misses.fetch_add(1, std::memory_order_relaxed) + 1;
-        if (diagEnabled() && (m <= 10 || m % 500 == 0)) {
-            LOGI("ft glyph map MISS: idx=%u (hits=%llu misses=%llu) entries=%zu", glyphIndex,
-                 static_cast<unsigned long long>(hits.load(std::memory_order_relaxed)),
-                 static_cast<unsigned long long>(m), map->size());
-        }
-    }
+    if (it != map->end()) ftOnCode(it->second);
+    gPrevCode = it != map->end() ? it->second : gPrevCode;
+    return err;
 }
 
 /** FT_Get_First_Char / FT_Get_Next_Char：仅计数（判定「码点→字形映射在装载期完成」）。 */
@@ -1094,367 +783,6 @@ unsigned long hookedFTGetNextChar(void* face, unsigned long charCode, unsigned i
 }
 
 }  // namespace
-
-// ---- 引擎识别与目标探测（对齐 LunaTranslator/LunaHook 的"先识别引擎、再选目标集"流程）----
-// 背景：我们此前只 dlsym 一个固定符号 "Label::setString"（外加 Label 虚表），
-// 老内核（如 KAG3 时代的游戏）根本没有这个导出 → 直接失败，且只留一句 warn。
-// LunaHook 的做法是：先按模块名/RTTI 识别引擎族与版本，再套对应的目标集，失败要吵。
-// 这里先补"识别 + 候选探测 + 明确失败日志"（纯日志，不改行为），为后续按版本挂不同目标打基础。
-static const char* kDialogueSymbolCandidates[] = {
-        "Label::setString",                 // 已支持的构建（导出名）
-        "_ZN5Label9setStringEPKc",          // 同上，mangled
-        "_ZN5Label9setStringERKNS_6ttstrE", // 另一常见签名（ttstr 版）
-        "KAGParser::setText",
-        "TVPMainScene::update",
-};
-static const char* kEngineTraits[] = {
-        "KiriKiriZ", "krkrz", "KAGParser", "KAG3", "TVPMainScene", "TVP", ".tjs",
-};
-
-/**
- * 列出模块里**与文本相关的导出符号**（.dynstr 是明文串表，按关键字筛即可，无需解析 ELF）。
- *
- * 目的（对齐 LunaHook 的"先识别、再选靶"）：KRKR 常把 C++ 符号隐藏，dlsym 时有时无；
- * 只有先看清 libgame.so 里到底有哪些与文本/标签相关的名字，才能决定钩谁、或改走代码特征。
- */
-static void dumpTextSymbols(const char* path, const char* tag) {
-    FILE* f = std::fopen(path, "rb");
-    if (f == nullptr) return;
-    static const char* kKeywords[] = {"Label", "Text", "String", "KAG", "TVP", "Glyph", "Font"};
-    std::unordered_set<std::string> found;
-    std::string cur;
-    char buf[1 << 20];
-    size_t n;
-    int printed = 0;
-    while ((n = std::fread(buf, 1, sizeof(buf), f)) > 0) {
-        for (size_t i = 0; i < n; ++i) {
-            const unsigned char c = static_cast<unsigned char>(buf[i]);
-            if (c >= 0x20 && c < 0x7f) {
-                cur.push_back(static_cast<char>(c));
-                if (cur.size() > 512) cur.erase(0, cur.size() - 512);
-                continue;
-            }
-            if (cur.size() >= 4) {
-                bool hit = false;
-                for (const char* kw : kKeywords) {
-                    if (cur.find(kw) != std::string::npos) { hit = true; break; }
-                }
-                // 只收像符号的名字（含 _ZN/_ZTV 前缀的 mangled 名，或含 :: 的裸名）
-                if (hit && (cur.rfind("_Z", 0) == 0 || cur.find("::") != std::string::npos)) {
-                    if (found.insert(cur).second && printed < 80) {
-                        ++printed;
-                        LOGI("extract symbols[%s]: %s", tag, cur.c_str());
-                    }
-                }
-            }
-            cur.clear();
-        }
-    }
-    std::fclose(f);
-    LOGI("extract symbols[%s]: total=%zu (keyword-filtered, capped at 80)", tag, found.size());
-}
-
-static bool fileContainsTrait(const char* path, const char* needle, size_t limitBytes) {
-    FILE* f = std::fopen(path, "rb");
-    if (f == nullptr) return false;
-    const size_t needleLen = std::strlen(needle);
-    std::vector<char> buf(1 << 20);
-    size_t total = 0;
-    std::string tail;
-    while (total < limitBytes) {
-        const size_t n = std::fread(buf.data(), 1, buf.size(), f);
-        if (n == 0) break;
-        total += n;
-        std::string chunk = tail;
-        chunk.append(buf.data(), n);
-        if (chunk.find(needle) != std::string::npos) {
-            std::fclose(f);
-            return true;
-        }
-        const size_t keep = needleLen > 1 ? needleLen - 1 : 0;
-        tail = chunk.size() > keep ? chunk.substr(chunk.size() - keep) : chunk;
-    }
-    std::fclose(f);
-    return false;
-}
-
-/**
- * 记录"引擎身份 + 候选目标命中情况"。
- * 纯诊断：dlsym 逐个候选、按 /proc/self/maps 找游戏自己的模块并扫特征串，
- * 最后给出明确的"没有已知目标"结论（用户反复反馈 hook 不稳，缺少的就是这条线索）。
- */
-static void logEngineIdentity(void* gameHandle) {
-    LOGI("extract identify: candidates=%zu", sizeof(kDialogueSymbolCandidates) /
-                                                 sizeof(kDialogueSymbolCandidates[0]));
-    for (const char* name : kDialogueSymbolCandidates) {
-        void* sym = gameHandle != nullptr ? dlsym(gameHandle, name) : nullptr;
-        LOGI("extract identify: dlsym %s -> %s", name, sym != nullptr ? "FOUND" : "missing");
-    }
-    // 扫游戏自己的模块（排除系统库）：特征串可区分 KiriKiriZ / 老 KAG3 等
-    FILE* maps = std::fopen("/proc/self/maps", "r");
-    if (maps == nullptr) return;
-    std::unordered_set<std::string> seen;
-    char line[512];
-    while (std::fgets(line, sizeof(line), maps) != nullptr) {
-        const char* slash = std::strchr(line, '/');
-        if (slash == nullptr) continue;
-        const char* nl = std::strchr(slash, '\n');
-        std::string path(slash, nl != nullptr ? static_cast<size_t>(nl - slash) : std::strlen(slash));
-        if (path.find(".so") == std::string::npos) continue;
-        if (path.find("/system/") != std::string::npos || path.find("/apex/") != std::string::npos) {
-            continue;
-        }
-        if (!seen.insert(path).second) continue;
-        std::string traits;
-        for (const char* t : kEngineTraits) {
-            if (fileContainsTrait(path.c_str(), t, 6u << 20)) {
-                if (!traits.empty()) traits += ",";
-                traits += t;
-            }
-        }
-        LOGI("extract identify: module=%s traits=[%s]", path.c_str(),
-             traits.empty() ? "-" : traits.c_str());
-        // 有引擎特征串的就是游戏内核：列出它的文本相关导出符号（选靶依据）
-        if (!traits.empty()) {
-            dumpTextSymbols(path.c_str(), "engine");
-        }
-    }
-    std::fclose(maps);
-}
-
-// ---- 最小 arm64 inline hook（第②步：shadowhook 在本机 SIGABRT、虚表补丁拦不到直接调用）----
-// 做法：把目标函数入口 16 字节（4 条指令）替换为 `ldr x16, #8; br x16; .quad replacement`，
-// 被搬移的 4 条指令放进 trampoline，执行完再跳回 target+16。
-// 安全阀：若前 4 条指令含 PC 相对指令（ADR/ADRP/B/BL/LDR-literal），**拒绝打补丁**并记日志
-// —— 这类指令搬到 trampoline 会算错地址（宁可不钩，也不能把引擎改坏）。
-// 注意：必须用 extern "C" 且 **hidden 可见性**，naked 里的 adrp/:lo12: 才能按本地符号解析
-// （C++ static 内部链接符号汇编引用不到；默认可见性又会要求走 GOT → 报 -fPIC 重定位错误）。
-extern "C" __attribute__((visibility("hidden"))) void* gKrkrTrampoline = nullptr;   // A: const char16_t* 版
-extern "C" __attribute__((visibility("hidden"))) void* gKrkrTrampolineB = nullptr;  // B: const tTJSString& 版
-static void* gKrkrHookTarget = nullptr;      // 被 inline hook 的原函数入口
-
-extern "C" void krkr_console_log_hook();    // A: 见下方 naked 函数
-extern "C" void krkr_console_log_hook_b();  // B: tTJSString& 版
-
-// ---- 指针安全阀（用户实测：点进游戏闪退）----
-// 控制台对象里存的是"猜测的字符指针"，直接解引用遇到野指针就是 SIGSEGV → 整个游戏闪退。
-// 这里先用 /proc/self/maps 建一次**可读区间**缓存，任何"猜指针"的读取前都必须通过校验。
-static bool isReadablePtr(const void* p, size_t len) {
-    static std::vector<std::pair<uintptr_t, uintptr_t>> ranges;
-    static std::once_flag once;
-    std::call_once(once, [] {
-        FILE* f = std::fopen("/proc/self/maps", "r");
-        if (f == nullptr) return;
-        char line[512];
-        while (std::fgets(line, sizeof(line), f) != nullptr) {
-            unsigned long lo = 0, hi = 0;
-            char perms[8] = {0};
-            if (std::sscanf(line, "%lx-%lx %7s", &lo, &hi, perms) == 3 && perms[0] == 'r') {
-                ranges.emplace_back(static_cast<uintptr_t>(lo), static_cast<uintptr_t>(hi));
-            }
-        }
-        std::fclose(f);
-        LOGI("ptr guard: %zu readable ranges", ranges.size());
-    });
-    const uintptr_t a = reinterpret_cast<uintptr_t>(p);
-    const uintptr_t b = a + len;
-    if (b < a) return false;
-    for (const auto& r : ranges) {
-        if (a >= r.first && b <= r.second) return true;
-    }
-    return false;
-}
-
-extern "C" void krkr_on_console_log(const void* text);   // 定义见下方（UTF-16/UTF-8 自适应）
-extern "C" bool krkr_install_ft_probe(void* gameHandle, const char* library);
-
-/** B：tTJSString& 版的第一参数是对象，先把原始字节按 hex 打出来（确认布局/是否真的是文本）。 */
-extern "C" void krkr_on_console_log_obj(const void* obj) {
-    // 【离线反汇编得出】TVPConsoleLog(const tTJSString&, bool) 的实现里：
-    //   ldr x9,[obj]        ; ldr x10,[empty_rep] ; sub x8,x9,#0x18 ; cmp x8,x10
-    // 即 tTJSString 内含 COW basic_string<char16_t>：
-    //   对象 offset 0 = _Rep*
-    //   _Rep + 0x00   = 长度（32 位）
-    //   _Rep + 0x18   = 字符数据（char16_t*）
-    if (obj == nullptr || !isReadablePtr(obj, 8)) return;
-    uintptr_t rep = 0;
-    memcpy(&rep, obj, sizeof(rep));
-    if (rep >= 0x1000 && isReadablePtr(reinterpret_cast<const void*>(rep), 0x20)) {
-        uint32_t len = 0;
-        memcpy(&len, reinterpret_cast<const void*>(rep), sizeof(len));
-        const char16_t* chars = reinterpret_cast<const char16_t*>(rep + 0x18);
-        if (len > 0 && len < 8192 && isReadablePtr(chars, (static_cast<size_t>(len) + 1) * 2)) {
-            krkr_on_console_log(chars);   // 复用 UTF-16 解码
-            krkrLateFtMaybe();
-            return;
-        }
-    }
-    krkrLateFtMaybe();
-}
-
-extern "C" void krkr_console_log_hook();
-
-static bool isPcRelative(uint32_t insn) {
-    if ((insn & 0x1F000000u) == 0x10000000u) return true;   // ADR / ADRP
-    if ((insn & 0x7C000000u) == 0x14000000u) return true;   // B / BL
-    if ((insn & 0x3B000000u) == 0x18000000u) return true;   // LDR (literal)
-    return false;
-}
-
-/** 安装 inline hook；成功返回 true 并把 trampoline 写入 *trampolineOut。 */
-static bool installInlineHook(void* target, void* replacement, void** trampolineOut) {
-    if (target == nullptr || replacement == nullptr) return false;
-    auto* insns = reinterpret_cast<uint32_t*>(target);
-    for (int i = 0; i < 4; ++i) {
-        if (isPcRelative(insns[i])) {
-            LOGW("inline hook: target %p insn[%d]=0x%08x is PC-relative → refuse to patch",
-                 target, i, insns[i]);
-            return false;
-        }
-    }
-    const long pageSize = sysconf(_SC_PAGESIZE);
-    if (pageSize <= 0) return false;
-    // trampoline：[被搬移的 16 字节][ldr x16,#8; br x16; .quad target+16]
-    void* tramp = mmap(nullptr, static_cast<size_t>(pageSize), PROT_READ | PROT_WRITE | PROT_EXEC,
-                       MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
-    if (tramp == MAP_FAILED) return false;
-    auto* t = reinterpret_cast<uint32_t*>(tramp);
-    for (int i = 0; i < 4; ++i) t[i] = insns[i];
-    t[4] = 0x58000050u;   // ldr x16, #8   （PC+8 = 下一条指令后的字面量）
-    t[5] = 0xD61F0200u;   // br x16
-    *reinterpret_cast<uint64_t*>(t + 6) = reinterpret_cast<uint64_t>(target) + 16;
-    __builtin___clear_cache(reinterpret_cast<char*>(tramp),
-                            reinterpret_cast<char*>(tramp) + pageSize);
-    // 改写目标入口
-    const uintptr_t page = reinterpret_cast<uintptr_t>(target)
-            & ~(static_cast<uintptr_t>(pageSize) - 1);
-    if (mprotect(reinterpret_cast<void*>(page), static_cast<size_t>(pageSize),
-                 PROT_READ | PROT_WRITE | PROT_EXEC) != 0) {
-        LOGW("inline hook: mprotect RWX failed errno=%d", errno);
-        munmap(tramp, static_cast<size_t>(pageSize));
-        return false;
-    }
-    insns[0] = 0x58000050u;   // ldr x16, #8
-    insns[1] = 0xD61F0200u;   // br x16
-    *reinterpret_cast<uint64_t*>(insns + 2) = reinterpret_cast<uint64_t>(replacement);
-    mprotect(reinterpret_cast<void*>(page), static_cast<size_t>(pageSize),
-             PROT_READ | PROT_EXEC);
-    __builtin___clear_cache(reinterpret_cast<char*>(target),
-                            reinterpret_cast<char*>(target) + 16);
-    *trampolineOut = tramp;
-    LOGI("inline hook: armed target=%p trampoline=%p", target, tramp);
-    return true;
-}
-
-/** TVPConsoleLog 的替换实现（C 侧）：把控制台文本按 UTF-16/UTF-8 自适应上行。 */
-extern "C" void krkr_on_console_log(const void* text) {
-    if (text == nullptr) return;
-    if (!isReadablePtr(text, 512)) return;   // 野指针一律不碰
-    const unsigned char* p = static_cast<const unsigned char*>(text);
-    // 宽松识别：UTF-16LE 的日文/中文常见形如 XX 3X 00 XX（高位字节多为 0 或 0x30~0x9F）
-    size_t wide = 0, total = 0;
-    for (size_t i = 0; i + 1 < 256 && p[i] != 0; i += 2, ++total) {
-        if (p[i + 1] == 0x00 || (p[i + 1] >= 0x30 && p[i + 1] <= 0x9F)) ++wide;
-    }
-    std::string utf8;
-    if (total >= 2 && wide * 2 >= total) {
-        for (size_t i = 0; i + 1 < 512; i += 2) {
-            const uint32_t cp = p[i] | (static_cast<uint32_t>(p[i + 1]) << 8);
-            if (cp == 0) break;
-            if (cp < 0x80) {
-                utf8.push_back(static_cast<char>(cp));
-            } else if (cp < 0x800) {
-                utf8.push_back(static_cast<char>(0xC0 | (cp >> 6)));
-                utf8.push_back(static_cast<char>(0x80 | (cp & 0x3F)));
-            } else {
-                utf8.push_back(static_cast<char>(0xE0 | (cp >> 12)));
-                utf8.push_back(static_cast<char>(0x80 | ((cp >> 6) & 0x3F)));
-                utf8.push_back(static_cast<char>(0x80 | (cp & 0x3F)));
-            }
-        }
-    } else {
-        utf8.assign(reinterpret_cast<const char*>(text), ::strnlen(reinterpret_cast<const char*>(text), 512));
-    }
-    if (utf8.empty()) return;
-    LOGI("console text(%zu): %.60s", utf8.size(), utf8.c_str());
-    // 热路径策略：**引擎未就绪前只入队（零 JNI）**；就绪后直接上行。
-    // 这样既不影响启动（根因修复），又能在就绪后即时送达。
-    const std::string out = asDialogueOrRaw(utf8.c_str());
-    if (out.empty()) return;   // 乱码/空 → 不上行
-    if (krkr_engine_ready()) {
-        emitText(out.c_str());
-    } else {
-        enqueueText(out.c_str());
-    }
-    krkrLateFtMaybe();
-}
-
-/**
- * 裸函数 trampoline：保存 x0-x9 与 q0-q7 → 调 C 侧（x0 仍是第一个参数）→ 恢复 → 跳回 target+16。
- * 只做"透传 + 观察"，不改被钩函数的语义与返回值。
- */
-extern "C" __attribute__((naked)) void krkr_console_log_hook() {
-    __asm__ volatile(
-            "sub sp, sp, #320\n"
-            "stp x0, x1, [sp, #0]\n"
-            "stp x2, x3, [sp, #16]\n"
-            "stp x4, x5, [sp, #32]\n"
-            "stp x6, x7, [sp, #48]\n"
-            "stp x8, x9, [sp, #64]\n"
-            "stp q0, q1, [sp, #80]\n"
-            "stp q2, q3, [sp, #112]\n"
-            "stp q4, q5, [sp, #144]\n"
-            "stp q6, q7, [sp, #176]\n"
-            "str x30, [sp, #304]\n"          // ★ 关键：保存 LR
-            "bl krkr_on_console_log\n"
-            "ldr x30, [sp, #304]\n"          // ★ 关键：恢复 LR（被搬移的 stp x29,x30 会用）
-            "ldp x0, x1, [sp, #0]\n"
-            "ldp x2, x3, [sp, #16]\n"
-            "ldp x4, x5, [sp, #32]\n"
-            "ldp x6, x7, [sp, #48]\n"
-            "ldp x8, x9, [sp, #64]\n"
-            "ldp q0, q1, [sp, #80]\n"
-            "ldp q2, q3, [sp, #112]\n"
-            "ldp q4, q5, [sp, #144]\n"
-            "ldp q6, q7, [sp, #176]\n"
-            "add sp, sp, #320\n"
-            "adrp x16, gKrkrTrampoline\n"
-            "add x16, x16, :lo12:gKrkrTrampoline\n"
-            "ldr x16, [x16]\n"
-            "br x16\n");
-}
-
-/** B 路（tTJSString& 重载）的 naked trampoline：同上，只是跳回自己的 trampoline 指针。 */
-extern "C" __attribute__((naked)) void krkr_console_log_hook_b() {
-    __asm__ volatile(
-            "sub sp, sp, #320\n"
-            "stp x0, x1, [sp, #0]\n"
-            "stp x2, x3, [sp, #16]\n"
-            "stp x4, x5, [sp, #32]\n"
-            "stp x6, x7, [sp, #48]\n"
-            "stp x8, x9, [sp, #64]\n"
-            "stp q0, q1, [sp, #80]\n"
-            "stp q2, q3, [sp, #112]\n"
-            "stp q4, q5, [sp, #144]\n"
-            "stp q6, q7, [sp, #176]\n"
-            "str x30, [sp, #304]\n"          // ★ 关键：保存 LR
-            "bl krkr_on_console_log_obj\n"
-            "ldr x30, [sp, #304]\n"          // ★ 关键：恢复 LR
-            "ldp x0, x1, [sp, #0]\n"
-            "ldp x2, x3, [sp, #16]\n"
-            "ldp x4, x5, [sp, #32]\n"
-            "ldp x6, x7, [sp, #48]\n"
-            "ldp x8, x9, [sp, #64]\n"
-            "ldp q0, q1, [sp, #80]\n"
-            "ldp q2, q3, [sp, #112]\n"
-            "ldp q4, q5, [sp, #144]\n"
-            "ldp q6, q7, [sp, #176]\n"
-            "add sp, sp, #320\n"
-            "adrp x16, gKrkrTrampolineB\n"
-            "add x16, x16, :lo12:gKrkrTrampolineB\n"
-            "ldr x16, [x16]\n"
-            "br x16\n");
-}
 
 extern "C" bool krkr_bridge_got_hook(const char* library, const char* symbol,
                                      void* replacement, void** original);
@@ -1467,43 +795,7 @@ extern "C" bool krkr_bridge_got_hook(const char* library, const char* symbol,
  * @return 是否成功挂钩
  */
 extern "C" bool krkr_install_extract_hook(void* gameHandle, JNIEnv* env) {
-    if (gameHandle == nullptr) return false;
-    // 开关必须在最外层作用域声明（下面 env!=nullptr 分支与后续逻辑都要用）
-    static const bool kKrkrExtractEnabled = true;   // x30 修复后重开（控制台链）
-    static const bool kEnableEngineIdentityLog = true;
-    static const bool kEnableConsoleInlineHook = true;
-    // 双开关：编译期硬开关（内核兼容性未确认前保持 false）+ 用户级开关（默认 false）。
-    // 只有两者都放开才安装 → 默认状态下绝不会影响游戏启动。
-    if (!kKrkrExtractEnabled) {
-        LOGW("krkr extract hooks DISABLED (hard switch)");
-        return false;
-    }
-    if (!krkr_extract_user_enabled()) {
-        LOGI("krkr extract hooks not installed (user switch off, default)");
-        return false;
-    }
-    // 记录句柄：迟到安装 FT 链需要它（库名未知时由迟到安装自行回退/探测）
-    if (gKrkrLateHandle == nullptr) gKrkrLateHandle = gameHandle;
-    // 注：曾用"后台线程延后 20s 安装"来避开启动关键路径，但真机证实
-    // **引擎进程里 std::thread 不可靠**（FT 探针的延后二次调用从未发生）。
-    // 阻塞的真正原因（在渲染线程同步建 65504×N 次字形反查表）已改为异步构建，
-    // 因此这里恢复**立即安装**：挂钩本身只是改几个字节 + 解析符号，开销极小。
-    if (env == nullptr) {
-        // 延后进入：跳过 JNI 缓存（首次调用已完成），直接挂勾子
-    } else {
-    // ⚠️⚠️ 紧急开关（回归止血）：本会话新增的 KRKR 识别/钩子链导致 **两个 KRKR 游戏都卡在
-    // "正在启动游戏"**（宿主日志：`Kirikiroid2: direct game launch waits for native scene
-    // transition` + `KrkrBridge: launch UI forms ready count=0`），即引擎始终不上报 UI 就绪。
-    // 先整体停用 KRKR 提取钩子，保证游戏可正常进入；之后再按单项开关逐个打开定位
-    // （引擎识别日志 / TVPConsoleLog inline hook / FT 字形链 各自独立验证）。
-    // 回归 bisect（第⑫轮）：三项独立开关，逐个打开并用"游戏能否正常进入 + 面板是否出字"验证。
-    //   A 引擎识别日志（同步读 maps/扫模块/转储符号，最可疑）
-    //   B TVPConsoleLog inline hook（核心提取通道）
-    //   C FT 字形链（GOT + 按-face 反查表 + 停顿直发）
-    if (!kKrkrExtractEnabled) {
-        LOGW("krkr extract hooks DISABLED (regression emergency switch)");
-        return false;
-    }
+    if (gameHandle == nullptr || env == nullptr) return false;
     if (gHookInstalled.load(std::memory_order_relaxed)) return true;
 
     // 缓存 JNI 方法引用（onKrkrText 为 Kotlin object 的 @JvmStatic 方法，静态解析）
@@ -1526,63 +818,12 @@ extern "C" bool krkr_install_extract_hook(void* gameHandle, JNIEnv* env) {
             return false;
         }
     }
-    }
-
-    // ① 无条件打印引擎身份与候选目标命中情况（对齐 LunaHook 的"先识别引擎"）：
-    // 之前只在失败时打印 → "成功挂上却拿不到文本"时（Yosuga：armed 但 raw=0）无从判断内核版本。
-    if (kEnableEngineIdentityLog) {
-        logEngineIdentity(gameHandle);
-    } else {
-        LOGI("extract identify: DISABLED (bisect)");
-    }
-
-    // ② 首选：钩 TVPConsoleLog（引擎已导出、签名稳定；patch.tjs 把对白经 Debug.message 送到这里）。
-    //    只用 const char16_t* 那一版（第一个参数就是文本指针），且**只钩一个**——
-    //    三个签名共用同一个 naked trampoline，钩多个会跳错返回点。
-    static const char* kConsoleLogSymbols[] = {
-            "_ZN3TJS13TVPConsoleLogEPKDs",          // TJS::TVPConsoleLog(const tjs_char*)
-            "_Z13TVPConsoleLogRKN3TJS10tTJSStringEb", // TVPConsoleLog(const tTJSString&, bool)
-    };
-    // ⚠️ 对照实验开关：宿主停在"正在启动游戏"、引擎进程已起但流程卡住，
-    // 先排除"我们挂在引擎热函数上的 inline hook 导致卡住"。false＝暂不挂控制台钩子，
-    // 确认游戏能正常进入后再逐个打开定位。
-    bool consoleHooked = false;
-    for (const char* sym : kConsoleLogSymbols) {
-        void* addr = dlsym(gameHandle, sym);
-        LOGI("extract identify: dlsym %s -> %s", sym, addr != nullptr ? "FOUND" : "missing");
-        if (addr == nullptr) continue;
-        if (!kEnableConsoleInlineHook) {
-            LOGI("extract hook: console inline hook DISABLED (control experiment)");
-            break;
-        }
-        // 每个重载用**各自独立**的 trampoline（共用会跳错返回点）
-        if (std::strcmp(sym, "_ZN3TJS13TVPConsoleLogEPKDs") == 0) {
-            if (installInlineHook(addr, reinterpret_cast<void*>(&krkr_console_log_hook),
-                                  &gKrkrTrampoline)) {
-                consoleHooked = true;
-                LOGI("extract hook: TVPConsoleLog(const char16_t*) armed (%s)", sym);
-            }
-        } else {
-            if (installInlineHook(addr, reinterpret_cast<void*>(&krkr_console_log_hook_b),
-                                  &gKrkrTrampolineB)) {
-                consoleHooked = true;
-                LOGI("extract hook: TVPConsoleLog(const tTJSString&,bool) armed (%s)", sym);
-            }
-        }
-    }
-    if (consoleHooked) {
-        gHookInstalled.store(true, std::memory_order_relaxed);
-    }
 
     void* target = dlsym(gameHandle, kLabelSetString);
     if (target == nullptr) {
-        // 失败要吵：身份已在上面打过，这里给结论
-        if (consoleHooked) return true;   // 控制台这一路已武装，仍有提取希望
-        __android_log_print(ANDROID_LOG_ERROR, "KrkrExtract",
-                "extract hook: no known dialogue target matched (build lacks Label::setString)");
+        LOGW("extract hook: Label::setString not found in game lib");
         return false;
     }
-    LOGI("extract hook: target resolved Label::setString @%p", target);
 
     // 首选 shadowhook inline hook（信号护栏内探测：部分 ROM 上 shadowhook_init
     // 直接 abort）；护栏返回 false（含崩溃）一律退虚表补丁兜底
@@ -1629,31 +870,6 @@ extern "C" bool krkr_install_extract_hook(void* gameHandle, JNIEnv* env) {
 static bool gFtProbeInstalled = false;
 
 extern "C" bool krkr_install_ft_probe(void* gameHandle, const char* library) {
-    // 【入口即打】无条件的调用轨迹：确认是否被调用、参数、是否二次（延后）进入
-    LOGI("ft probe: ENTER handle=%p library=%s", gameHandle,
-         library != nullptr ? library : "(null)");
-    static const bool kEnableFtProbe = false;
-    // 【运行时安装】真机证实：FT 链若在引擎启动期安装会卡住启动（宿主等不到 UI 就绪）。
-    // 因此这里**不在启动期装**，改为由控制台活动 + 时间触发的"迟到安装"（见 krkrLateFtMaybe）。
-    static const bool kInstallAtStartup = true;
-    // 记录句柄/库名供迟到安装复用
-    gKrkrLateHandle = gameHandle;
-    gKrkrLateLibrary = library != nullptr ? library : "";
-    static std::atomic<bool> sFirstInstallCall{true};
-    if (!kInstallAtStartup && sFirstInstallCall.exchange(false)) {
-        // 只跳过**首次**（启动期）调用；运行时迟到安装（第二次起）必须继续往下走。
-        LOGI("ft probe: skip startup install (will install late, once engine is running)");
-        return true;
-    }
-    if (!kEnableFtProbe) {
-        LOGI("ft probe: DISABLED");
-        return false;
-    }
-    // 实际安装体独立出来：运行时（迟到）安装可直接调用，不必再经本函数的启动跳过逻辑
-    return krkr_do_install_ft_hooks(gameHandle, library);
-}
-
-bool krkr_do_install_ft_hooks(void* gameHandle, const char* library) {
     if (gameHandle == nullptr || library == nullptr) return false;
     if (gFtProbeInstalled) return true;
     void* orig = nullptr;
@@ -1678,46 +894,6 @@ bool krkr_do_install_ft_hooks(void* gameHandle, const char* library) {
         gOrigFTLoadGlyph = reinterpret_cast<FTLoadGlyphFn>(origLoadGlyph);
         LOGI("ft probe GOT hooked (FT_Load_Glyph dialogue path)");
     }
-    // 【第⑮轮】inline hook 直挂 FT_Load_Glyph：GOT 补丁只拦"经 PLT"的调用，
-    // 引擎内部**直接调用**会绕过它 → 对白字形漏抓（字形流里只有日志/路径的 ASCII）。
-    // 用本会话自实现的 inline hook 改写入口，覆盖全部调用方；trampoline 即"原函数"。
-    static const bool kEnableFtInlineHook = false;   // bisect：先只留 GOT 钩子（文档时代 Kazura 的可用路径）
-    if (kEnableFtInlineHook) {
-        void* ftAddr = dlsym(gameHandle, "FT_Load_Glyph");
-        if (ftAddr == nullptr) {
-            ftAddr = dlsym(RTLD_DEFAULT, "FT_Load_Glyph");
-        }
-        if (ftAddr == nullptr) {
-            // 再从已加载模块里找 freetype 并 dlopen 它（名字可能是 libfreetype.so.6）
-            FILE* maps = std::fopen("/proc/self/maps", "r");
-            char line[512];
-            while (maps != nullptr && std::fgets(line, sizeof(line), maps) != nullptr) {
-                if (std::strstr(line, "freetype") == nullptr) continue;
-                const char* slash = std::strchr(line, '/');
-                if (slash == nullptr) continue;
-                const char* nl = std::strchr(slash, '\n');
-                std::string path(slash, nl != nullptr ? static_cast<size_t>(nl - slash)
-                                                      : std::strlen(slash));
-                void* h = dlopen(path.c_str(), RTLD_NOW);
-                if (h != nullptr) ftAddr = dlsym(h, "FT_Load_Glyph");
-                break;
-            }
-            if (maps != nullptr) std::fclose(maps);
-        }
-        if (ftAddr != nullptr) {
-            void* tramp = nullptr;
-            if (installInlineHook(ftAddr, reinterpret_cast<void*>(&hookedFTLoadGlyphInline),
-                                  &tramp)) {
-                gFtLoadGlyphTrampoline = reinterpret_cast<FTLayoutGlyphFnAlias>(tramp);
-                LOGI("ft probe: FT_Load_Glyph INLINE hooked (covers direct calls) addr=%p", ftAddr);
-            } else {
-                LOGW("ft probe: FT_Load_Glyph inline hook refused (pc-relative prologue?)");
-            }
-        } else {
-            LOGW("ft probe: FT_Load_Glyph address not found for inline hook");
-        }
-    }
-
     // 兜底通道 2：FT_Load_Char（按码点直接加载字形的路径）。
     void* origLoadChar = nullptr;
     if (krkr_bridge_got_hook(library, "FT_Load_Char",

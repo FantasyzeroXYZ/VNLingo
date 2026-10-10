@@ -32,7 +32,6 @@ using GetScene = void* (*)();
 // krkr_extract_hook.cpp：Kirikiroid2 文本提取钩子（cocos2d Label::setString inline hook）
 extern "C" bool krkr_install_extract_hook(void* gameHandle, JNIEnv* env);
 extern "C" bool krkr_install_ft_probe(void* gameHandle, const char* library);
-extern "C" void krkr_set_extract_user_enabled(bool enabled);   // 用户级提取开关
 // 提取链路诊断埋点开关（B1；默认关，Java 侧按调试日志开关下发）
 extern "C" void krkr_set_extract_diag(bool enabled);
 
@@ -318,12 +317,6 @@ void notifyGameReady() {
     if (attached) gVm->DetachCurrentThread();
 }
 
-extern "C" bool krkr_engine_ready() {
-    return gGameReadyReported.load();
-}
-
-extern "C" void krkr_drain_text_queue();
-
 void hookedSceneUpdate(void* scene, float dt) {
     Update original = gOriginalSceneUpdate.load();
     if (original != nullptr) original(scene, dt);
@@ -353,7 +346,6 @@ void hookedSceneUpdate(void* scene, float dt) {
                             "TVPMainScene startup completed; menu shrink finished; leakedCowStrings=%d",
                             leakedCount);
         notifyGameReady();
-        krkr_drain_text_queue();   // 就绪瞬间把启动期积压的文本排空上行（此时阻塞已无害）
     }
 }
 
@@ -806,8 +798,6 @@ static std::atomic<bool> gExtractHookEnabled{true};
 extern "C" JNIEXPORT void JNICALL
 Java_bridge_NativeBridge_setExtractHookEnabled(JNIEnv*, jclass, jboolean enabled) {
     gExtractHookEnabled.store(enabled == JNI_TRUE, std::memory_order_relaxed);
-    // 同步到 native 的用户级开关：只有用户显式开启（且硬开关放开）才会安装提取钩子
-    krkr_set_extract_user_enabled(enabled == JNI_TRUE);
 }
 
 // 提取链路诊断埋点开关（默认关）：复测时由 Java 侧按调试日志开关下发，
