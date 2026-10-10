@@ -1076,3 +1076,28 @@
    只有让内核挂载到补丁卷才行。**这条也解释了为什么 App 侧所有尝试都"没反应"。**
    （`system/extend/**` 不覆盖的修复仍保留：那是防止破坏用户/补丁覆盖文件的健壮性修复，
    不是本问题的原因——之前提交信息里把它写成"真因"是错的，以本条为准。）
+23. **右侧按键/面板/虚拟鼠标的"统一调用层"现状（2026-10-10 审计）**：
+   统一入口（各引擎都应只用这几个，不要再在宿主里另写一份）：
+   - 右侧按键列（剧情文本框/截图/放大镜/设置/音量/点击模式/主页）：由
+     `OnsExtractPanel.install(...)` 内部调用 `OnsSideButtons.install/installAsWindow`
+     安装 —— **所有引擎（含 Tyrano/RPGM）都有**，宿主不需要自己装。
+   - 面板开合：`OnsExtractPanel.togglePanel()`（右缘按键、手柄 RB/面板键共用）。
+   - 按键路由：`extractPanel.handleKey(mapped)` → 再 `virtualMouse*.handleGamepadKey`。
+   - 轴路由：`extractPanel.handleMotion(event)` → 再 `virtualMouse*.handleGamepadMotion`。
+   - **光标点击路由：`extractPanel.dispatchCursorClick(x, y)`**（先右缘侧键、再面板本体；
+     面板上非控件处点一下即收起）。五个宿主统一走它——Artemis/Tyrano/RPGM 之前各写一套，
+     都出过"鼠标点侧键/面板无效"的问题。
+   - 输入核心只有一份：`com.core.engine.VirtualMouseInput`（按键/长按/连点/HAT/摇杆/
+     旋转/诊断）。`EngineVirtualMouse`（视图宿主）已收敛为薄壳；Tyrano/RPGM 用
+     `com.core.tyrano.VirtualMouseLayer`（同一核心 + `window.__tnMouse` JS 契约）。
+   审计矩阵（✓=已接线，✗=曾缺漏，现已补）：
+     宿主        面板 虚拟鼠标 左侧按键 光标点面板 沉浸式
+     ONS          ✓    ✓       ✓        ✓          ✓
+     Artemis      ✓    ✓       ✓        ✓          ✓
+     Kirikiroid   ✓    ✓       ✓        ✓          ✓
+     Tyrano       ✓    ✓       ✗(待定)  ✓(已补)    ✓
+     RPGM         ✓    ✓(新补手柄) ✗(待定) ✓(已补)  ✓(已补)
+   注：RPGM 原来那份 `com.core.rpgmaker.VirtualMouseLayer` 已删除（重复实现、无手柄输入、
+   还留着早先要求删掉的拖拽手柄圆钮），RPGM 改用 Tyrano 版；`rclick`/长按右键语义两边一致。
+   遗留：① Tyrano/RPGM 是否要装左侧按键列（EngineLeftButtons）待定——它们目前只有右缘列；
+   ② 这两处改动在真机上未验证（设备库里只有 KIRIKIRI/ONS/ARTEMIS 游戏）。
