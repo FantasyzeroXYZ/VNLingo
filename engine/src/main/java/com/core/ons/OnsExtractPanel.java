@@ -3197,6 +3197,7 @@ public class OnsExtractPanel {
             try { tts.shutdown(); } catch (Throwable ignored) {}
             tts = null;
             ttsReady = false;
+            ttsProblemNotifiedRes = 0;   // 换引擎/重建后允许再提示一次
         }
         android.speech.tts.TextToSpeech.OnInitListener listener = status -> {
             ttsReady = status == android.speech.tts.TextToSpeech.SUCCESS;
@@ -3343,20 +3344,19 @@ public class OnsExtractPanel {
                 Log.i(TAG, "system tts still initializing → queue utterance");
                 return;
             }
-            // 初始化真的失败（引擎未就绪/被禁用）：给用户可见提示
+            // 初始化真的失败：只打日志 + **同一故障只提示一次**（用户反馈：不要一直弹提示）
             Log.w(TAG, "system tts not ready (engine=" + OnsTtsEngines.engine(activity)
                     + ", default=" + defaultTtsEngineName() + ")");
-            toast(R.string.engine_ons_tts_engine_not_ready);
+            notifyTtsProblemOnce(R.string.engine_ons_tts_engine_not_ready);
             return;
         }
         try {
             int langResult = tts.setLanguage(ttsLocale(sentence));
             if (langResult == android.speech.tts.TextToSpeech.LANG_MISSING_DATA
                     || langResult == android.speech.tts.TextToSpeech.LANG_NOT_SUPPORTED) {
-                // 语言/发音人缺失同样是"静默无声"的常见原因，必须让用户看见。
                 Log.w(TAG, "system tts language unsupported: result=" + langResult
                         + " engine=" + defaultTtsEngineName());
-                toast(R.string.engine_ons_tts_lang_unsupported);
+                notifyTtsProblemOnce(R.string.engine_ons_tts_lang_unsupported);
                 return;
             }
             tts.setSpeechRate(ttsRate / 100f);
@@ -3417,6 +3417,18 @@ public class OnsExtractPanel {
         } catch (Throwable ignored) {
         }
         return "?";
+    }
+
+    /**
+     * TTS 故障提示：**同一故障只弹一次**（换引擎/改设置后会重置）。
+     * 用户反馈："不用一直提示 tts 无法使用的消息"——自动朗读每句都会尝试一次系统 TTS，
+     * 失败时逐句弹提示会刷屏。
+     */
+    private int ttsProblemNotifiedRes;
+    private void notifyTtsProblemOnce(int res) {
+        if (ttsProblemNotifiedRes == res) return;
+        ttsProblemNotifiedRes = res;
+        toast(res);
     }
 
     private void stopTts() {        // 作废所有在途的异步合成（见 ttsEpoch 注释）：否则它们回来后会播上一条的声音。
@@ -3538,7 +3550,11 @@ public class OnsExtractPanel {
         if (sentence == null || sentence.isEmpty()) return;
         if (sentence.equals(lastSpokenSentence)) return;
         boolean autoOn = ttsAuto || OnsTtsEngines.autoRead(activity);
-        if (!autoOn) return;
+        if (!autoOn) {
+            Log.i(TAG, "auto speak skipped: auto off (panel=" + ttsAuto
+                    + ", global=" + OnsTtsEngines.autoRead(activity) + ")");
+            return;
+        }
         // ① 已念过的句子又长出新内容（AAAA → AAAA BBBB）→ 只补念新增部分
         if (speakOnlyAppendedPart(sentence)) return;
         // ② 同一句还在变长（尚未念过）→ 等更久，避免"先念一半、整句再念一遍"
