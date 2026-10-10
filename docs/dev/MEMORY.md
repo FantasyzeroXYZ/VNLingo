@@ -1184,3 +1184,15 @@
    读取侧保留全部旧布局回退（`fallbackRemoteZipPaths`），老上传不会丢。
    实测：`DELETE dir TyranorNext -> 403`（坚果云不允许删顶层目录，即使为空），
    旧目录已空、需用户在客户端手动删一次；之后云端只剩 `VNLingo/`。
+30. **存档上传"只有纯 ASCII 游戏能传"的根因：URL 没做百分号编码（2026-10-10）**：
+   现象：ESG-13556 能上传，`The Shell Part I 手机`、`Kazura Uta` 等失败。日志：
+   `java.net.URI$Parser.parseHierarchical ... URISyntaxException` +
+   `cloud transfer failed: IllegalStateException: PUT HTTP 409`。
+   原因：`OnsSaveCloud` 拼远端 URL 时直接字符串连接（`base + path`），而 `cloudNameFor`
+   会保留空格/中文等合法字符 → `URI.create` 见空格即抛 → `webdavEnsureDir` 的 MKCOL 失败
+   → 目录不存在 → PUT 报 409 AncestorsNotFound。（ESG-13556 纯 ASCII 所以一直正常。）
+   修复：新增 `encodePath`/`remoteUrl`，**按路径段**做 `URLEncoder.encode`（`+`→`%20`），
+   所有请求（MKCOL/PUT/GET/HEAD/DELETE）统一走它；文件名里的空格/中文得以正确编码。
+   真机验证：三个引擎都能传 ——
+   `MKCOL VNLingo/saves/The Shell Part I 手机/ -> 201`、`.../Kazura Uta/ -> 201`，
+   远端 HEAD 三个 `saves.zip` 均为 200；PROPFIND 列出 `VNLingo/saves/` 下三个游戏子目录。

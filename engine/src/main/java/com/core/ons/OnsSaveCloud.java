@@ -256,8 +256,7 @@ public final class OnsSaveCloud {
     /** HEAD 一个远端路径，返回 Last-Modified（ms；不存在/失败返回 0）。 */
     private static long headModified(SharedPreferences p, String base, String[] target, String path) {
         try {
-            HttpURLConnection conn = open((base.endsWith("/") ? base : base + "/") + path,
-                    target[1], target[2]);
+            HttpURLConnection conn = open(remoteUrl(base, path), target[1], target[2]);
             try {
                 conn.setRequestMethod("HEAD");
                 if (conn.getResponseCode() < 400) {
@@ -359,7 +358,7 @@ public final class OnsSaveCloud {
             String base = target[0];
             if (base.isEmpty()) return;
             int code = rawRequest("DELETE",
-                    (base.endsWith("/") ? base : base + "/") + path,
+                    remoteUrl(base, path),
                     target[1], target[2]);
             Log.i(TAG, "DELETE dir " + path + " -> " + code);
         } catch (Throwable t) {
@@ -431,7 +430,7 @@ public final class OnsSaveCloud {
         String[] target = webdavTarget(p);
         String base = target[0];
         if (base.isEmpty()) throw new IllegalStateException("server not configured");
-        HttpURLConnection conn = open((base.endsWith("/") ? base : base + "/") + remotePath,
+        HttpURLConnection conn = open(remoteUrl(base, remotePath),
                 target[1], target[2]);
         try {
             conn.setRequestMethod(method);
@@ -460,6 +459,35 @@ public final class OnsSaveCloud {
         } finally {
             conn.disconnect();
         }
+    }
+
+    /**
+     * 把**相对路径**按段做百分号编码（保留分隔符）。
+     *
+     * 必需：[cloudNameFor] 会保留空格/中文等合法文件名字符（例如 "The Shell Part I 手机"），
+     * 直接拼进 URL 会让 `URI.create` 抛 URISyntaxException（空格非法）→ MKCOL 建目录失败 →
+     * PUT 报 409 AncestorsNotFound。实测 ESG-13556（纯 ASCII）能传、带空格/中文的传不上去。
+     */
+    private static String encodePath(String path) {
+        if (path == null || path.isEmpty()) return "";
+        boolean trailingSlash = path.endsWith("/");
+        StringBuilder sb = new StringBuilder();
+        for (String seg : path.split("/")) {
+            if (seg.isEmpty()) continue;
+            if (sb.length() > 0) sb.append('/');
+            try {
+                sb.append(java.net.URLEncoder.encode(seg, "UTF-8").replace("+", "%20"));
+            } catch (Throwable t) {
+                sb.append(seg);
+            }
+        }
+        if (trailingSlash && sb.length() > 0) sb.append('/');
+        return sb.toString();
+    }
+
+    /** 拼远端绝对 URL：base + 编码后的相对路径。 */
+    private static String remoteUrl(String base, String relativePath) {
+        return (base.endsWith("/") ? base : base + "/") + encodePath(relativePath);
     }
 
     /** 逐级确保远端目录存在（已存在时 MKCOL 报 405/409，忽略）。含游戏专属子文件夹。 */
@@ -491,7 +519,7 @@ public final class OnsSaveCloud {
             // setRequestMethod("MKCOL") 抛 ProtocolException（原来被 catch 吞掉 →
             // 目录永远建不出来 → upload 的 PUT 报 409 AncestorsNotFound）。
             int code = rawRequest("MKCOL",
-                    (base.endsWith("/") ? base : base + "/") + path,
+                    remoteUrl(base, path.toString()),
                     target[1], target[2]);
             Log.i(TAG, "MKCOL " + path + " -> " + code);
         } catch (Throwable t) {
