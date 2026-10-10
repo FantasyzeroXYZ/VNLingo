@@ -689,6 +689,13 @@ std::string ftDerivePage(const std::string& raw) {
 void ftOnCode(unsigned long code) {
     if (!gHookInstalled.load(std::memory_order_relaxed)) return;
     if (code < 0x20 || code >= 0x110000 || code == gPrevCode) return;
+    // B3 诊断：码点入流计数（与 ft glyph map HIT 对照，判断"命中后是否真的进流"）
+    static std::atomic<uint64_t> onCodeCalls{0};
+    const uint64_t oc = onCodeCalls.fetch_add(1, std::memory_order_relaxed) + 1;
+    if (diagEnabled() && (oc <= 20 || oc % 200 == 0)) {
+        LOGI("ft oncode: calls=%llu code=U+%04lX raw=%zu", static_cast<unsigned long long>(oc),
+             code & 0x1FFFFFul, gRawBuf.size());
+    }
     const auto now = std::chrono::steady_clock::now();
     std::lock_guard<std::mutex> lock(gLineMutex);
     ftFeedCharLocked(code);
@@ -784,7 +791,27 @@ int hookedFTLoadGlyph(void* face, unsigned int glyphIndex, int loadFlags) {
     const auto* map = glyphMapFor(face);
     if (map == nullptr) return err;
     const auto it = map->find(glyphIndex);
-    if (it != map->end()) ftOnCode(it->second);
+    // B3 诊断：字形还原是否真的命中（第 9 轮关键埋点）——
+    //   hit 增长 → 字形→码点通了，问题在后续判页/上行；
+    //   miss 增长 → cmap 反查仍对不上（字体/face 选错或字形索引非 cmap 域）。
+    static std::atomic<uint64_t> hits{0};
+    static std::atomic<uint64_t> misses{0};
+    if (it != map->end()) {
+        const uint64_t h = hits.fetch_add(1, std::memory_order_relaxed) + 1;
+        if (diagEnabled() && (h <= 20 || h % 200 == 0)) {
+            LOGI("ft glyph map HIT: idx=%u → U+%04lX (hits=%llu misses=%llu)", glyphIndex,
+                 it->second, static_cast<unsigned long long>(h),
+                 static_cast<unsigned long long>(misses.load(std::memory_order_relaxed)));
+        }
+        ftOnCode(it->second);
+    } else {
+        const uint64_t m = misses.fetch_add(1, std::memory_order_relaxed) + 1;
+        if (diagEnabled() && (m <= 10 || m % 500 == 0)) {
+            LOGI("ft glyph map MISS: idx=%u (hits=%llu misses=%llu) entries=%zu", glyphIndex,
+                 static_cast<unsigned long long>(hits.load(std::memory_order_relaxed)),
+                 static_cast<unsigned long long>(m), map->size());
+        }
+    }
     gPrevCode = it != map->end() ? it->second : gPrevCode;
     return err;
 }
