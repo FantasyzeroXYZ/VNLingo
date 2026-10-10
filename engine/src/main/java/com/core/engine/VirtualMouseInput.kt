@@ -50,6 +50,8 @@ class VirtualMouseInput(
         // 所以必须自己做——否则「按住 A 只点一次」（用户反馈：手柄连按无效）。
         const val CLICK_REPEAT_DELAY_MS = 320L
         const val CLICK_REPEAT_INTERVAL_MS = 120L
+        /** 连点看门狗：这么久没收到任何按键事件就停（防 ACTION_UP 丢失后一直点）。 */
+        const val CLICK_WATCHDOG_MS = 1500L
         const val STEP_BASE = 14f
         const val STEP_MAX = 48f
         const val HAT_STEP_DP = 12f
@@ -65,9 +67,17 @@ class VirtualMouseInput(
 
     // ---- 点击键长按连点 ----
     private var clickHeldCode = -1
+    private var lastKeyEventMs = 0L
     private val clickStepper = object : Runnable {
         override fun run() {
             if (clickHeldCode < 0) return
+            // 看门狗：确认键的 ACTION_UP 可能被别的窗口吃掉（宿主有多个捕获窗），
+            // 那时连点会一直点下去（实测表现：一次点击产生多次开/关）。
+            // 超过 watchdog 没有收到任何按键事件即自停，与 HAT 的 1.2s 看门狗同构。
+            if (SystemClock.uptimeMillis() - lastKeyEventMs > CLICK_WATCHDOG_MS) {
+                stopClickRepeat()
+                return
+            }
             target.click()
             target.requestRender()
             android.util.Log.i("YukiVmouse", "click repeat tick code=$clickHeldCode")
@@ -95,6 +105,7 @@ class VirtualMouseInput(
     /** 返回 true = 该事件已被虚拟鼠标消费（宿主不要再透传游戏）。 */
     fun handleKey(event: KeyEvent): Boolean {
         val code = event.keyCode
+        lastKeyEventMs = SystemClock.uptimeMillis()
         if (event.action == KeyEvent.ACTION_DOWN && event.repeatCount == 0) {
             val action = resolveAction(code) ?: return false
             target.ensureCursor()
