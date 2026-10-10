@@ -1050,7 +1050,11 @@ void ftObserveGlyph(void* face, unsigned int glyphIndex) {
     if (!gHookInstalled.load(std::memory_order_relaxed)) return;
     const auto* map = glyphMapReady(face);
     if (map == nullptr) {
-        glyphMapStep(face);   // 每次只推进 512 个码点：不建线程、不阻塞
+        // 启动期**绝不建表**：整表要 65504×N 次 cmap 查询，即便增量（512/次）也会拖住启动
+        //（实测：FT 链一开，launch UI forms ready 恒为 0 → 卡"正在启动游戏"）。
+        // 引擎就绪后再开始增量建表：既不打线程，也不影响启动。
+        if (!krkr_engine_ready()) return;
+        glyphMapStep(face);   // 就绪后每次推进 512 个码点
         return;
     }
     const auto it = map->find(glyphIndex);
