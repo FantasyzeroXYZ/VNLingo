@@ -245,6 +245,8 @@ public abstract class ArtemisLauncherBaseActivity extends com.ies_net.artemis.Ar
     }
 
     private android.widget.FrameLayout mouseKeyCatcher;
+    /** 左缘引擎按键窗根视图（提到光标窗之上用；鼠标模式的光标窗可触摸且全屏）。 */
+    private android.view.View engineLeftButtonsView;
     private android.view.WindowManager.LayoutParams cursorWindowLp;
     /** 提取面板实例（按键/轴事件路由与焦点切换用）。 */
     private com.core.ons.OnsExtractPanel extractPanel;
@@ -369,6 +371,11 @@ public abstract class ArtemisLauncherBaseActivity extends com.ies_net.artemis.Ar
                 // 额外窗口设）——用户反馈「切到虚拟鼠标模式后状态栏/底部栏藏不住」就是它。
                 // 取得焦点时补一次，并延时再补两次压住 ROM 的焦点变化重放。
                 applyImmersiveToCatcherWindow(mouseKeyCatcher);
+                // **光标窗是可触摸的全屏窗**（鼠标模式下的"触控板"）：它在按键窗之后创建，
+                // 会盖住左缘/右缘按键与面板 → 必须把这三个窗口提到它之上，否则
+                // "进入游戏完全无法触摸、左右两侧按键都点不动"（本回归的真因）。
+                new android.os.Handler(android.os.Looper.getMainLooper())
+                        .postDelayed(this::raiseOverlaysAboveCursor, 50);
             } else {
                 cursorWindowLp.flags |= android.view.WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE;
                 // 非鼠标模式：光标窗不接收触摸，触摸零干扰透传给游戏
@@ -382,8 +389,31 @@ public abstract class ArtemisLauncherBaseActivity extends com.ies_net.artemis.Ar
         com.core.engine.ImmersiveMode.applyLegacy(this);
     }
 
-    /** 给独立捕获窗（光标窗/面板窗）补沉浸式系统栏 flag：立即 + 300ms + 1000ms。 */
-    private void applyImmersiveToCatcherWindow(android.view.View windowRoot) {
+    /**
+     * 把面板窗、左右缘按键窗提到光标窗之上（鼠标模式的光标窗是可触摸全屏窗，
+     * 后创建会盖住它们）。重挂窗口 = 提升 z 序，位置与 flag 均不变。
+     */
+    private void raiseOverlaysAboveCursor() {
+        raiseWindow(panelKeyCatcher);
+        if (extractPanel != null) extractPanel.raiseSideButtons();
+        raiseWindow(engineLeftButtonsView);
+    }
+
+    private void raiseWindow(android.view.View v) {
+        if (v == null) return;
+        try {
+            android.view.WindowManager wm = getWindowManager();
+            android.view.WindowManager.LayoutParams lp =
+                    (android.view.WindowManager.LayoutParams) v.getLayoutParams();
+            if (lp == null) return;
+            wm.removeViewImmediate(v);
+            wm.addView(v, lp);
+        } catch (Throwable t) {
+            Log.w("YukiArtemis", "raiseWindow failed", t);
+        }
+    }
+
+    /** 给独立捕获窗（光标窗/面板窗）补沉浸式系统栏 flag：立即 + 300ms + 1000ms。 */    private void applyImmersiveToCatcherWindow(android.view.View windowRoot) {
         if (windowRoot == null) return;
         com.core.engine.ImmersiveMode.applyToView(windowRoot);
         windowRoot.postDelayed(() -> com.core.engine.ImmersiveMode.applyToView(windowRoot), 300L);
@@ -591,7 +621,7 @@ public abstract class ArtemisLauncherBaseActivity extends com.ies_net.artemis.Ar
                     () -> artTap(37)));
             buttons.add(new com.core.engine.EngineLeftButtons.ButtonSpec("▶",
                     () -> artTap(39)));
-            com.core.engine.EngineLeftButtons.installAsWindow(
+            engineLeftButtonsView = com.core.engine.EngineLeftButtons.installAsWindow(
                     this, "artemis_left", buttons);
             Log.i("YukiArtemis", "engine left buttons installed (artemis)");
         } catch (Throwable t) {
