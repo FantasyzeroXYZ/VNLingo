@@ -327,6 +327,16 @@ public class OnsExtractPanel {
     }
 
     /**
+     * 把右缘按键组提到最前（面板窗在它之后加入会盖住右侧按键 → 面板展开时点不到）。
+     * 由 {@link #togglePanel()} 在展开时自动调用。
+     */
+    public void raiseSideButtons() {
+        if (sideButtons != null && sideButtonsWindowMode) {
+            OnsSideButtons.raiseWindow(activity, sideButtons);
+        }
+    }
+
+    /**
      * 面板可见性回调（悬浮窗宿主用）：开合后同步覆盖窗触摸放行。
      * 不能只靠 OnLayoutChangeListener——VISIBLE→GONE 时视图 bounds 不变、
      * 布局回调不触发，覆盖窗会停留在可触摸态吃掉全部游戏输入（Artemis 触摸失灵根因）。
@@ -561,6 +571,9 @@ public class OnsExtractPanel {
                 + " panelAttached=" + (panel.getParent() != null)
                 + " panelSize=" + panel.getWidth() + "x" + panel.getHeight());
         if (expanded) {
+            // 面板窗是后加入的，会压在右缘按键组之上 → 展开时把侧键窗提到最前，
+            // 保证「打开剧情文本框后右侧按键依然可点」（用户要求）。
+            raiseSideButtons();
             // refresh 先行：apply* 任何一环异常都不能挡住内容显示（窗口承载宿主
             // 实测 applyAdaptiveHeight 一类的尺寸同步异常会吞掉 refresh）
             refresh();

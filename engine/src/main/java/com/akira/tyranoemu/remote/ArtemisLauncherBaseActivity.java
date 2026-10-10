@@ -271,10 +271,9 @@ public abstract class ArtemisLauncherBaseActivity extends com.ies_net.artemis.Ar
     private void applyPanelKeyFocus() {
         if (panelKeyCatcher == null || panelWindowLp == null) return;
         boolean expanded = extractPanel != null && extractPanel.isExpanded();
-        // 鼠标模式下**面板窗不抢焦点**：面板动作表默认就把 A/ENTER/DPAD_CENTER 绑成"确认"、
-        // DPAD 绑成"导航"，和虚拟鼠标是同一批按键；一旦面板窗持焦，鼠标就既动不了也点不了
-        // ——真机表现就是"打开剧情文本框后点不着右缘侧键、文本框关不掉"。
-        boolean panelTakesFocus = expanded && !virtualMouseMode;
+        // 用户明确要求：**剧情文本框展开时手柄焦点就在文本框上**（手柄键走面板动作表），
+        // 触摸不需要焦点（按坐标命中即可）。因此这里只看是否展开，不看鼠标模式。
+        boolean panelTakesFocus = expanded;
         try {
             if (panelTakesFocus) {
                 panelWindowLp.flags &= ~android.view.WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE;
@@ -311,12 +310,10 @@ public abstract class ArtemisLauncherBaseActivity extends com.ies_net.artemis.Ar
         Log.i("YukiArtemis", "mouse catcher key code=" + event.getKeyCode()
                 + " action=" + event.getAction()
                 + " source=0x" + Integer.toHexString(event.getSource()));
-        // 鼠标**优先**于面板动作表：两者默认共用 A/ENTER/DPAD（面板把 A 绑"确认"、DPAD 绑
-        // "导航"）；面板优先会把光标按键吃光 → 鼠标模式下既动不了光标也点不着右缘
-        // 「剧情文本框」侧键（用户反馈的"文本框关不掉"）。面板动作退到鼠标之后，
-        // 需要面板导航时按 R2 关掉鼠标模式即可。
-        if (virtualMouse != null && mapped != null && virtualMouse.handleKey(mapped)) return true;
+        // 面板动作表**优先**（用户要求：文本框展开时手柄焦点就在文本框上）；
+        // 未消费的键才交虚拟鼠标，避免面板收起瞬间吞掉光标按键。
         if (extractPanel != null && mapped != null && extractPanel.handleKey(mapped)) return true;
+        if (virtualMouse != null && mapped != null && virtualMouse.handleKey(mapped)) return true;
         try {
             super.dispatchKeyEvent(mapped);
         } catch (Throwable t) {
@@ -331,10 +328,10 @@ public abstract class ArtemisLauncherBaseActivity extends com.ies_net.artemis.Ar
         if (mouseKeyCatcher == null || cursorWindowLp == null) return;
         boolean panelExpanded = extractPanel != null && extractPanel.isExpanded();
         try {
-            // 鼠标模式下光标窗**始终持焦**（面板展开时也让面板窗让出）：否则面板动作表会把
-            // A/ENTER/DPAD 全部吃掉，光标既不能移动也不能点击 —— "点不着文本框侧键"的根因。
-            // 面板自身动作仍可用：面板展开时按 R2 关掉鼠标模式即回到面板导航。
-            if (virtualMouseMode) {
+            // 鼠标模式且面板未展开时光标窗持焦（面板展开时焦点按用户要求给面板：
+            // 手柄键走面板动作表；触摸按坐标命中，不依赖焦点 → 右侧按键由
+            // OnsExtractPanel.raiseSideButtons() 提到最前保证可点）。
+            if (virtualMouseMode && !panelExpanded) {
                 cursorWindowLp.flags &= ~android.view.WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE;
                 mouseKeyCatcher.setFocusable(true);
                 mouseKeyCatcher.setFocusableInTouchMode(true);

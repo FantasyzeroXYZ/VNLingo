@@ -63,6 +63,25 @@ public class OnsSideButtons {
     }
 
     /**
+     * 把侧键悬浮窗**提到最前**（重新 addView 提升 z 序）。
+     *
+     * 面板窗是在侧键窗之后加入的 → 默认压在侧键之上；而面板宽度是"屏宽 − 两侧各
+     * 64dp"，与右缘按键列正好相邻甚至轻微重叠 → **面板一展开，右侧按键就点不到了**
+     * （用户反馈：剧情文本框打开时右侧按键也要能点）。面板每次展开都重挂一次即可。
+     */
+    public static void raiseWindow(Activity activity, android.view.View container) {
+        if (activity == null || container == null) return;
+        try {
+            android.view.WindowManager wm = activity.getWindowManager();
+            android.view.WindowManager.LayoutParams lp =
+                    (android.view.WindowManager.LayoutParams) container.getLayoutParams();
+            wm.removeViewImmediate(container);
+            wm.addView(container, lp);
+        } catch (Throwable ignored) {
+        }
+    }
+
+    /**
      * 以独立小悬浮窗安装（NativeActivity 宿主用）：小窗只占按键自身区域，
      * 其余触摸全部穿透给游戏；返回按键组根视图。
      */
