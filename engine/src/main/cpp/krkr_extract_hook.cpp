@@ -141,6 +141,76 @@ extern "C" bool krkr_engine_ready();             // 由 krkr_bridge.cpp 提供�
 std::mutex gQueueMutex;
 std::vector<std::string> gTextQueue;
 
+/** 含 CJK（假名/汉字/全角）判定：与 NativeBridge.onKrkrText 的过滤保持一致。 */
+bool looksLikeDialogue(const char* s) {
+    if (s == nullptr) return false;
+    size_t i = 0;
+    const size_t n = std::strlen(s);
+    while (i < n) {
+        const unsigned char c = static_cast<unsigned char>(s[i]);
+        unsigned int cp = 0;
+        size_t len = 1;
+        if (c < 0x80) { cp = c; }
+        else if ((c & 0xE0) == 0xC0) { cp = c & 0x1F; len = 2; }
+        else if ((c & 0xF0) == 0xE0) { cp = c & 0x0F; len = 3; }
+        else if ((c & 0xF8) == 0xF0) { cp = c & 0x07; len = 4; }
+        else { ++i; continue; }
+        if (i + len > n) break;
+        for (size_t k = 1; k < len; ++k) cp = (cp << 6) | (static_cast<unsigned char>(s[i + k]) & 0x3F);
+        i += len;
+        if ((cp >= 0x3040 && cp <= 0x30FF) || (cp >= 0x4E00 && cp <= 0x9FFF) ||
+            (cp >= 0xFF00 && cp <= 0xFFEF)) {
+            return true;
+        }
+    }
+    return false;
+}
+
+/** 洁净判定：拒绝乱码（含 U+FFFD、控制字符比例过高、非 UTF-8 序列）。 */
+bool looksCleanText(const char* s, size_t n) {
+    size_t i = 0;
+    size_t cps = 0, good = 0, bad = 0;
+    while (i < n) {
+        const unsigned char c = static_cast<unsigned char>(s[i]);
+        unsigned int cp = 0;
+        size_t len = 1;
+        if (c < 0x80) { cp = c; }
+        else if ((c & 0xE0) == 0xC0) { cp = c & 0x1F; len = 2; }
+        else if ((c & 0xF0) == 0xE0) { cp = c & 0x0F; len = 3; }
+        else if ((c & 0xF8) == 0xF0) { cp = c & 0x07; len = 4; }
+        else { ++bad; ++i; continue; }
+        if (i + len > n) { ++bad; break; }
+        for (size_t k = 1; k < len; ++k) {
+            const unsigned char cc = static_cast<unsigned char>(s[i + k]);
+            if ((cc & 0xC0) != 0x80) { ++bad; break; }
+            cp = (cp << 6) | (cc & 0x3F);
+        }
+        i += len;
+        ++cps;
+        const bool printable =
+                (cp >= 0x20 && cp < 0x7F) ||
+                (cp >= 0x3000 && cp <= 0x30FF) ||     // 日文标点/假名
+                (cp >= 0x4E00 && cp <= 0x9FFF) ||     // 汉字
+                (cp >= 0xFF00 && cp <= 0xFFEF) ||     // 全角
+                (cp >= 0x2000 && cp <= 0x206F);       // 通用标点
+        if (cp == 0xFFFD) { return false; }           // 替换符 → 乱码
+        if (printable) { ++good; }
+    }
+    if (cps < 2) return false;
+    return bad == 0 && good * 10 >= cps * 9;          // 90% 以上可打印
+}
+
+/** 作为**对白**上行：洁净 + 含 CJK 才加 [FTLN] 前缀；否则**不上行**（避免乱码污染）。 */
+std::string asDialogueOrRaw(const char* text) {
+    std::string s = text != nullptr ? text : "";
+    if (s.empty()) return s;
+    if (!looksCleanText(s.c_str(), s.size())) {
+        return std::string();                          // 乱码：丢弃
+    }
+    if (looksLikeDialogue(s.c_str())) return std::string("[FTLN]") + s;
+    return s;
+}
+
 extern "C" void krkr_drain_text_queue();   // 前置声明
 
 void enqueueText(const char* text) {
@@ -1337,10 +1407,12 @@ extern "C" void krkr_on_console_log(const void* text) {
     LOGI("console text(%zu): %.60s", utf8.size(), utf8.c_str());
     // 热路径策略：**引擎未就绪前只入队（零 JNI）**；就绪后直接上行。
     // 这样既不影响启动（根因修复），又能在就绪后即时送达。
+    const std::string out = asDialogueOrRaw(utf8.c_str());
+    if (out.empty()) return;   // 乱码/空 → 不上行
     if (krkr_engine_ready()) {
-        emitText(utf8.c_str());
+        emitText(out.c_str());
     } else {
-        enqueueText(utf8.c_str());
+        enqueueText(out.c_str());
     }
     krkrLateFtMaybe();
 }
@@ -1591,7 +1663,7 @@ extern "C" bool krkr_install_ft_probe(void* gameHandle, const char* library) {
     static const bool kEnableFtProbe = false;
     // 【运行时安装】真机证实：FT 链若在引擎启动期安装会卡住启动（宿主等不到 UI 就绪）。
     // 因此这里**不在启动期装**，改为由控制台活动 + 时间触发的"迟到安装"（见 krkrLateFtMaybe）。
-    static const bool kInstallAtStartup = false;
+    static const bool kInstallAtStartup = true;
     // 记录句柄/库名供迟到安装复用
     gKrkrLateHandle = gameHandle;
     gKrkrLateLibrary = library != nullptr ? library : "";
