@@ -1247,3 +1247,16 @@
    → **程序没有改动系统音量**；`llvm-nm -D` 确认符号已导出。
    待办（目标继续）：② Tyrano/RPGM（WebView）注入 JS 设 HTMLMediaElement.volume；
    ③ ONS/KRKR/Siglus/FVP 预编译内核逐个确认是否有音量 API；④ 其它百分比项统一进度条。
+35. **WebView（Tyrano/RPGM）游戏音量注入 + 用 node 验证脚本语义（2026-10-10）**：
+   设备上没有 Tyrano/RPGM 游戏（库里只有 Artemis/KRIRIKI/ONS）→ 无法真机端到端验证，
+   改用「同一段脚本文本 + 最小 HTMLMediaElement stub」在 node 里跑语义验证（`.tmp/webvol_test.js`）。
+   - 新增 `com.core.engine.WebGameVolume.script(percent)`：包 `HTMLMediaElement.prototype.volume`
+     的 setter，把"游戏自己设的音量"记为基准 `__vnlBase`，写入值 = 基准 × 本软件百分比；
+     `play()` 前重新套用；对已存在的 `<audio>/<video>` 立即套用；脚本幂等。
+   - `TyranoActivity` / `RpgMakerActivity`：`extractPanel.setGameVolumeHook{…}` 注入 +
+     `onPageFinished` 重新注入（页面重载后仍生效）。
+   - **验证抓到并修掉一个真 bug**：原来对"注入前游戏已设过音量"的元素把基准默认成 1 →
+     会把游戏自己的音量设置**覆盖成 100%**。改为用原生 getter 读"当前真实音量"当基准
+     （`window.__vnlRawGet`），并在自己的 getter 里返回基准值（避免游戏读到缩放值后反复相乘）。
+     修后 10 项断言（50%/0%/100%/游戏改音量/play 重套/幂等）**全部 PASS**。
+   - 真机验证待办：需要一台装有 Tyrano 或 RPGM 游戏的设备跑一次（当前设备无此类游戏）。

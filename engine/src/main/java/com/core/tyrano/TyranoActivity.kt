@@ -317,6 +317,15 @@ class TyranoActivity : Activity() {
         // 手柄「切换虚拟鼠标」快捷键与右缘按键的点击模式按钮都接到本页的虚拟鼠标层
         extract.install(root, this::toggleVirtualMouseForPanel, this::isVirtualMouseForPanel)
         extractPanel = extract
+        // 游戏音量（设置悬浮框里的进度条）→ WebView 内 HTMLMediaElement 音量缩放。
+        // 只影响本软件内的游戏声音，不碰手机系统音量（用户要求）。
+        extract.setGameVolumeHook { pct ->
+            browser?.let { v ->
+                runCatching {
+                    v.evaluateJavascript(com.core.engine.WebGameVolume.script(pct), null)
+                }
+            }
+        }
         val server = requireNotNull(localServer)
         if (server.usedFallbackPort) {
             Toast.makeText(
@@ -400,6 +409,13 @@ class TyranoActivity : Activity() {
                 // 提取钩子（幂等重注入；原型/Observer 钩子晚装同样生效）
                 if (view != null) {
                     runCatching { view.evaluateJavascript(extractJs, null) }
+                    // 软件内游戏音量（只缩放 WebView 内媒体的音量，不动系统音量）
+                    runCatching {
+                        view.evaluateJavascript(
+                            com.core.engine.WebGameVolume.script(extractPanel?.gameVolume ?: 100),
+                            null,
+                        )
+                    }
                 }
                 // 虚拟鼠标合成事件 API（幂等，页面每次加载后重新注入）
                 if (virtualMouseLayer != null && view != null) {

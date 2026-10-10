@@ -378,6 +378,15 @@ class RpgMakerActivity : Activity() {
         val extract = OnsExtractPanel(extractFacadeLocal)
         extract.install(root, null, null)
         extractPanel = extract
+        // 游戏音量（设置悬浮框里的进度条）→ WebView 内 HTMLMediaElement 音量缩放。
+        // 只影响本软件内的游戏声音，不碰手机系统音量（用户要求）。
+        extract.setGameVolumeHook { pct ->
+            webView?.let { v ->
+                runCatching {
+                    v.evaluateJavascript(com.core.engine.WebGameVolume.script(pct), null)
+                }
+            }
+        }
         // PIXI legacy 兼容渲染（?android-legacy=1，__rpg_v12.js 的既定开关）：
         // 由设置页开关经 rpgLegacyRenderer extra 控制，规避部分 Android GPU
         // 上 WebGL 正常初始化却整屏渲染为黑的问题；默认关闭不影响既有行为。
@@ -459,6 +468,13 @@ class RpgMakerActivity : Activity() {
                 // 提取钩子（幂等重注入；原型/Observer 钩子晚装同样生效）
                 if (view != null) {
                     runCatching { view.evaluateJavascript(extractJs, null) }
+                    // 软件内游戏音量（只缩放 WebView 内媒体的音量，不动系统音量）
+                    runCatching {
+                        view.evaluateJavascript(
+                            com.core.engine.WebGameVolume.script(extractPanel?.gameVolume ?: 100),
+                            null,
+                        )
+                    }
                 }
                 // 虚拟鼠标合成事件 API（幂等，页面每次加载后重新注入）
                 if (virtualMouseLayer != null && view != null) {
