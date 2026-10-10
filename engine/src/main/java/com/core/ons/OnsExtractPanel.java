@@ -3297,18 +3297,36 @@ public class OnsExtractPanel {
     private static final long AUTO_SPEAK_STABLE_MS = 400;
     private static final long AUTO_SPEAK_GROW_MS = 650;
     private String pendingSpokenSentence;
+    /**
+     * 待补念的"新增部分"（同上：交给去抖任务念，见 speakOnlyAppendedPart）。
+     *
+     * 用户要求：快速连续切换对白时不要「一句一句各播一下就跳过」，
+     * 直接播**最新的**那一句。所以补念也不能立即播——立即播会在连切时
+     * 每次都被下一句掐断，听感就是"碎片式地播一下跳一下"。
+     */
+    private String pendingSpokenSuffix;
 
     private final Runnable autoSpeakJob = new Runnable() {
         @Override
         public void run() {
+            final String suffix = pendingSpokenSuffix;
+            pendingSpokenSuffix = null;
             String text = pendingSpokenSentence;
             pendingSpokenSentence = null;
             if (text == null || text.isEmpty()) return;
-            if (text.equals(lastSpokenSentence)) return; // 去重：同一句不重复念
             // 生效条件 = 面板「自动」快调 OR 设置页「自动朗读」全局开关（后者面板隐藏
             // 也生效——隐藏剧情文本框时更新文本后照常自动朗读）
-            boolean autoOn = ttsAuto || OnsTtsEngines.autoRead(activity);
+            final boolean autoOn = ttsAuto || OnsTtsEngines.autoRead(activity);
             if (!autoOn) return;
+            // ① 同句补念（去抖后只剩最后一次的新增部分：连切时前面几次已被取消）
+            if (suffix != null && !suffix.isEmpty()) {
+                lastSpokenSentence = text;
+                if (!hasSpeakableContent(suffix)) return;
+                android.util.Log.i(TAG, "auto speak append(" + suffix.length() + "): " + suffix);
+                if (ttsEnabled || OnsTtsEngines.autoRead(activity)) speakText(suffix);
+                return;
+            }
+            if (text.equals(lastSpokenSentence)) return; // 去重：同一句不重复念
             lastSpokenSentence = text;
             // 有配对语音时游戏自身已在播放，自动模式不重复播；仅对无语音句子 TTS，
             // 重播由用户手动点「播放」按钮。
@@ -3336,10 +3354,13 @@ public class OnsExtractPanel {
             android.util.Log.i(TAG, "auto speak: 仅标点增量，跳过: " + suffix);
             return true;
         }
-        android.util.Log.i(TAG, "auto speak append(" + suffix.length() + "): " + suffix);
-        if (ttsEnabled || OnsTtsEngines.autoRead(activity)) {
-            speakText(suffix);
-        }
+        // **不再立即播**：交给同一套去抖任务（下一次文本变化会 removeCallbacks 取消本
+        // 次调度）。快速连切对白时，前面几次调度被取消，最终只念最后一次的新增部分——
+        // 用户要求"直接跳到最新的播放最新的对白"，而不是一句一句各播一下就跳过。
+        pendingSpokenSuffix = suffix;
+        pendingSpokenSentence = text;
+        main.removeCallbacks(autoSpeakJob);
+        main.postDelayed(autoSpeakJob, AUTO_SPEAK_GROW_MS);
         return true;
     }
 
@@ -3364,6 +3385,7 @@ public class OnsExtractPanel {
                 && sentence.startsWith(pendingSpokenSentence)
                 && sentence.length() > pendingSpokenSentence.length();
         pendingSpokenSentence = sentence;
+        pendingSpokenSuffix = null;   // 新句：丢掉可能残留的"补念片段"，避免念错内容
         // 用户要求：推进到下一句时，**上一句还在念就立即停掉**，随后转为当前句的朗读。
         // 原来只有去抖到点后 speakSentence() 里的 tts.stop() 才停 → 400/650ms 内旧句会多念
         // 一段（听感上就是"切句了还在念上一句"）。这里在新句（非"同句补念"）一到就抢先停。
