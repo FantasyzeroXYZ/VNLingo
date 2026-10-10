@@ -136,6 +136,7 @@
     <string name="engine_ons_side_magnifier">Magnifier</string>
     <string name="engine_ons_side_settings">Game settings</string>
     <string name="engine_ons_settings_game_volume">In-app game volume</string>
+    <string name="engine_ons_magnifier_select_hint">Drag to select the area to magnify, release to confirm</string>
     <string name="engine_ons_settings_title">Game Settings</string>
     <string name="engine_ons_state_on">On</string>
     <string name="engine_ons_state_off">Off</string>

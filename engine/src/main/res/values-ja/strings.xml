@@ -136,6 +136,7 @@
     <string name="engine_ons_side_magnifier">拡大鏡</string>
     <string name="engine_ons_side_settings">ゲーム設定</string>
     <string name="engine_ons_settings_game_volume">ゲーム音量（アプリ内）</string>
+    <string name="engine_ons_magnifier_select_hint">拡大したい範囲をドラッグで選択し、指を離して確定</string>
     <string name="engine_ons_settings_title">ゲーム設定</string>
     <string name="engine_ons_state_on">オン</string>
     <string name="engine_ons_state_off">オフ</string>
