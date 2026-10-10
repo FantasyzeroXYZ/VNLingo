@@ -35,6 +35,8 @@ public class ArtemisExtractFacade implements ExtractFacade {
     private final StringBuilder sentence = new StringBuilder();
     private volatile String voiceName = "";
     private volatile String voiceCachedPath = "";
+    /** 待配对的语音缓存路径（与 pendingVoice 成对，换句时一起清）。 */
+    private String pendingCachedPath = "";
     /** 待配对语音（voplay/seplay 先于台词到达；旁白行消费后清空）。 */
     private volatile String pendingVoice = "";
 
@@ -63,7 +65,7 @@ public class ArtemisExtractFacade implements ExtractFacade {
                 if ((text == null || text.isEmpty()) && voiceFile != null
                         && !voiceFile.isEmpty() && !isBgmName(voiceFile)) {
                     pendingVoice = voiceFile;
-                    voiceCachedPath = voiceCached == null ? "" : voiceCached;
+                    pendingCachedPath = voiceCached == null ? "" : voiceCached;
                 }
                 if (text != null && !text.isEmpty()) {
                     // 打字机分段：累积文本单调增长 = 同一句，语音标注保持粘滞
@@ -76,10 +78,16 @@ public class ArtemisExtractFacade implements ExtractFacade {
                     sentence.append(text);
                     if (!sameSentenceGrowing) {
                         voiceName = "";
+                        // **换句时也必须清缓存路径**：之前只清 voiceName，导致"没有语音的行"
+                        // 点面板 ▶ 时 ensureVoiceBytes() 仍返回上一条台词缓存下来的音频
+                        //（用户反馈：重播无语音句子会重播到别的音效上去）。
+                        voiceCachedPath = "";
                     }
                     if (!pendingVoice.isEmpty()) {
                         voiceName = pendingVoice;
+                        voiceCachedPath = pendingCachedPath;   // 与语音成对消费
                         pendingVoice = "";
+                        pendingCachedPath = "";
                     }
                 }
             }

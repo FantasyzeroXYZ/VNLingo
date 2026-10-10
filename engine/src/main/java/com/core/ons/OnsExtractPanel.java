@@ -3048,9 +3048,19 @@ public class OnsExtractPanel {
 
     private void playVoice() {
         stopVoice();
+        // 这一句**没有配对语音** → 一律走 TTS，绝不去读缓存字节：
+        // 缓存里可能还留着上一条台词的音频，用户反馈"重播无语音的句子会重播到别的音效上"。
+        if (facade.getVoiceName().isEmpty()) {
+            if (ttsEnabled) {
+                speakSentence();
+            } else {
+                toast(R.string.engine_ons_extract_no_voice);
+            }
+            return;
+        }
         byte[] bytes = facade.ensureVoiceBytes();
         if (bytes == null) {
-            // 无配对语音：TTS 开启时朗读，否则提示
+            // 有语音名但读不到字节：TTS 开启时朗读，否则提示
             if (ttsEnabled) {
                 speakSentence();
             } else {
