@@ -1154,6 +1154,17 @@ public class OnsExtractPanel {
         // 自动朗读在面板隐藏时也要生效（TTS 直呼线程安全）；配对语音由游戏播放，不重复播。
         // 生效判定在 autoPlayForNewSentence 内（面板「自动」快调 OR 设置页「自动朗读」全局开关）
         autoPlayForNewSentence(sentence);
+        // 有游戏语音 → **立刻掐断可能已经开念的 TTS**。
+        // 真机现象（Artemis）：语音信息常常比文本晚到（extract 事件 voice= 先为空、稍后才有），
+        // 自动朗读会抢在语音之前开口，听起来就是"该有语音的句子却念了 TTS"。
+        // 这条兜底：一旦这一句确认有语音，就把已开念的 TTS 停掉并作废待念队列。
+        if (!bridge.getVoiceName().isEmpty()) {
+            stopTts();
+            main.removeCallbacks(autoSpeakJob);
+            pendingSpokenSentence = null;
+            pendingSpokenSuffix = null;
+            if (sentence != null && !sentence.isEmpty()) lastSpokenSentence = sentence;
+        }
         if (!expanded || panel == null) return;
         final String sentenceFinal = sentence;
         final String voiceName = bridge.getVoiceName();
