@@ -74,13 +74,22 @@ class SyncCenterActivity : AppScreenActivity() {
     private var autoSync by mutableStateOf(false)
     private var showAddAccount by mutableStateOf(false)
 
+    /** 正在编辑的账户（null = 新增模式）；点账号行上的「编辑」进入。 */
+    private var editingAccount by mutableStateOf<SyncManager.WebDavAccount?>(null)
+
+    /** 连接测试结果（null = 不显示；空串 = 成功）。 */
+    private var testResult by mutableStateOf<String?>(null)
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         loadConfig()
         setAppScreenContent {
             SyncCenterScreen()
             conflictState?.let { conflict -> ConflictDialog(conflict) }
-            if (showAddAccount) AddAccountDialog()
+            if (showAddAccount || editingAccount != null) {
+                AccountDialog(editingAccount)
+            }
+            testResult?.let { result -> TestResultDialog(result) }
         }
     }
 
@@ -122,6 +131,28 @@ class SyncCenterActivity : AppScreenActivity() {
         }
     }
 
+    /**
+     * 保存编辑结果（就地更新，不再是"删掉再加"）。
+     * 密码留空 = 保持原密码（对话框不回显密码，避免误清空）。
+     */
+    private fun saveEditedAccount(
+        original: SyncManager.WebDavAccount,
+        server: String,
+        user: String,
+        pass: String,
+    ) {
+        try {
+            accounts = manager.updateAccount(
+                original.serverUrl, original.username, server, user, pass, autoSync)
+            autoSync = manager.isAutoSyncEnabled
+            editingAccount = null
+            renderStatus()
+            Toast.makeText(this, getString(R.string.sync_account_updated, user), Toast.LENGTH_SHORT).show()
+        } catch (e: IllegalArgumentException) {
+            Toast.makeText(this, e.message, Toast.LENGTH_LONG).show()
+        }
+    }
+
     private fun activateAccount(account: SyncManager.WebDavAccount) {
         if (manager.isActiveAccount(account)) {
             Toast.makeText(this, R.string.sync_account_already_active, Toast.LENGTH_SHORT).show()
@@ -144,22 +175,18 @@ class SyncCenterActivity : AppScreenActivity() {
             return
         }
         Toast.makeText(this, R.string.sync_testing, Toast.LENGTH_SHORT).show()
-        val appContext = applicationContext
         Thread {
-            val ok = try {
-                manager.testConnection()
+            // 带原因：失败时把 HTTP 状态 + 服务端 message + 常见成因提示展示出来，
+            // 不再只有一句"连接失败"（用户无法自查）。
+            val reason = try {
+                manager.testConnectionDetail()
             } catch (e: IllegalArgumentException) {
-                Toast.makeText(appContext, e.message, Toast.LENGTH_LONG).show()
-                false
+                e.message ?: e.toString()
             } catch (t: Throwable) {
-                false
+                t.message ?: t.toString()
             }
             runOnUiThread {
-                Toast.makeText(
-                    this,
-                    if (ok) R.string.sync_test_ok else R.string.sync_test_failed,
-                    Toast.LENGTH_SHORT,
-                ).show()
+                testResult = reason ?: ""
                 renderStatus()
             }
         }.start()
@@ -366,6 +393,9 @@ class SyncCenterActivity : AppScreenActivity() {
                                                 overflow = TextOverflow.Ellipsis,
                                             )
                                         }
+                                        TextButton(onClick = { editingAccount = account }) {
+                                            Text(stringResource(R.string.sync_account_edit))
+                                        }
                                         TextButton(onClick = { removeAccount(account) }) {
                                             Text(stringResource(R.string.sync_account_delete))
                                         }
@@ -465,15 +495,26 @@ class SyncCenterActivity : AppScreenActivity() {
         }
     }
 
-    /** 悬浮框登录：服务器地址 / 账号 / 密码，确认即保存并切换活动账户。 */
+    /**
+     * 账户悬浮框：新增与编辑共用（[editing] 非空即编辑模式，字段预填）。
+     *
+     * 编辑模式下密码留空表示保持原密码（不回显，避免误清空）。
+     */
     @Composable
-    private fun AddAccountDialog() {
-        var server by remember { mutableStateOf("") }
-        var user by remember { mutableStateOf("") }
-        var pass by remember { mutableStateOf("") }
+    private fun AccountDialog(editing: SyncManager.WebDavAccount?) {
+        val isEdit = editing != null
+        var server by remember(editing) { mutableStateOf(editing?.serverUrl ?: "") }
+        var user by remember(editing) { mutableStateOf(editing?.username ?: "") }
+        var pass by remember(editing) { mutableStateOf("") }
         AlertDialog(
-            onDismissRequest = { showAddAccount = false },
-            title = { Text(stringResource(R.string.sync_account_add)) },
+            onDismissRequest = {
+                showAddAccount = false
+                editingAccount = null
+            },
+            title = {
+                Text(stringResource(
+                    if (isEdit) R.string.sync_account_edit_title else R.string.sync_account_add))
+            },
             text = {
                 Column {
                     OutlinedTextField(
@@ -498,16 +539,54 @@ class SyncCenterActivity : AppScreenActivity() {
                         visualTransformation = PasswordVisualTransformation(),
                         modifier = Modifier.fillMaxWidth().padding(top = 8.dp),
                     )
+                    if (isEdit) {
+                        Text(
+                            stringResource(R.string.sync_password_keep),
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            modifier = Modifier.padding(top = 4.dp),
+                        )
+                    }
                 }
             },
             confirmButton = {
-                TextButton(onClick = { addAccount(server, user, pass) }) {
-                    Text(stringResource(R.string.sync_account_login))
+                TextButton(onClick = {
+                    if (isEdit) {
+                        saveEditedAccount(editing!!, server, user, pass)
+                    } else {
+                        addAccount(server, user, pass)
+                    }
+                }) {
+                    Text(stringResource(
+                        if (isEdit) R.string.sync_account_save else R.string.sync_account_login))
                 }
             },
             dismissButton = {
-                TextButton(onClick = { showAddAccount = false }) {
+                TextButton(onClick = {
+                    showAddAccount = false
+                    editingAccount = null
+                }) {
                     Text(stringResource(R.string.sync_cancel))
+                }
+            },
+        )
+    }
+
+    /** 连接测试结果弹窗：成功显示"连接成功"，失败显示具体原因（HTTP 码+服务端说明+提示）。 */
+    @Composable
+    private fun TestResultDialog(result: String) {
+        AlertDialog(
+            onDismissRequest = { testResult = null },
+            title = { Text(stringResource(R.string.sync_test_result_title)) },
+            text = {
+                Text(
+                    if (result.isEmpty()) stringResource(R.string.sync_test_ok) else result,
+                    style = MaterialTheme.typography.bodyMedium,
+                )
+            },
+            confirmButton = {
+                TextButton(onClick = { testResult = null }) {
+                    Text(stringResource(R.string.sync_close))
                 }
             },
         )

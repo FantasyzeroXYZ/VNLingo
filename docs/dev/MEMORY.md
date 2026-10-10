@@ -1115,3 +1115,19 @@
      （设备无该类游戏）。
    - 连点证据链：按下 → `click repeat armed code=96 delay=320`；抬起 → 无 tick（单击只点一次）；
      按住 ≥320ms → 同一路径产生 `click repeat tick`（真机需人工按住手柄确认）。
+25. **WebDAV（坚果云）实测坑与修复（2026-10-10）**：
+   - **探针必须先在远端建目录**：直接 PUT `VNLingo/xxx` 且父目录不存在时，坚果云返回
+     409 `AncestorsNotFound: The ancestors of this location does not found` →
+     以前"测试连接"永远失败。修复：`testConnectionOrThrow()` 先 `mkdirs(TEST_PROBE_DIR)`。
+     实测序列：MKCOL→201、PUT→201、DELETE→204 ✓。
+   - **PROPFIND 不能带 XML body**：带 body（无论 `application/xml` 还是 `text/xml`、带不带
+     charset）坚果云都回 400 `IllegalArgument: invalid http request entity`；
+     **不带 body 的 PROPFIND（RFC 4918 等价 allprop）返回 207** ✓。
+     修复：`listFiles` 先发无 body 版本，失败再回退带 body 版本（兼容其它服务端）。
+   - 错误信息改为人类可读：从 WebDAV 的 XML `<s:message>/<s:exception>` 提取内容，
+     再按 401/403/404/409/507/5xx 追加成因提示（如 401 → 提醒坚果云要用「应用密码」）。
+   - 账户支持**编辑**（此前只能删除再添加）：`SyncManager.updateAccount(...)` 原地替换、
+     保持列表位置与活动状态，密码留空=保持不变；UI 账号行新增「编辑」。
+   - 真机验收：测试连接 → 「连接成功」；立即同步 → 状态出现"上次同步"、远端
+     `VNLingo/VNLingo_sync.json` HEAD 返回 200；编辑保存后仍是 1 个账户且保持"当前"、
+     再次测试连接仍成功（密码被保留）。

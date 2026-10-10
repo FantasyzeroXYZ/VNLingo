@@ -885,4 +885,12 @@
     <string name="game_debug_last_run">前回の実行</string>
     <string name="game_debug_copy">コピー</string>
     <string name="game_debug_copied">デバッグ情報をコピーしました</string>
-    <string name="game_debug_share">共有</string></resources>
+    <string name="game_debug_share">共有</string>
+    <string name="sync_account_edit">編集</string>
+    <string name="sync_account_edit_title">アカウントを編集</string>
+    <string name="sync_account_save">保存</string>
+    <string name="sync_account_updated">アカウントを更新しました: %1$s</string>
+    <string name="sync_password_keep">空欄なら現在のパスワードを維持します</string>
+    <string name="sync_test_result_title">接続テストの結果</string>
+    <string name="sync_close">閉じる</string>
+</resources>

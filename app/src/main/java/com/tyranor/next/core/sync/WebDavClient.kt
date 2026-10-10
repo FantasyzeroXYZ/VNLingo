@@ -46,9 +46,15 @@ class WebDavClient(serverUrl: String, private val username: String, private val 
         }
     }
 
-    /** 测试连接：写入探针文件再删除，失败抛出具体原因。 */
+    /**
+     * 测试连接：确保目录存在后写入探针文件再删除，失败抛出具体原因。
+     *
+     * 注意：**必须先建目录**。多数服务端（坚果云实测）对父目录不存在的 PUT 返回
+     * 409 `AncestorsNotFound`，此前直接 PUT 探针导致"测试连接永远失败"。
+     */
     @Throws(IOException::class)
     fun testConnectionOrThrow() {
+        mkdirs(TEST_PROBE_DIR)
         writeText(TEST_PROBE_PATH, "ok")
         delete(TEST_PROBE_PATH)
     }
@@ -95,8 +101,7 @@ class WebDavClient(serverUrl: String, private val username: String, private val 
             conn.requestMethod = "GET"
             val code = conn.responseCode
             if (code >= 400) {
-                val err = readErrorBody(conn)
-                throw IOException("HTTP $code" + if (err.isEmpty()) "" else ": $err")
+                throw IOException(friendlyHttpError(conn, code))
             }
             val input = conn.inputStream ?: throw IOException("Empty response body")
             return readBodyLimited(input, maxBytes, "远程同步文件")
@@ -114,8 +119,7 @@ class WebDavClient(serverUrl: String, private val username: String, private val 
             conn.outputStream.use { it.write(data) }
             val code = conn.responseCode
             if (code >= 400) {
-                val err = readErrorBody(conn)
-                throw IOException("PUT $path failed: HTTP $code" + if (err.isEmpty()) "" else ": $err")
+                throw IOException("PUT $path 失败: " + friendlyHttpError(conn, code))
             }
         }
     }
@@ -145,25 +149,41 @@ class WebDavClient(serverUrl: String, private val username: String, private val 
         0
     }
 
-    /** 列出目录内容（PROPFIND Depth:1）。 */
+    /**
+     * 列出目录内容（PROPFIND Depth:1）。
+     *
+     * 兼容性：坚果云对**带 XML 实体**的 PROPFIND 返回 400 `invalid http request entity`，
+     * 而 RFC 4918 允许不带 body 的 PROPFIND（等价 allprop）。因此先发**无 body** 版本，
+     * 若服务端坚持要 body（少数实现）再回退到带 XML body 的版本。
+     */
     @Throws(IOException::class)
     fun listFiles(path: String): List<WebDavItem> {
-        val xml = "<?xml version=\"1.0\" encoding=\"utf-8\"?>\n" +
-            "<D:propfind xmlns:D=\"DAV:\">\n" +
-            "  <D:allprop/>\n" +
-            "</D:propfind>"
-        val body = xml.toByteArray(StandardCharsets.UTF_8)
-        withConnection(resolveUrl(path)) { conn ->
+        val url = resolveUrl(path)
+        return try {
+            propfind(url, null)
+        } catch (e: IOException) {
+            Log.w(TAG, "bodyless PROPFIND failed, retry with xml body", e)
+            propfind(url, PROPFIND_XML)
+        }
+    }
+
+    @Throws(IOException::class)
+    private fun propfind(url: String, body: ByteArray?): List<WebDavItem> {
+        withConnection(url) { conn ->
             conn.requestMethod = "PROPFIND"
-            conn.doOutput = true
-            conn.setFixedLengthStreamingMode(body.size)
-            conn.setRequestProperty("Content-Type", "application/xml")
-            conn.setRequestProperty("Depth", "1")
-            conn.outputStream.use { it.write(body) }
+            if (body == null) {
+                // 无 body：不设 Content-Type（部分服务端对空实体带类型反而报错）
+                conn.setRequestProperty("Depth", "1")
+            } else {
+                conn.doOutput = true
+                conn.setFixedLengthStreamingMode(body.size)
+                conn.setRequestProperty("Content-Type", "application/xml; charset=utf-8")
+                conn.setRequestProperty("Depth", "1")
+                conn.outputStream.use { it.write(body) }
+            }
             val code = conn.responseCode
             if (code >= 400) {
-                val err = readErrorBody(conn)
-                throw IOException("HTTP $code: $err")
+                throw IOException(friendlyHttpError(conn, code))
             }
             val text = readBodyLimited(conn.inputStream, 1024 * 1024L, "WebDAV 目录列表")
                 .toString(StandardCharsets.UTF_8)
@@ -221,6 +241,53 @@ class WebDavClient(serverUrl: String, private val username: String, private val 
         String(readBodyLimited(stream, 64 * 1024L, "WebDAV 错误响应"), StandardCharsets.UTF_8)
     } catch (ignored: Exception) {
         ""
+    }
+
+    /**
+     * 把服务端错误转成对人友好的说明：
+     * WebDAV 服务端普遍返回 XML（如坚果云 `<s:exception>AncestorsNotFound</s:exception>
+     * <s:message>The ancestors of this location does not found</s:message>`），
+     * 直接抛原始 XML 用户看不懂。这里抽出 message/exception，并补一句常见成因提示。
+     */
+    private fun friendlyHttpError(conn: HttpURLConnection, code: Int): String {
+        val raw = readErrorBody(conn).trim()
+        val message = extractXmlText(raw, "s:message")
+            ?: extractXmlText(raw, "d:message")
+            ?: extractXmlText(raw, "message")
+        val exception = extractXmlText(raw, "s:exception")
+            ?: extractXmlText(raw, "d:exception")
+            ?: extractXmlText(raw, "exception")
+        val detail = when {
+            message != null && exception != null -> "$message ($exception)"
+            message != null -> message
+            exception != null -> exception
+            raw.isEmpty() -> ""
+            else -> raw.take(200)
+        }
+        val hint = when {
+            code == 401 -> "；账号或应用密码不正确（坚果云需使用「应用密码」，不是登录密码）"
+            code == 403 -> "；无权限访问该路径，请检查目录是否对该账号可见"
+            code == 404 -> "；路径不存在，请检查服务器地址是否包含 WebDAV 目录（如 /dav/）"
+            code == 405 -> "；服务端不允许该操作"
+            code == 409 -> "；父目录不存在，请检查远端目录结构"
+            code == 507 -> "；云端空间不足"
+            code in 500..599 -> "；服务端错误，请稍后重试"
+            else -> ""
+        }
+        return "HTTP $code" + (if (detail.isEmpty()) "" else ": $detail") + hint
+    }
+
+    /** 从 XML 文本里取某个标签的内容（大小写与命名空间容错）。 */
+    private fun extractXmlText(xml: String, tag: String): String? {
+        val lower = xml.lowercase()
+        val open = "<${tag.lowercase()}"
+        var idx = lower.indexOf(open)
+        if (idx < 0) return null
+        idx = lower.indexOf('>', idx)
+        if (idx < 0) return null
+        val end = lower.indexOf("</${tag.lowercase()}>", idx)
+        if (end <= idx) return null
+        return xml.substring(idx + 1, end).trim().takeIf { it.isNotEmpty() }
     }
 
     /** 解析 PROPFIND 响应（多命名空间容错）。 */
@@ -284,7 +351,16 @@ class WebDavClient(serverUrl: String, private val username: String, private val 
 
     companion object {
         private const val TAG = "WebDavClient"
-        const val TEST_PROBE_PATH = "VNLingo/VNLingo_connection_test.txt"
+        const val TEST_PROBE_DIR = "VNLingo"
+        const val TEST_PROBE_PATH = "$TEST_PROBE_DIR/VNLingo_connection_test.txt"
+
+        /** 带 body 的 PROPFIND 回退版本（RFC 4918 allprop）。 */
+        private val PROPFIND_XML: ByteArray = (
+            "<?xml version=\"1.0\" encoding=\"utf-8\"?>\n" +
+                "<D:propfind xmlns:D=\"DAV:\">\n" +
+                "  <D:allprop/>\n" +
+                "</D:propfind>"
+            ).toByteArray(StandardCharsets.UTF_8)
 
         /**
          * 判断 URL 是否为不安全的明文 HTTP（非 localhost/127.0.0.1）。

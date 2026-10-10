@@ -116,6 +116,59 @@ class SyncManager(private val context: Context) {
         return list
     }
 
+    /**
+     * 编辑已有账户（原地替换，保持列表顺序）：服务器地址/账号/密码可改。
+     *
+     * 说明：以前只能"删除再添加"，改一个字符也要重来一遍，且会丢掉列表位置与活动状态。
+     * 这里按 (serverUrl, username) 定位原条目就地更新：
+     * - password 为空表示**保持原密码**（UI 不回显密码，避免误清空）；
+     * - 若改的是当前活动账户，同步更新活动配置（否则活动仍指向旧地址）；
+     * - 目标 (服务器, 账号) 与别的账户重复时，合并到那一条（等同于改密重登）。
+     */
+    @Synchronized
+    @Throws(IllegalArgumentException::class)
+    fun updateAccount(
+        oldServerUrl: String,
+        oldUsername: String,
+        serverUrl: String?,
+        username: String?,
+        password: String?,
+        autoSync: Boolean,
+    ): List<WebDavAccount> {
+        val oldServer = oldServerUrl.trim()
+        val oldUser = oldUsername.trim()
+        val server = serverUrl?.trim() ?: ""
+        val user = username?.trim() ?: ""
+        if (server.isEmpty() || user.isEmpty()) {
+            throw IllegalArgumentException("服务器地址与账号不能为空")
+        }
+        val existing = accounts()
+        val old = existing.firstOrNull {
+            it.serverUrl.equals(oldServer, ignoreCase = true) && it.username == oldUser
+        } ?: throw IllegalArgumentException("要编辑的账户不存在")
+        val newPassword = if (password.isNullOrEmpty()) old.password else password
+        val updated = WebDavAccount(server, user, newPassword)
+
+        val wasActive = isActiveAccount(old)
+        val list = existing.toMutableList()
+        // 先移除原条目与冲突的同名条目，再把更新后的条目放回原位置（取不到则置顶）
+        val position = list.indexOfFirst {
+            it.serverUrl.equals(oldServer, ignoreCase = true) && it.username == oldUser
+        }.coerceAtLeast(0)
+        list.removeAll {
+            (it.serverUrl.equals(oldServer, ignoreCase = true) && it.username == oldUser) ||
+                (it.serverUrl.equals(server, ignoreCase = true) && it.username == user)
+        }
+        val insertAt = position.coerceIn(0, list.size)
+        list.add(insertAt, updated)
+
+        syncPrefs.edit().putString(KEY_ACCOUNTS, encodeAccounts(list)).apply()
+        if (wasActive) {
+            saveConfig(updated.serverUrl, updated.username, updated.password, autoSync)
+        }
+        return list
+    }
+
     /** 切换活动账户（保留自动同步开关状态）。 */
     @Synchronized
     fun setActiveAccount(account: WebDavAccount, autoSync: Boolean) {
@@ -165,6 +218,20 @@ class SyncManager(private val context: Context) {
     } catch (t: Exception) {
         Log.w(TAG, "testConnection failed", t)
         false
+    }
+
+    /**
+     * 带原因的连接测试：成功返回 null，失败返回可直接展示给用户的原因
+     * （HTTP 状态 + 服务端 message/exception + 常见成因提示，见 WebDavClient.friendlyHttpError）。
+     */
+    fun testConnectionDetail(): String? = try {
+        val client = getClient() ?: return context.getString(
+            com.tyranor.next.R.string.sync_not_configured_error)
+        client.testConnectionOrThrow()
+        null
+    } catch (t: Exception) {
+        Log.w(TAG, "testConnectionDetail failed", t)
+        t.message ?: t.toString()
     }
 
     /** 触发一次同步（后台单线程执行；回调已切主线程）。 */

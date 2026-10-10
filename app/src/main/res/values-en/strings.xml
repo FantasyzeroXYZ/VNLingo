@@ -885,4 +885,12 @@
     <string name="game_debug_last_run">Last run</string>
     <string name="game_debug_copy">Copy</string>
     <string name="game_debug_copied">Debug info copied</string>
-    <string name="game_debug_share">Share</string></resources>
+    <string name="game_debug_share">Share</string>
+    <string name="sync_account_edit">Edit</string>
+    <string name="sync_account_edit_title">Edit account</string>
+    <string name="sync_account_save">Save</string>
+    <string name="sync_account_updated">Account updated: %1$s</string>
+    <string name="sync_password_keep">Leave blank to keep the current password</string>
+    <string name="sync_test_result_title">Connection test result</string>
+    <string name="sync_close">Close</string>
+</resources>
