@@ -136,7 +136,12 @@ public abstract class ArtemisLauncherBaseActivity extends com.ies_net.artemis.Ar
                         extractPanel.preferredWindowWidthPx(),
                         android.view.WindowManager.LayoutParams.WRAP_CONTENT,
                         android.view.WindowManager.LayoutParams.TYPE_APPLICATION,
-                        android.view.WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE,
+                        // FLAG_NOT_FOCUSABLE 会在面板展开时被去掉（手柄按键进面板动作表），
+                        // 因此必须显式加 FLAG_NOT_TOUCH_MODAL：否则窗口一旦可聚焦就变成
+                        // **触摸独占**，面板区域外的点击全被吞掉 → 打开文本框后点屏幕推不动游戏
+                        // （用户要求：面板打开时只让手柄/快捷键聚焦，触摸照常点屏幕推进）。
+                        android.view.WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE
+                                | android.view.WindowManager.LayoutParams.FLAG_NOT_TOUCH_MODAL,
                         android.graphics.PixelFormat.TRANSLUCENT);
                 plp.gravity = android.view.Gravity.BOTTOM | android.view.Gravity.CENTER_HORIZONTAL;
                 plp.y = navBarBottomInset();

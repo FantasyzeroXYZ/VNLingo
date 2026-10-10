@@ -140,6 +140,14 @@ public class OnsExtractPanel {
     private ScrollView historyScroller;
     private LinearLayout historyList;
     private MediaPlayer player;
+    /**
+     * 朗读代次：每次停止/切句自增。
+     *
+     * HTTP-TTS / MultiTTS 是**后台线程合成**再回主线程播放；若 A 句的合成在用户切到 B 句
+     * 之后才返回，它仍会回来播 A 的声音 —— 表现就是"切句后偶尔还残留上一条对白的 TTS"
+     * （stopTts() 管不到尚未返回的合成）。异步回来时代次不一致就丢弃。
+     */
+    private volatile int ttsEpoch;
     private File currentVoiceFile;
     private boolean expanded;
     /** 系统 TTS：无配对语音时朗读（BGM 不进配对通道，不受影响）。 */
@@ -3204,6 +3212,9 @@ public class OnsExtractPanel {
 
     private void speakText(String sentence) {
         if (sentence == null || sentence.isEmpty()) return;
+        // 本次朗读的代次：异步合成回来时若已切句/停止（代次变了）就丢弃，
+        // 避免"切句后还残留上一条对白的 TTS 声音"（竞态，用户反馈的偶发现象）。
+        final int epoch = ttsEpoch;
         if (multiTtsEnabled && OnsTtsEngines.ENGINE_MULTI.equals(OnsTtsEngines.engine(activity))) {
             // 高级 TTS 引擎按设置路由：MultiTTS / 自定义 HTTP API（参考 TrackReader
             // src/domain/tts Provider 方案）；合成字节 → 本地 MediaPlayer 播放，后台线程。
@@ -3217,6 +3228,10 @@ public class OnsExtractPanel {
                         return;
                     }
                     main.post(() -> {
+                        if (epoch != ttsEpoch) {
+                            Log.i(TAG, "stale http-tts dropped (line switched)");
+                            return;
+                        }
                         stopVoice();
                         playVoiceBytes(wav, "http_tts");
                     });
@@ -3247,6 +3262,10 @@ public class OnsExtractPanel {
                         fos.write(wav);
                     }
                     main.post(() -> {
+                        if (epoch != ttsEpoch) {
+                            Log.i(TAG, "stale multitts dropped (line switched)");
+                            return;
+                        }
                         stopVoice();
                         try {
                             player = new MediaPlayer();
@@ -3282,6 +3301,10 @@ public class OnsExtractPanel {
                     }
                 }
             }
+            if (epoch != ttsEpoch) {
+                Log.i(TAG, "stale system-tts dropped (line switched)");
+                return;
+            }
             tts.stop();
             // 句读模式：按句末标点分段，首段 QUEUE_FLUSH 其余 QUEUE_ADD（段间
             // 自然停顿）；循环 = 整段序列重复 ttsLoop+1 遍。关闭句读时整句一次。
@@ -3308,6 +3331,8 @@ public class OnsExtractPanel {
     }
 
     private void stopTts() {
+        // 作废所有在途的异步合成（见 ttsEpoch 注释）：否则它们回来后会播上一条的声音。
+        ttsEpoch++;
         if (tts != null) {
             try { tts.stop(); } catch (Throwable ignored) {}
         }
