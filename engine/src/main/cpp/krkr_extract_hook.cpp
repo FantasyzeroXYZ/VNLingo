@@ -915,6 +915,136 @@ static void logEngineIdentity(void* gameHandle) {
     std::fclose(maps);
 }
 
+// ---- 最小 arm64 inline hook（第②步：shadowhook 在本机 SIGABRT、虚表补丁拦不到直接调用）----
+// 做法：把目标函数入口 16 字节（4 条指令）替换为 `ldr x16, #8; br x16; .quad replacement`，
+// 被搬移的 4 条指令放进 trampoline，执行完再跳回 target+16。
+// 安全阀：若前 4 条指令含 PC 相对指令（ADR/ADRP/B/BL/LDR-literal），**拒绝打补丁**并记日志
+// —— 这类指令搬到 trampoline 会算错地址（宁可不钩，也不能把引擎改坏）。
+// 注意：必须用 extern "C" 且 **hidden 可见性**，naked 里的 adrp/:lo12: 才能按本地符号解析
+// （C++ static 内部链接符号汇编引用不到；默认可见性又会要求走 GOT → 报 -fPIC 重定位错误）。
+extern "C" __attribute__((visibility("hidden"))) void* gKrkrTrampoline = nullptr;  // 被搬移指令之后的返回点
+static void* gKrkrHookTarget = nullptr;      // 被 inline hook 的原函数入口
+
+extern "C" void krkr_console_log_hook();    // 见下方 naked 函数
+
+static bool isPcRelative(uint32_t insn) {
+    if ((insn & 0x1F000000u) == 0x10000000u) return true;   // ADR / ADRP
+    if ((insn & 0x7C000000u) == 0x14000000u) return true;   // B / BL
+    if ((insn & 0x3B000000u) == 0x18000000u) return true;   // LDR (literal)
+    return false;
+}
+
+/** 安装 inline hook；成功返回 true 并把 trampoline 写入 *trampolineOut。 */
+static bool installInlineHook(void* target, void* replacement, void** trampolineOut) {
+    if (target == nullptr || replacement == nullptr) return false;
+    auto* insns = reinterpret_cast<uint32_t*>(target);
+    for (int i = 0; i < 4; ++i) {
+        if (isPcRelative(insns[i])) {
+            LOGW("inline hook: target %p insn[%d]=0x%08x is PC-relative → refuse to patch",
+                 target, i, insns[i]);
+            return false;
+        }
+    }
+    const long pageSize = sysconf(_SC_PAGESIZE);
+    if (pageSize <= 0) return false;
+    // trampoline：[被搬移的 16 字节][ldr x16,#8; br x16; .quad target+16]
+    void* tramp = mmap(nullptr, static_cast<size_t>(pageSize), PROT_READ | PROT_WRITE | PROT_EXEC,
+                       MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
+    if (tramp == MAP_FAILED) return false;
+    auto* t = reinterpret_cast<uint32_t*>(tramp);
+    for (int i = 0; i < 4; ++i) t[i] = insns[i];
+    t[4] = 0x58000050u;   // ldr x16, #8   （PC+8 = 下一条指令后的字面量）
+    t[5] = 0xD61F0200u;   // br x16
+    *reinterpret_cast<uint64_t*>(t + 6) = reinterpret_cast<uint64_t>(target) + 16;
+    __builtin___clear_cache(reinterpret_cast<char*>(tramp),
+                            reinterpret_cast<char*>(tramp) + pageSize);
+    // 改写目标入口
+    const uintptr_t page = reinterpret_cast<uintptr_t>(target)
+            & ~(static_cast<uintptr_t>(pageSize) - 1);
+    if (mprotect(reinterpret_cast<void*>(page), static_cast<size_t>(pageSize),
+                 PROT_READ | PROT_WRITE | PROT_EXEC) != 0) {
+        LOGW("inline hook: mprotect RWX failed errno=%d", errno);
+        munmap(tramp, static_cast<size_t>(pageSize));
+        return false;
+    }
+    insns[0] = 0x58000050u;   // ldr x16, #8
+    insns[1] = 0xD61F0200u;   // br x16
+    *reinterpret_cast<uint64_t*>(insns + 2) = reinterpret_cast<uint64_t>(replacement);
+    mprotect(reinterpret_cast<void*>(page), static_cast<size_t>(pageSize),
+             PROT_READ | PROT_EXEC);
+    __builtin___clear_cache(reinterpret_cast<char*>(target),
+                            reinterpret_cast<char*>(target) + 16);
+    *trampolineOut = tramp;
+    LOGI("inline hook: armed target=%p trampoline=%p", target, tramp);
+    return true;
+}
+
+/** TVPConsoleLog 的替换实现（C 侧）：把控制台文本按 UTF-16/UTF-8 自适应上行。 */
+extern "C" void krkr_on_console_log(const void* text) {
+    if (text == nullptr) return;
+    const unsigned char* p = static_cast<const unsigned char*>(text);
+    // 宽松识别：UTF-16LE 的日文/中文常见形如 XX 3X 00 XX（高位字节多为 0 或 0x30~0x9F）
+    size_t wide = 0, total = 0;
+    for (size_t i = 0; i + 1 < 256 && p[i] != 0; i += 2, ++total) {
+        if (p[i + 1] == 0x00 || (p[i + 1] >= 0x30 && p[i + 1] <= 0x9F)) ++wide;
+    }
+    std::string utf8;
+    if (total >= 2 && wide * 2 >= total) {
+        for (size_t i = 0; i + 1 < 512; i += 2) {
+            const uint32_t cp = p[i] | (static_cast<uint32_t>(p[i + 1]) << 8);
+            if (cp == 0) break;
+            if (cp < 0x80) {
+                utf8.push_back(static_cast<char>(cp));
+            } else if (cp < 0x800) {
+                utf8.push_back(static_cast<char>(0xC0 | (cp >> 6)));
+                utf8.push_back(static_cast<char>(0x80 | (cp & 0x3F)));
+            } else {
+                utf8.push_back(static_cast<char>(0xE0 | (cp >> 12)));
+                utf8.push_back(static_cast<char>(0x80 | ((cp >> 6) & 0x3F)));
+                utf8.push_back(static_cast<char>(0x80 | (cp & 0x3F)));
+            }
+        }
+    } else {
+        utf8.assign(reinterpret_cast<const char*>(text), ::strnlen(reinterpret_cast<const char*>(text), 512));
+    }
+    if (utf8.empty()) return;
+    LOGI("console text(%zu): %.60s", utf8.size(), utf8.c_str());
+    emitText(utf8.c_str());
+}
+
+/**
+ * 裸函数 trampoline：保存 x0-x9 与 q0-q7 → 调 C 侧（x0 仍是第一个参数）→ 恢复 → 跳回 target+16。
+ * 只做"透传 + 观察"，不改被钩函数的语义与返回值。
+ */
+extern "C" __attribute__((naked)) void krkr_console_log_hook() {
+    __asm__ volatile(
+            "sub sp, sp, #272\n"
+            "stp x0, x1, [sp, #0]\n"
+            "stp x2, x3, [sp, #16]\n"
+            "stp x4, x5, [sp, #32]\n"
+            "stp x6, x7, [sp, #48]\n"
+            "stp x8, x9, [sp, #64]\n"
+            "stp q0, q1, [sp, #80]\n"
+            "stp q2, q3, [sp, #112]\n"
+            "stp q4, q5, [sp, #144]\n"
+            "stp q6, q7, [sp, #176]\n"
+            "bl krkr_on_console_log\n"
+            "ldp x0, x1, [sp, #0]\n"
+            "ldp x2, x3, [sp, #16]\n"
+            "ldp x4, x5, [sp, #32]\n"
+            "ldp x6, x7, [sp, #48]\n"
+            "ldp x8, x9, [sp, #64]\n"
+            "ldp q0, q1, [sp, #80]\n"
+            "ldp q2, q3, [sp, #112]\n"
+            "ldp q4, q5, [sp, #144]\n"
+            "ldp q6, q7, [sp, #176]\n"
+            "add sp, sp, #272\n"
+            "adrp x16, gKrkrTrampoline\n"
+            "add x16, x16, :lo12:gKrkrTrampoline\n"
+            "ldr x16, [x16]\n"
+            "br x16\n");
+}
+
 extern "C" bool krkr_bridge_got_hook(const char* library, const char* symbol,
                                      void* replacement, void** original);
 
@@ -954,9 +1084,35 @@ extern "C" bool krkr_install_extract_hook(void* gameHandle, JNIEnv* env) {
     // 之前只在失败时打印 → "成功挂上却拿不到文本"时（Yosuga：armed 但 raw=0）无从判断内核版本。
     logEngineIdentity(gameHandle);
 
+    // ② 首选：钩 TVPConsoleLog（引擎已导出、签名稳定；patch.tjs 把对白经 Debug.message 送到这里）。
+    //    只用 const char16_t* 那一版（第一个参数就是文本指针），且**只钩一个**——
+    //    三个签名共用同一个 naked trampoline，钩多个会跳错返回点。
+    static const char* kConsoleLogSymbols[] = {
+            "_ZN3TJS13TVPConsoleLogEPKDs",          // TJS::TVPConsoleLog(const tjs_char*)
+            "_Z13TVPConsoleLogRKN3TJS10tTJSStringEb", // TVPConsoleLog(const tTJSString&, bool)
+    };
+    bool consoleHooked = false;
+    for (const char* sym : kConsoleLogSymbols) {
+        void* addr = dlsym(gameHandle, sym);
+        LOGI("extract identify: dlsym %s -> %s", sym, addr != nullptr ? "FOUND" : "missing");
+        if (addr == nullptr || consoleHooked) continue;
+        // tTJSString& 版第一参数是对象（布局不同），先只上指针版
+        if (std::strcmp(sym, "_Z13TVPConsoleLogRKN3TJS10tTJSStringEb") == 0) continue;
+        if (installInlineHook(addr, reinterpret_cast<void*>(&krkr_console_log_hook),
+                              &gKrkrTrampoline)) {
+            gKrkrHookTarget = addr;
+            consoleHooked = true;
+            LOGI("extract hook: TVPConsoleLog armed via inline hook (%s)", sym);
+        }
+    }
+    if (consoleHooked) {
+        gHookInstalled.store(true, std::memory_order_relaxed);
+    }
+
     void* target = dlsym(gameHandle, kLabelSetString);
     if (target == nullptr) {
         // 失败要吵：身份已在上面打过，这里给结论
+        if (consoleHooked) return true;   // 控制台这一路已武装，仍有提取希望
         __android_log_print(ANDROID_LOG_ERROR, "KrkrExtract",
                 "extract hook: no known dialogue target matched (build lacks Label::setString)");
         return false;
