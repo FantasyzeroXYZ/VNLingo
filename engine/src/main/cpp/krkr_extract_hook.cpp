@@ -872,6 +872,11 @@ void ftMaybeEmitIdle() {
 
 void ftOnCode(unsigned long code) {
     if (!gHookInstalled.load(std::memory_order_relaxed)) return;
+    // ★ 启动期零开销：引擎就绪前不接字符流、不跑判页状态机。
+    // 依据：本文件的既有注释——"O(n²) 推导全速跑会饿死持同一锁的游戏渲染线程（实测 KRKR 主线程 ANR）"；
+    // 实测：FT 链一开（即使只留 GOT 钩子）启动期引擎的大量字形调用会把 `launch UI forms ready`
+    // 卡在 0 → 一直停在"正在启动游戏"。就绪前直接返回即可根治。
+    if (!krkr_engine_ready()) return;
     if (code < 0x20 || code >= 0x110000 || code == gPrevCode) return;
     // B3 诊断：码点入流计数（与 ft glyph map HIT 对照，判断"命中后是否真的进流"）
     static std::atomic<uint64_t> onCodeCalls{0};
@@ -1664,7 +1669,7 @@ extern "C" bool krkr_install_ft_probe(void* gameHandle, const char* library) {
     // 【入口即打】无条件的调用轨迹：确认是否被调用、参数、是否二次（延后）进入
     LOGI("ft probe: ENTER handle=%p library=%s", gameHandle,
          library != nullptr ? library : "(null)");
-    static const bool kEnableFtProbe = false;
+    static const bool kEnableFtProbe = true;
     // 【运行时安装】真机证实：FT 链若在引擎启动期安装会卡住启动（宿主等不到 UI 就绪）。
     // 因此这里**不在启动期装**，改为由控制台活动 + 时间触发的"迟到安装"（见 krkrLateFtMaybe）。
     static const bool kInstallAtStartup = true;
