@@ -77,9 +77,20 @@ object EngineScanner {
         val activeScanned = scanned.filter { game ->
             activeRoots.any { root -> isGameUnderRoot(root, game.uri) }
         }
+        // **同文件夹内容去重**：同一个游戏目录可能被多个扫描根同时发现
+        // （例如同时添加了 `game/` 与 `game/krkr`），此时两个条目的 uri 只差
+        // tree 前缀（`.../tree/<树>/document/<真实路径>`），旧行为会在库里出现重复条目。
+        // 这里按 `/document/` 之后的真实路径归一：同路径只保留一条（保留列表中更靠前者，
+        // 即扫描根顺序在前的那条），避免"同一个游戏重复出现"（用户反馈）。
+        val dedupedScanned = LinkedHashMap<String, com.tyranor.next.core.game.model.ScanGame>()
+        for (game in activeScanned) {
+            val key = game.uri.substringAfterLast("/document/", game.uri)
+            if (!dedupedScanned.containsKey(key)) dedupedScanned[key] = game
+        }
+        val activeScannedDeduped = dedupedScanned.values.toList()
         val refreshed = GameLibraryFacade.updateGames(context) { currentGames ->
             val existingByUri = currentGames.associateBy { it.uri }
-            val scanned = activeScanned.map { current ->
+            val scanned = activeScannedDeduped.map { current ->
                 existingByUri[current.uri]?.let { previous ->
                     current.copy(
                         coverUri = previous.coverUri ?: current.coverUri,
