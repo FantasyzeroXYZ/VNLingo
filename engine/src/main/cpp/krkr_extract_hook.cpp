@@ -1632,7 +1632,7 @@ extern "C" bool krkr_install_ft_probe(void* gameHandle, const char* library) {
     // 【入口即打】无条件的调用轨迹：确认是否被调用、参数、是否二次（延后）进入
     LOGI("ft probe: ENTER handle=%p library=%s", gameHandle,
          library != nullptr ? library : "(null)");
-    static const bool kEnableFtProbe = true;
+    static const bool kEnableFtProbe = false;
     // 【运行时安装】真机证实：FT 链若在引擎启动期安装会卡住启动（宿主等不到 UI 就绪）。
     // 因此这里**不在启动期装**，改为由控制台活动 + 时间触发的"迟到安装"（见 krkrLateFtMaybe）。
     static const bool kInstallAtStartup = true;
