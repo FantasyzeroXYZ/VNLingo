@@ -35,6 +35,7 @@ import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.tyranor.next.R
+import com.tyranor.next.core.sync.SaveCloudCatalog
 import com.tyranor.next.core.sync.SyncManager
 import com.tyranor.next.theme.AppComponentCornerRadius
 import com.tyranor.next.theme.MiuixSettingsTheme
@@ -80,6 +81,13 @@ class SyncCenterActivity : AppScreenActivity() {
     /** 连接测试结果（null = 不显示；空串 = 成功）。 */
     private var testResult by mutableStateOf<String?>(null)
 
+    /** 存档云同步列表（本地已有存档的游戏 ∪ 云端已有 zip 的游戏）。 */
+    private var saveRows by mutableStateOf(listOf<SaveCloudCatalog.Row>())
+    private var saveLoading by mutableStateOf(false)
+    /** 正在处理的行（cloudName），用于禁用按钮并显示"处理中"。 */
+    private var saveBusy by mutableStateOf<String?>(null)
+    private val saveCatalog by lazy { SaveCloudCatalog(this) }
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         loadConfig()
@@ -95,8 +103,52 @@ class SyncCenterActivity : AppScreenActivity() {
 
     private fun loadConfig() {
         accounts = manager.accounts()
-        autoSync = manager.config.autoSync
+        autoSync = manager.isAutoSyncEnabled
         renderStatus()
+        refreshSaves()
+    }
+
+    /**
+     * 刷新存档云同步列表：本地存档遍历 + 云端目录列表都是磁盘/网络 IO，
+     * 统一切到后台线程，回来后落 Compose 状态。
+     */
+    private fun refreshSaves() {
+        if (saveLoading) return
+        saveLoading = true
+        Thread({
+            val rows = try {
+                saveCatalog.list()
+            } catch (t: Throwable) {
+                emptyList<SaveCloudCatalog.Row>()
+            }
+            runOnUiThread {
+                saveRows = rows
+                saveLoading = false
+            }
+        }, "savecloud-list").start()
+    }
+
+    /** 单行操作（上传/下载/删除云端）：结果用 Toast 提示并刷新时间列。 */
+    private fun runSaveAction(row: SaveCloudCatalog.Row, action: String) {
+        if (saveBusy != null) return
+        saveBusy = row.cloudName
+        val appContext = applicationContext
+        val done: (Boolean, String) -> Unit = { ok, message ->
+            runOnUiThread {
+                saveBusy = null
+                Toast.makeText(
+                    appContext,
+                    if (ok) message else getString(R.string.sync_test_failed) + "：" + message,
+                    Toast.LENGTH_LONG,
+                ).show()
+                refreshSaves()
+            }
+        }
+        when (action) {
+            "upload" -> Thread { saveCatalog.upload(row, done) }.start()
+            "download" -> Thread { saveCatalog.download(row, done) }.start()
+            "delete" -> saveCatalog.deleteRemote(row, done)
+        }
     }
 
     private fun renderStatus() {
@@ -437,6 +489,47 @@ class SyncCenterActivity : AppScreenActivity() {
                             modifier = Modifier.fillMaxWidth().glassShadow().glassBorder(),
                             cornerRadius = AppComponentCornerRadius,
                         ) {
+                            Column(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp)) {
+                                Row(verticalAlignment = Alignment.CenterVertically) {
+                                    Text(
+                                        stringResource(R.string.sync_save_section_title),
+                                        style = MaterialTheme.typography.titleMedium,
+                                        modifier = Modifier.weight(1f).padding(vertical = 6.dp),
+                                    )
+                                    TextButton(onClick = { refreshSaves() }, enabled = !saveLoading) {
+                                        Text(stringResource(R.string.sync_save_refresh))
+                                    }
+                                }
+                                Text(
+                                    stringResource(R.string.sync_save_section_hint),
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                )
+                                if (!saveCatalog.isListable()) {
+                                    Text(
+                                        stringResource(R.string.sync_save_github_unsupported),
+                                        style = MaterialTheme.typography.bodySmall,
+                                        color = MaterialTheme.colorScheme.error,
+                                        modifier = Modifier.padding(top = 6.dp),
+                                    )
+                                }
+                                if (saveRows.isEmpty()) {
+                                    Text(
+                                        stringResource(R.string.sync_save_empty),
+                                        style = MaterialTheme.typography.bodySmall,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                        modifier = Modifier.padding(top = 8.dp, bottom = 4.dp),
+                                    )
+                                }
+                                saveRows.forEach { row -> SaveCloudRowItem(row) }
+                            }
+                        }
+                    }
+                    item {
+                        MiuixCard(
+                            modifier = Modifier.fillMaxWidth().glassShadow().glassBorder(),
+                            cornerRadius = AppComponentCornerRadius,
+                        ) {
                             Row(
                                 modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 6.dp),
                                 horizontalArrangement = Arrangement.SpaceBetween,
@@ -570,6 +663,82 @@ class SyncCenterActivity : AppScreenActivity() {
                 }
             },
         )
+    }
+
+    /** 存档云同步的单行：标题 + 时间 + 本地存档数 + 上传/下载/删除云端。 */
+    @Composable
+    private fun SaveCloudRowItem(row: SaveCloudCatalog.Row) {
+        val busy = saveBusy == row.cloudName
+        Column(Modifier.fillMaxWidth().padding(vertical = 6.dp)) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text(
+                    row.title,
+                    style = MaterialTheme.typography.bodyMedium,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier.weight(1f),
+                )
+                if (!row.hasCloud) {
+                    Text(
+                        stringResource(R.string.sync_save_local_only),
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                } else if (!row.hasLocal) {
+                    Text(
+                        stringResource(R.string.sync_save_cloud_only),
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+            }
+            Text(
+                stringResource(
+                    R.string.sync_save_cloud_time,
+                    if (row.cloudModified > 0) {
+                        DateFormat.format("yyyy-MM-dd HH:mm", row.cloudModified).toString()
+                    } else {
+                        stringResource(R.string.sync_save_never)
+                    },
+                ) + "　" + stringResource(
+                    R.string.sync_save_local_time,
+                    if (row.localUploadAt > 0) {
+                        DateFormat.format("yyyy-MM-dd HH:mm", row.localUploadAt).toString()
+                    } else {
+                        stringResource(R.string.sync_save_never)
+                    },
+                ),
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+            Text(
+                stringResource(R.string.sync_save_local_files, row.localSaveCount),
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+            Row(horizontalArrangement = Arrangement.End, modifier = Modifier.fillMaxWidth()) {
+                if (busy) {
+                    Text(
+                        stringResource(R.string.sync_save_working),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.padding(end = 12.dp, top = 8.dp),
+                    )
+                }
+                TextButton(
+                    onClick = { runSaveAction(row, "upload") },
+                    enabled = !busy && saveBusy == null && row.hasLocal,
+                ) { Text(stringResource(R.string.sync_save_upload)) }
+                TextButton(
+                    onClick = { runSaveAction(row, "download") },
+                    enabled = !busy && saveBusy == null && row.hasCloud && row.game != null,
+                ) { Text(stringResource(R.string.sync_save_download)) }
+                TextButton(
+                    onClick = { runSaveAction(row, "delete") },
+                    enabled = !busy && saveBusy == null && row.hasCloud,
+                ) { Text(stringResource(R.string.sync_save_delete_cloud)) }
+            }
+        }
     }
 
     /** 连接测试结果弹窗：成功显示"连接成功"，失败显示具体原因（HTTP 码+服务端说明+提示）。 */

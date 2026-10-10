@@ -135,6 +135,41 @@ public final class OnsSaveCloud {
         return prefs(context).getLong(KEY_UPLOAD_PREFIX + gameName, 0);
     }
 
+    // ------------------------------------------------------------------
+    // 宿主（app 层）查询用只读访问器：云同步中心要列出"云端已有存档的游戏"
+    // ------------------------------------------------------------------
+
+    /** 远端目录（相对 server 根的路径，如 TyranorNext/saves）。 */
+    public static String remoteDir(Context context) {
+        String dir = prefs(context).getString(KEY_DIR, DEFAULT_DIR);
+        return dir == null ? DEFAULT_DIR : dir;
+    }
+
+    /** GitHub 模式（列表/删除需要走 Contents API，宿主据此决定是否支持）。 */
+    public static boolean isGithubMode(Context context) {
+        return MODE_GITHUB.equals(prefs(context).getString(KEY_MODE, MODE_WEBDAV));
+    }
+
+    /**
+     * 实际生效的 WebDAV 目标 {server, user, password}：自有 server 优先，
+     * 否则回退云同步中心活动账户（与 upload/download 完全同一套判定）。
+     */
+    public static String[] webdavTargetForHost(Context context) {
+        return webdavTarget(prefs(context));
+    }
+
+    /** 游戏标题 → 云端 zip 名（与面板/存档管理页同一规则：非法字符换下划线）。 */
+    public static String cloudNameFor(String title) {
+        if (title == null) return "game";
+        String name = title.replaceAll("[\\\\/:*?\"<>|]", "_");
+        return name.trim().isEmpty() ? "game" : name;
+    }
+
+    /** 远端 zip 相对路径：dir/name.zip（与 upload/download 一致）。 */
+    public static String remoteZipPath(Context context, String cloudName) {
+        return remotePath(prefs(context), cloudName);
+    }
+
     /** 上传成功后记录时间（调用方在上传回调 ok 后调用）。 */
     public static void recordUpload(Context context, String gameName, long epochMs) {
         prefs(context).edit().putLong(KEY_UPLOAD_PREFIX + gameName, epochMs).apply();
@@ -277,7 +312,7 @@ public final class OnsSaveCloud {
         }
     }
 
-    /** 逐级确保远程目录存在（已存在时 MKCOL 报 405，忽略）。 */
+    /** 逐级确保远程目录存在（已存在时 MKCOL 报 405/409，忽略）。 */
     private static void webdavEnsureDir(SharedPreferences p) {
         try {
             String[] target = webdavTarget(p);
@@ -289,17 +324,69 @@ public final class OnsSaveCloud {
             for (String part : parts) {
                 if (part.isEmpty()) continue;
                 path.append(part).append('/');
-                HttpURLConnection conn = open(base.endsWith("/") ? base + path : base + "/" + path,
-                        target[1], target[2]);
-                try {
-                    conn.setRequestMethod("MKCOL");
-                    conn.getResponseCode();
-                } finally {
-                    conn.disconnect();
-                }
+                // 必须用裸 socket：Android 的 HttpURLConnection 方法白名单不含 MKCOL，
+                // setRequestMethod("MKCOL") 抛 ProtocolException（原来被 catch 吞掉 →
+                // 目录永远建不出来 → upload 的 PUT 报 409 AncestorsNotFound）。
+                int code = rawRequest("MKCOL",
+                        (base.endsWith("/") ? base : base + "/") + path,
+                        "MKCOL", target[1], target[2]);
+                Log.i(TAG, "MKCOL " + path + " -> " + code);
             }
         } catch (Throwable t) {
             Log.w(TAG, "webdav mkcol skipped", t);
+        }
+    }
+
+    /**
+     * 裸 socket 发一个 HTTP 请求（只取状态码）。
+     * Android 自带 HttpURLConnection 只允许 OPTIONS/GET/HEAD/POST/PUT/DELETE/TRACE/PATCH，
+     * WebDAV 的 MKCOL/PROPFIND 无法用它发送，也无法用 X-HTTP-Method-Override 可靠替代。
+     *
+     * @return HTTP 状态码；异常时抛出
+     */
+    private static int rawRequest(String method, String url, String label,
+                                  String user, String token) throws Exception {
+        java.net.URI uri = java.net.URI.create(url);
+        String host = uri.getHost();
+        if (host == null) throw new IllegalStateException("bad url: " + url);
+        boolean secure = !"http".equalsIgnoreCase(uri.getScheme());
+        int port = uri.getPort() > 0 ? uri.getPort() : (secure ? 443 : 80);
+        String reqPath = uri.getRawPath() == null || uri.getRawPath().isEmpty() ? "/" : uri.getRawPath();
+        java.net.Socket socket = secure
+                ? javax.net.ssl.SSLSocketFactory.getDefault().createSocket(host, port)
+                : new java.net.Socket(host, port);
+        socket.setSoTimeout(20000);
+        try {
+            StringBuilder head = new StringBuilder()
+                    .append(method).append(' ').append(reqPath).append(" HTTP/1.1\r\n")
+                    .append("Host: ").append(host).append("\r\n")
+                    .append("Connection: close\r\n")
+                    .append("Content-Length: 0\r\n");
+            if ((user != null && !user.isEmpty()) || (token != null && !token.isEmpty())) {
+                String cred = (user == null ? "" : user) + ":" + (token == null ? "" : token);
+                head.append("Authorization: Basic ")
+                        .append(android.util.Base64.encodeToString(
+                                cred.getBytes(java.nio.charset.StandardCharsets.UTF_8),
+                                android.util.Base64.NO_WRAP))
+                        .append("\r\n");
+            }
+            head.append("\r\n");
+            java.io.OutputStream out = socket.getOutputStream();
+            out.write(head.toString().getBytes(java.nio.charset.StandardCharsets.UTF_8));
+            out.flush();
+            java.io.BufferedReader reader = new java.io.BufferedReader(
+                    new java.io.InputStreamReader(socket.getInputStream(),
+                            java.nio.charset.StandardCharsets.ISO_8859_1));
+            String statusLine = reader.readLine();
+            if (statusLine == null) throw new IllegalStateException("empty response");
+            String[] bits = statusLine.split(" ");
+            if (bits.length < 2) throw new IllegalStateException("bad status line: " + statusLine);
+            return Integer.parseInt(bits[1]);
+        } finally {
+            try {
+                socket.close();
+            } catch (Throwable ignored) {
+            }
         }
     }
 

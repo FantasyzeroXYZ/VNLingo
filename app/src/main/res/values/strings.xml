@@ -892,4 +892,19 @@
     <string name="sync_password_keep">留空表示不修改密码</string>
     <string name="sync_test_result_title">连接测试结果</string>
     <string name="sync_close">关闭</string>
+    <string name="sync_save_section_title">存档云同步</string>
+    <string name="sync_save_section_hint">列出本地已有存档的游戏与云端存档时间；可上传、下载或删除云端存档。</string>
+    <string name="sync_save_refresh">刷新</string>
+    <string name="sync_save_empty">暂无存档记录。先进入游戏保存一次，或用下方「上传」把本地存档推送到云端。</string>
+    <string name="sync_save_upload">上传</string>
+    <string name="sync_save_download">下载</string>
+    <string name="sync_save_delete_cloud">删除云端</string>
+    <string name="sync_save_cloud_time">云端：%1$s</string>
+    <string name="sync_save_local_time">本机上传：%1$s</string>
+    <string name="sync_save_local_files">本地存档 %1$d 个</string>
+    <string name="sync_save_local_only">仅本地</string>
+    <string name="sync_save_cloud_only">仅云端</string>
+    <string name="sync_save_github_unsupported">当前存档通道为 GitHub 模式，暂不支持在此列出云端存档。</string>
+    <string name="sync_save_working">处理中…</string>
+    <string name="sync_save_never">从未</string>
 </resources>

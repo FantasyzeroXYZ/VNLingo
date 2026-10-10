@@ -893,4 +893,19 @@
     <string name="sync_password_keep">空欄なら現在のパスワードを維持します</string>
     <string name="sync_test_result_title">接続テストの結果</string>
     <string name="sync_close">閉じる</string>
+    <string name="sync_save_section_title">セーブデータ同期</string>
+    <string name="sync_save_section_hint">ローカルにセーブがあるゲームとクラウドの更新時刻。アップロード／ダウンロード／クラウド削除ができます。</string>
+    <string name="sync_save_refresh">更新</string>
+    <string name="sync_save_empty">セーブがまだありません。ゲーム内で保存するか、「アップロード」でクラウドへ送ってください。</string>
+    <string name="sync_save_upload">アップロード</string>
+    <string name="sync_save_download">ダウンロード</string>
+    <string name="sync_save_delete_cloud">クラウドを削除</string>
+    <string name="sync_save_cloud_time">クラウド: %1$s</string>
+    <string name="sync_save_local_time">アップロード: %1$s</string>
+    <string name="sync_save_local_files">ローカルセーブ %1$d 件</string>
+    <string name="sync_save_local_only">ローカルのみ</string>
+    <string name="sync_save_cloud_only">クラウドのみ</string>
+    <string name="sync_save_github_unsupported">セーブチャンネルが GitHub モードのため、ここでの一覧表示は未対応です。</string>
+    <string name="sync_save_working">処理中…</string>
+    <string name="sync_save_never">未実施</string>
 </resources>

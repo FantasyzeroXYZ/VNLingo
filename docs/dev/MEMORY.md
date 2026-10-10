@@ -1146,3 +1146,20 @@
      存在，明文密码在全文件中已搜不到；同步页账户仍正常显示、连接测试仍「连接成功」、同步正常。
    注意：`auto_sync`/`last_sync_*` 非敏感，保持明文；备份文件里会带上密文，跨设备因密钥不同
    无法解密 → 应用会清掉并要求重新登录（预期行为）。
+27. **云同步中心「存档云同步」列表 + 两个既有隐患的根因（2026-10-10）**：
+   - 新功能：`SaveCloudCatalog` + 同步页列表。每行显示：游戏标题、云端 Last-Modified、
+     本机上次上传时间、本地存档数、状态（仅本地/仅云端），操作：上传/下载/删除云端。
+     同一云端名只列一行（库里同标题重复条目会互相覆盖同一个 zip）。
+   - **Android 的 HttpURLConnection 只允许 OPTIONS/GET/HEAD/POST/PUT/DELETE/TRACE/PATCH**，
+     `setRequestMethod("PROPFIND"/"MKCOL")` 直接抛 ProtocolException。这解释了：
+     * `WebDavClient.listFiles`（PROPFIND 列目录）事实上一直不可用 → 已删除该死代码，
+       改为一律用 **HEAD 逐个文件**（本列表只需知道"每个游戏的云端 zip 时间"）；
+     * `OnsSaveCloud.webdavEnsureDir` 的 MKCOL 一直被 catch 吞掉 → 目录从未创建 →
+       上传 PUT 报 409 AncestorsNotFound（用户"同步不成功"的另一半原因）。
+   - 修复：两处都改为**裸 TLS socket** 发 MKCOL（`WebDavClient.rawRequest` /
+     `OnsSaveCloud.rawRequest`：HTTP/1.1 + Basic 认证 + Connection: close，只读状态行）。
+   - 真机验证：上传 ESG-13556 → 日志 `MKCOL TyranorNext/ -> 201`、`MKCOL TyranorNext/saves/ -> 201`，
+     远端 `TyranorNext/saves/ESG-13556.zip` HEAD=200；列表行显示「云端：2026-10-10 12:42」并排到最前；
+     「删除云端」后远端 404、该行按钮自动变回禁用（仅本地）；「下载」点击无异常。
+   - 遗留：因不能用 PROPFIND，"本地库没有、只有云端"的 zip 列不出来（需 OkHttp 或自研
+     PROPFIND 解析才能补齐）；游戏标题乱码是扫描期既有的编码问题，与本次无关。

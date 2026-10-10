@@ -149,55 +149,68 @@ class WebDavClient(serverUrl: String, private val username: String, private val 
         0
     }
 
-    /**
-     * 列出目录内容（PROPFIND Depth:1）。
-     *
-     * 兼容性：坚果云对**带 XML 实体**的 PROPFIND 返回 400 `invalid http request entity`，
-     * 而 RFC 4918 允许不带 body 的 PROPFIND（等价 allprop）。因此先发**无 body** 版本，
-     * 若服务端坚持要 body（少数实现）再回退到带 XML body 的版本。
-     */
-    @Throws(IOException::class)
-    fun listFiles(path: String): List<WebDavItem> {
-        val url = resolveUrl(path)
-        return try {
-            propfind(url, null)
-        } catch (e: IOException) {
-            Log.w(TAG, "bodyless PROPFIND failed, retry with xml body", e)
-            propfind(url, PROPFIND_XML)
-        }
-    }
-
-    @Throws(IOException::class)
-    private fun propfind(url: String, body: ByteArray?): List<WebDavItem> {
-        withConnection(url) { conn ->
-            conn.requestMethod = "PROPFIND"
-            if (body == null) {
-                // 无 body：不设 Content-Type（部分服务端对空实体带类型反而报错）
-                conn.setRequestProperty("Depth", "1")
-            } else {
-                conn.doOutput = true
-                conn.setFixedLengthStreamingMode(body.size)
-                conn.setRequestProperty("Content-Type", "application/xml; charset=utf-8")
-                conn.setRequestProperty("Depth", "1")
-                conn.outputStream.use { it.write(body) }
-            }
-            val code = conn.responseCode
-            if (code >= 400) {
-                throw IOException(friendlyHttpError(conn, code))
-            }
-            val text = readBodyLimited(conn.inputStream, 1024 * 1024L, "WebDAV 目录列表")
-                .toString(StandardCharsets.UTF_8)
-            return parsePropfindResponse(text)
-        }
-    }
-
     // ---- 内部辅助 ----
 
     private fun mkcol(path: String): Boolean {
-        withConnection(resolveUrl(path)) { conn ->
-            conn.requestMethod = "MKCOL"
-            val code = conn.responseCode
-            return code in 200..299 || code == 405 || code == 409
+        // 不能用 HttpURLConnection：Android 的实现只允许
+        // OPTIONS/GET/HEAD/POST/PUT/DELETE/TRACE/PATCH，setRequestMethod("MKCOL")
+        // 直接抛 ProtocolException（异常被吞 → 目录永远建不出来 → 后续 PUT 报 409）。
+        return try {
+            val code = rawRequest("MKCOL", resolveUrl(path))
+            code in 200..299 || code == 405 || code == 409
+        } catch (t: Throwable) {
+            Log.w(TAG, "MKCOL $path failed", t)
+            false
+        }
+    }
+
+    /**
+     * 裸 socket 发送一个 HTTP 请求，只取状态码。
+     *
+     * 用途：Android 自带 HttpURLConnection 的方法白名单不含 WebDAV 的 MKCOL/PROPFIND，
+     * 而这些方法无法用 `X-HTTP-Method-Override` 可靠替代（服务端普遍不支持）。
+     * 这里实现所需的最小集合：HTTP/1.1 + Basic 认证 + `Content-Length: 0` +
+     * `Connection: close`，读完状态行即返回（不解析响应体）。
+     */
+    private fun rawRequest(method: String, url: String): Int {
+        val uri = URI.create(url)
+        val host = uri.host ?: throw IOException("bad url: $url")
+        val secure = !"http".equals(uri.scheme, ignoreCase = true)
+        val port = if (uri.port > 0) uri.port else if (secure) 443 else 80
+        val path = buildString {
+            append(uri.rawPath?.takeIf { it.isNotEmpty() } ?: "/")
+            uri.rawQuery?.let { append('?').append(it) }
+        }
+        val socket: java.net.Socket = if (secure) {
+            javax.net.ssl.SSLSocketFactory.getDefault().createSocket(host, port)
+        } else {
+            java.net.Socket(host, port)
+        }
+        socket.soTimeout = 20000
+        socket.use { s ->
+            val head = StringBuilder()
+                .append(method).append(' ').append(path).append(" HTTP/1.1\r\n")
+                .append("Host: ").append(host).append("\r\n")
+                .append("Connection: close\r\n")
+                .append("Content-Length: 0\r\n")
+            if (username.isNotEmpty() || password.isNotEmpty()) {
+                val cred = "$username:$password"
+                head.append("Authorization: Basic ")
+                    .append(Base64.encodeToString(
+                        cred.toByteArray(StandardCharsets.UTF_8), Base64.NO_WRAP))
+                    .append("\r\n")
+            }
+            head.append("\r\n")
+            val out = s.getOutputStream()
+            out.write(head.toString().toByteArray(StandardCharsets.UTF_8))
+            out.flush()
+            val statusLine = s.getInputStream()
+                .bufferedReader(StandardCharsets.ISO_8859_1)
+                .readLine() ?: throw IOException("empty response")
+            val code = statusLine.split(' ').getOrNull(1)?.toIntOrNull()
+                ?: throw IOException("bad status line: $statusLine")
+            Log.i(TAG, "$method $path -> $code")
+            return code
         }
     }
 
@@ -290,41 +303,6 @@ class WebDavClient(serverUrl: String, private val username: String, private val 
         return xml.substring(idx + 1, end).trim().takeIf { it.isNotEmpty() }
     }
 
-    /** 解析 PROPFIND 响应（多命名空间容错）。 */
-    private fun parsePropfindResponse(xml: String): List<WebDavItem> {
-        val items = ArrayList<WebDavItem>()
-        val responses = xml.split(Regex("<[Dd]:response>"))
-        for (i in 1 until responses.size) {
-            val resp = responses[i]
-            val href = extractTag(resp, "D:href", "d:href") ?: continue
-            val isDir = resp.contains("<D:collection/>") || resp.contains("<d:collection/>") ||
-                resp.contains("<D:collection /") || resp.contains("<d:collection /")
-            var lastModified = 0L
-            extractTag(resp, "D:getlastmodified", "d:getlastmodified")?.let {
-                lastModified = parseHttpDate(it)
-            }
-            var name = href
-            if (name.endsWith("/")) name = name.substring(0, name.length - 1)
-            val lastSlash = name.lastIndexOf('/')
-            if (lastSlash >= 0) name = name.substring(lastSlash + 1)
-            if (name.isEmpty() || name == ".") continue
-            items.add(WebDavItem(name, href, isDir, lastModified))
-        }
-        return items
-    }
-
-    private fun extractTag(xml: String, vararg tags: String): String? {
-        for (tag in tags) {
-            val start = xml.indexOf("<$tag>")
-            if (start >= 0) {
-                val contentStart = start + tag.length + 2
-                val end = xml.indexOf("</$tag>", contentStart)
-                if (end > contentStart) return xml.substring(contentStart, end).trim()
-            }
-        }
-        return null
-    }
-
     @Throws(IOException::class)
     private fun readBodyLimited(input: InputStream, maxBytes: Long, label: String): ByteArray {
         val bos = ByteArrayOutputStream(8192)
@@ -342,25 +320,12 @@ class WebDavClient(serverUrl: String, private val username: String, private val 
         return bos.toByteArray()
     }
 
-    data class WebDavItem(
-        val name: String,
-        val href: String,
-        val isDirectory: Boolean,
-        val lastModified: Long,
-    )
 
     companion object {
         private const val TAG = "WebDavClient"
         const val TEST_PROBE_DIR = "VNLingo"
         const val TEST_PROBE_PATH = "$TEST_PROBE_DIR/VNLingo_connection_test.txt"
 
-        /** 带 body 的 PROPFIND 回退版本（RFC 4918 allprop）。 */
-        private val PROPFIND_XML: ByteArray = (
-            "<?xml version=\"1.0\" encoding=\"utf-8\"?>\n" +
-                "<D:propfind xmlns:D=\"DAV:\">\n" +
-                "  <D:allprop/>\n" +
-                "</D:propfind>"
-            ).toByteArray(StandardCharsets.UTF_8)
 
         /**
          * 判断 URL 是否为不安全的明文 HTTP（非 localhost/127.0.0.1）。
