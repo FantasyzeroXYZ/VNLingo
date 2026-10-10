@@ -1302,9 +1302,9 @@ extern "C" bool krkr_install_extract_hook(void* gameHandle, JNIEnv* env) {
     //   A 引擎识别日志（同步读 maps/扫模块/转储符号，最可疑）
     //   B TVPConsoleLog inline hook（核心提取通道）
     //   C FT 字形链（GOT + 按-face 反查表 + 停顿直发）
-    static const bool kKrkrExtractEnabled = true;   // 总开关（止血时置 false）
+    static const bool kKrkrExtractEnabled = false;  // 总开关：用户实测两个 KRKR 游戏仍进不去 → 全关
     static const bool kEnableEngineIdentityLog = true;
-    static const bool kEnableConsoleInlineHook = true;   // bisect：单独验证 B 段
+    static const bool kEnableConsoleInlineHook = false;
     if (!kKrkrExtractEnabled) {
         LOGW("krkr extract hooks DISABLED (regression emergency switch)");
         return false;
@@ -1434,7 +1434,7 @@ static bool gFtProbeInstalled = false;
 
 extern "C" bool krkr_install_ft_probe(void* gameHandle, const char* library) {
     // C 段开关（bisect）：FT 字形链暂不安装（GOT 钩子 + 反查表 + 停顿直发）
-    static const bool kEnableFtProbe = true;   // bisect：单独验证 C 段
+    static const bool kEnableFtProbe = false;   // FT 探针是独立入口，必须一并关
     if (!kEnableFtProbe) {
         LOGI("ft probe: DISABLED (bisect)");
         return false;
