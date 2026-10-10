@@ -1260,3 +1260,15 @@
      （`window.__vnlRawGet`），并在自己的 getter 里返回基准值（避免游戏读到缩放值后反复相乘）。
      修后 10 项断言（50%/0%/100%/游戏改音量/play 重套/幂等）**全部 PASS**。
    - 真机验证待办：需要一台装有 Tyrano 或 RPGM 游戏的设备跑一次（当前设备无此类游戏）。
+36. **④ TTS 百分比下拉改进度条 + ③ Siglus/FVP 音量 API 排查结论（2026-10-10）**：
+   - ④：`OnsExtractSettingsDialogs` 里 TTS 的**语速/音高/音量**原来是 0/25/50/75/100 五档下拉，
+     改成 `SettingsWidgets.sliderRow` 0..100 连续进度条（底层 rate/pitch/volume 本来就按
+     百分比转发给系统 TTS 与 MultiTTS，连续值无需改协议）。全仓复查 `dropdownRow` 剩余用法：
+     只剩「朗读引擎 / 翻译源 / 翻译目标 / 循环档」——都不是百分比，按要求保留下拉。
+   - ③ 音量 API 排查结论（预编译内核，Java 桥侧）：
+     * ONS（ONScripter）：`ONScripter.java:224-232` 播片时把 `KEYCODE_VOLUME_*` 交还系统；
+       引擎无音量接口 → 无法接（需改原生库）。
+     * KRKR：Java 层无任何音量 API，音频全在原生库 → 无法接。
+     * Siglus / FVP：`NativeSiglus` / `NativeRfvp` 均无音量方法 → 无法接。
+     结论：目前**只有 Artemis（自研内核，主音量增益）与 Tyrano/RPGM（WebView，注入
+     HTMLMediaElement.volume 缩放）**具备"软件内游戏音量"的落地能力；其余引擎如实记录为不可接。

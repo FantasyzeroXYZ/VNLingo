@@ -1466,27 +1466,22 @@ public final class OnsExtractSettingsDialogs {
             httpField.setEnabled(http);
         };
 
-        // 语速 / 音高 / 音量（0..100 五档，下拉选择）
-        final int[] steps = {0, 25, 50, 75, 100};
-        final java.util.List<String> stepLabels = java.util.Arrays.asList("0", "25", "50", "75", "100");
+        // 语速 / 音高 / 音量：0..100 连续可调（用户要求百分比一律用进度条，方便微调；
+        // 原来是 0/25/50/75/100 五档下拉，太粗）
+        box.addView(SettingsWidgets.sliderRow(activity, R.drawable.ic_volume,
+                activity.getString(R.string.engine_ons_tts_rate), 0, 100,
+                OnsTtsEngines.rate(activity), "%d%%",
+                value -> OnsTtsEngines.setRate(activity, value)));
 
-        LinearLayout rateRow = SettingsWidgets.dropdownRow(activity, R.drawable.ic_volume,
-                activity.getString(R.string.engine_ons_tts_rate), stepLabels,
-                indexOfStep(steps, OnsTtsEngines.rate(activity)),
-                position -> OnsTtsEngines.setRate(activity, steps[position]));
-        box.addView(rateRow);
+        box.addView(SettingsWidgets.sliderRow(activity, R.drawable.ic_volume,
+                activity.getString(R.string.engine_ons_tts_pitch), 0, 100,
+                OnsTtsEngines.pitch(activity), "%d%%",
+                value -> OnsTtsEngines.setPitch(activity, value)));
 
-        LinearLayout pitchRow = SettingsWidgets.dropdownRow(activity, R.drawable.ic_volume,
-                activity.getString(R.string.engine_ons_tts_pitch), stepLabels,
-                indexOfStep(steps, OnsTtsEngines.pitch(activity)),
-                position -> OnsTtsEngines.setPitch(activity, steps[position]));
-        box.addView(pitchRow);
-
-        LinearLayout volumeRow = SettingsWidgets.dropdownRow(activity, R.drawable.ic_volume,
-                activity.getString(R.string.engine_ons_tts_volume), stepLabels,
-                indexOfStep(steps, OnsTtsEngines.volume(activity)),
-                position -> OnsTtsEngines.setVolume(activity, steps[position]));
-        box.addView(volumeRow);
+        box.addView(SettingsWidgets.sliderRow(activity, R.drawable.ic_volume,
+                activity.getString(R.string.engine_ons_tts_volume), 0, 100,
+                OnsTtsEngines.volume(activity), "%d%%",
+                value -> OnsTtsEngines.setVolume(activity, value)));
 
         // 发音人行：点击按当前引擎拉取发音人列表（后台）弹单选
         TextView voiceValue = new TextView(activity);
