@@ -318,6 +318,12 @@ void notifyGameReady() {
     if (attached) gVm->DetachCurrentThread();
 }
 
+extern "C" bool krkr_engine_ready() {
+    return gGameReadyReported.load();
+}
+
+extern "C" void krkr_drain_text_queue();
+
 void hookedSceneUpdate(void* scene, float dt) {
     Update original = gOriginalSceneUpdate.load();
     if (original != nullptr) original(scene, dt);
@@ -347,6 +353,7 @@ void hookedSceneUpdate(void* scene, float dt) {
                             "TVPMainScene startup completed; menu shrink finished; leakedCowStrings=%d",
                             leakedCount);
         notifyGameReady();
+        krkr_drain_text_queue();   // 就绪瞬间把启动期积压的文本排空上行（此时阻塞已无害）
     }
 }
 

@@ -131,6 +131,36 @@ const char* cowData(const void* legacyString) {
     return *reinterpret_cast<char* const*>(legacyString);
 }
 
+void emitText(const char* text);                  // 定义在本文件后部
+extern "C" bool krkr_engine_ready();             // 由 krkr_bridge.cpp 提供（引擎是否已就绪）
+
+// ---- 文本入队 / 排空（核心设计）----
+// 引擎热路径（TVPConsoleLog 等）**绝不同步调 JNI**：启动期的同步 JNI 会阻塞引擎
+// update 线程、使 TVPMainScene 的就绪判定跑不到（实测：launch UI forms ready 恒为 0 → 卡启动）。
+// 因此热路径只入队；等引擎就绪后再由 krkr_drain_text_queue() 排空上行。
+std::mutex gQueueMutex;
+std::vector<std::string> gTextQueue;
+
+extern "C" void krkr_drain_text_queue();   // 前置声明
+
+void enqueueText(const char* text) {
+    if (text == nullptr) return;
+    std::lock_guard<std::mutex> lock(gQueueMutex);
+    if (gTextQueue.size() >= 256) gTextQueue.erase(gTextQueue.begin());   // 有界
+    gTextQueue.emplace_back(text);
+}
+
+/** 排空队列并逐条上行（只在"引擎已就绪"之后调用）。 */
+extern "C" void krkr_drain_text_queue() {
+    std::vector<std::string> pending;
+    {
+        std::lock_guard<std::mutex> lock(gQueueMutex);
+        if (gTextQueue.empty()) return;
+        pending.swap(gTextQueue);
+    }
+    for (const std::string& s : pending) emitText(s.c_str());
+}
+
 void emitText(const char* text) {
     JavaVM* vm = gVm;
     if (vm == nullptr || gBridgeClass == nullptr || gOnTextMethod == nullptr) return;
@@ -1305,12 +1335,13 @@ extern "C" void krkr_on_console_log(const void* text) {
     }
     if (utf8.empty()) return;
     LOGI("console text(%zu): %.60s", utf8.size(), utf8.c_str());
-    // 实验：启动期 20s 内**不调 JNI**——JNI→Kotlin→提取桥 可能阻塞引擎 update 线程，
-    // 使 TVPMainScene 的就绪判定跑不到、`launch UI forms ready` 恒为 0（卡启动）。
-    static const std::chrono::steady_clock::time_point sGateStart =
-            std::chrono::steady_clock::now();
-    if (std::chrono::steady_clock::now() - sGateStart < std::chrono::seconds(20)) return;
-    emitText(utf8.c_str());
+    // 热路径策略：**引擎未就绪前只入队（零 JNI）**；就绪后直接上行。
+    // 这样既不影响启动（根因修复），又能在就绪后即时送达。
+    if (krkr_engine_ready()) {
+        emitText(utf8.c_str());
+    } else {
+        enqueueText(utf8.c_str());
+    }
     krkrLateFtMaybe();
 }
 
@@ -1553,7 +1584,7 @@ extern "C" bool krkr_install_ft_probe(void* gameHandle, const char* library) {
     // 【入口即打】无条件的调用轨迹：确认是否被调用、参数、是否二次（延后）进入
     LOGI("ft probe: ENTER handle=%p library=%s", gameHandle,
          library != nullptr ? library : "(null)");
-    static const bool kEnableFtProbe = false;  // 真机仍观察到底层不稳定 → 保持关闭（游玩优先）
+    static const bool kEnableFtProbe = true;   // 队列化后重试 FT 链（对白字形来源）
     // 【运行时安装】真机证实：FT 链若在引擎启动期安装会卡住启动（宿主等不到 UI 就绪）。
     // 因此这里**不在启动期装**，改为由控制台活动 + 时间触发的"迟到安装"（见 krkrLateFtMaybe）。
     static const bool kInstallAtStartup = false;
