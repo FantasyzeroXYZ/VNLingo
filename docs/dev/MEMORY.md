@@ -1196,3 +1196,35 @@
    真机验证：三个引擎都能传 ——
    `MKCOL VNLingo/saves/The Shell Part I 手机/ -> 201`、`.../Kazura Uta/ -> 201`，
    远端 HEAD 三个 `saves.zip` 均为 200；PROPFIND 列出 `VNLingo/saves/` 下三个游戏子目录。
+31. **Artemis 存档"卡住/不成功"的根因：派生等待被算成 24.8 天（2026-10-10）**：
+   现象：存档时卡死（画面继续重绘、点击被识别但 Lua 处理器不执行），偶发而非必现。
+   取证：`arm: state ... waiting timed(left=2147483576ms accept_input=1)` —— 2147483576 ≈ INT_MAX。
+   根因：`lua_tags_nav.cpp TagWait` 把"待播动画/转场的剩余时间"直接当等待时长：
+   `SetTimedWait(min(PendingAnimationMs(), 2147483647.0))`；装饰性长 tween（注释里提到的
+   150s 背景平移、甚至无终点 tween）→ 24.8 天等待 → 运行器永久停在 waiting。
+   修复：`kMaxDerivedWaitMs = 3000` 给**派生的**等待封顶（脚本显式 `time=` 不动）；
+   另加等待看门狗（只兜底**定时**等待，>6s），纯"等点击"的等待绝不干预（否则剧情自己走）。
+   自查验证（不劳用户）：修复前 `left=2147483576ms` 长时间不动；修复后 `left≤3000ms`，
+   且 `print {data=…}` 逐条推进、点屏幕即可推进下一句。
+
+32. **Artemis 存档缩略图属存档本体：saveNNNN.png 必须与 saveNNNN.dat 配对带走（2026-10-10）**：
+   用户证据：存档点是成对的 `save0001.dat`(40KB) + `save0001.png`(30.8KB)，位于**游戏根目录**。
+   旧规则对 Artemis 是"只认根级 *.dat" + "图片一律排除" → 导出的存档缺缩略图。
+   修复：`excludeFor(engine, root)` 增加 root 参数（5 处调用点各传自己的存档根），
+   新增 `isPairedArtemisThumbnail()`：仅放行"同目录存在同名 .dat"的 `saveNNNN.png`；
+   截图/资源图片继续排除。验证：用设备真实文件清单复算 —— 保留 3 对 dat+png 与
+   saveg.dat/system.dat，排除 TheShell.exe/.pfs*/*.dll/readme.txt。
+
+33. **切后台再回来整个重新加载的根因：窗口重建时把会话丢了（2026-10-10）**：
+   现象：Artemis 切后台再切回，游戏从头开始、进度丢失。
+   根因：`native_activity.cpp` 窗口重建分支里 `renderer.Shutdown() + compositor.ReleaseGl()
+   + booted=false + ctx->ResetSession()` —— 而原生窗口在切后台时必然被销毁重建。
+   修复：`Renderer::DetachSurface()/AttachSurface()` **保留 EGL 上下文**，只销毁/重建
+   window surface 并重新 makeCurrent（交换间隔重设）；上下文不变 → 贴图/着色器/FBO 全活
+   → 不重跑开场。仅当 AttachSurface 失败（上下文真没了）才退回完整重建 + 重新开场；
+   新增 stage_dirty：换 surface 只重算视口。
+   实测：日志只出现一次 `engine: pack=…`（首次启动），之后均为
+   `renderer: surface re-attached … (session kept)`，切回后剧情仍在原位置。
+   其他引擎实测：KIRIKIRI（Yosuga no Sora）与 ONS（ESG-13556）切后台再回来**均在剧情中**
+   （无重载）；Tyrano/RPGM 是 WebView 且设备上没有该类游戏，未能实测 —— 它们的活动已带全
+   `configChanges` 且各自独立进程，只要进程不被系统回收即可保持（被回收则必然重载）。
