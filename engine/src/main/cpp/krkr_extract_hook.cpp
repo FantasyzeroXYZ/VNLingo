@@ -103,6 +103,20 @@ extern "C" void krkr_set_extract_diag(bool enabled) {
     gDiagEnabled.store(enabled, std::memory_order_relaxed);
 }
 
+// ---- 用户级启用开关（默认关闭）----
+// 本会话多次证明：这些钩子在部分 KRKR 内核上会影响引擎启动。因此默认**不装**，
+// 只有用户在界面上显式开启（经 JNI 调用 krkr_set_extract_user_enabled(true)）才安装。
+static std::atomic<bool> gExtractUserEnabled{false};
+
+extern "C" void krkr_set_extract_user_enabled(bool enabled) {
+    gExtractUserEnabled.store(enabled, std::memory_order_relaxed);
+    LOGI("krkr extract: user enabled = %d", enabled ? 1 : 0);
+}
+
+extern "C" bool krkr_extract_user_enabled() {
+    return gExtractUserEnabled.load(std::memory_order_relaxed);
+}
+
 static bool diagEnabled() { return gDiagEnabled.load(std::memory_order_relaxed); }
 
 // 首个 UTF-8 码点（诊断日志用：只打首码点与长度，避免中文全文刷屏/编码噪音）
