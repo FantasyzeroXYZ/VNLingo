@@ -268,6 +268,7 @@ FTLoadCharFn gOrigFTLoadChar = nullptr;
 // 实测（tsukikage）：对白渲染只经 FT_Load_Glyph(face, glyph_index)，码点→字形索引
 // 的映射在字体装载期一次性完成（FT_Get_Char_Index 只承载控制台文本）。故再补
 // FT_Load_Glyph 钩子 + 惰性反向映射（glyph_index → 码点）还原字符流。
+using FTLayoutGlyphFnAlias = int (*)(void* face, unsigned int glyphIndex, int loadFlags);
 using FTLoadGlyphFn = int (*)(void* face, unsigned int glyphIndex, int loadFlags);
 FTLoadGlyphFn gOrigFTLoadGlyph = nullptr;
 using FTGetFirstCharFn = unsigned long (*)(void* face, unsigned int* agindex);
@@ -851,18 +852,37 @@ void startGlyphMapBuild(void* face) {
     }).detach();
 }
 
+/** 字形观察（GOT 与 inline 两条入口共用）。 */
+void ftObserveGlyph(void* face, unsigned int glyphIndex);
+
 int hookedFTLoadGlyph(void* face, unsigned int glyphIndex, int loadFlags) {
     const int err = gOrigFTLoadGlyph != nullptr ? gOrigFTLoadGlyph(face, glyphIndex, loadFlags) : 0;
+    ftObserveGlyph(face, glyphIndex);
+    return err;
+}
+
+/** inline hook 版替换函数：trampoline 就是"原函数"（含被搬移的入口指令）。 */
+static FTLayoutGlyphFnAlias gFtLoadGlyphTrampoline = nullptr;
+
+int hookedFTLoadGlyphInline(void* face, unsigned int glyphIndex, int loadFlags) {
+    const int err = gFtLoadGlyphTrampoline != nullptr
+            ? gFtLoadGlyphTrampoline(face, glyphIndex, loadFlags)
+            : 0;
+    ftObserveGlyph(face, glyphIndex);
+    return err;
+}
+
+/** 字形观察（GOT 通道 hookedFTLoadGlyph 与 inline 通道 hookedFTLoadGlyphInline 共用）。 */
+void ftObserveGlyph(void* face, unsigned int glyphIndex) {
     const uint64_t calls = gFtGlyphCalls.fetch_add(1, std::memory_order_relaxed) + 1;
     if (diagEnabled() && (calls <= 20 || calls % 500 == 0)) {
-        LOGI("ft glyph: calls=%llu index=%u err=%d", static_cast<unsigned long long>(calls),
-             glyphIndex, err);
+        LOGI("ft glyph: calls=%llu index=%u", static_cast<unsigned long long>(calls), glyphIndex);
     }
-    if (!gHookInstalled.load(std::memory_order_relaxed)) return err;
+    if (!gHookInstalled.load(std::memory_order_relaxed)) return;
     const auto* map = glyphMapReady(face);
     if (map == nullptr) {
         startGlyphMapBuild(face);   // 本线程不建表，立刻返回，避免拖住引擎
-        return err;
+        return;
     }
     const auto it = map->find(glyphIndex);
     // B3 诊断：字形还原是否真的命中（第 9 轮关键埋点）——
@@ -878,6 +898,7 @@ int hookedFTLoadGlyph(void* face, unsigned int glyphIndex, int loadFlags) {
                  static_cast<unsigned long long>(misses.load(std::memory_order_relaxed)));
         }
         ftOnCode(it->second);
+        gPrevCode = it->second;
     } else {
         const uint64_t m = misses.fetch_add(1, std::memory_order_relaxed) + 1;
         if (diagEnabled() && (m <= 10 || m % 500 == 0)) {
@@ -886,8 +907,6 @@ int hookedFTLoadGlyph(void* face, unsigned int glyphIndex, int loadFlags) {
                  static_cast<unsigned long long>(m), map->size());
         }
     }
-    gPrevCode = it != map->end() ? it->second : gPrevCode;
-    return err;
 }
 
 /** FT_Get_First_Char / FT_Get_Next_Char：仅计数（判定「码点→字形映射在装载期完成」）。 */
@@ -1466,7 +1485,7 @@ extern "C" bool krkr_install_ft_probe(void* gameHandle, const char* library) {
             std::thread([gameHandle, lib] {
                 std::this_thread::sleep_for(std::chrono::seconds(20));
                 LOGI("ft probe: deferred install begins (engine should be ready)");
-                krkr_install_ft_probe(gameHandle, lib.empty() ? nullptr : lib.c_str());
+                krkr_install_ft_probe(gameHandle, lib.empty() ? "libfreetype.so" : lib.c_str());
             }).detach();
             return true;
         }
@@ -1495,6 +1514,45 @@ extern "C" bool krkr_install_ft_probe(void* gameHandle, const char* library) {
         gOrigFTLoadGlyph = reinterpret_cast<FTLoadGlyphFn>(origLoadGlyph);
         LOGI("ft probe GOT hooked (FT_Load_Glyph dialogue path)");
     }
+    // 【第⑮轮】inline hook 直挂 FT_Load_Glyph：GOT 补丁只拦"经 PLT"的调用，
+    // 引擎内部**直接调用**会绕过它 → 对白字形漏抓（字形流里只有日志/路径的 ASCII）。
+    // 用本会话自实现的 inline hook 改写入口，覆盖全部调用方；trampoline 即"原函数"。
+    {
+        void* ftAddr = dlsym(gameHandle, "FT_Load_Glyph");
+        if (ftAddr == nullptr) {
+            ftAddr = dlsym(RTLD_DEFAULT, "FT_Load_Glyph");
+        }
+        if (ftAddr == nullptr) {
+            // 再从已加载模块里找 freetype 并 dlopen 它（名字可能是 libfreetype.so.6）
+            FILE* maps = std::fopen("/proc/self/maps", "r");
+            char line[512];
+            while (maps != nullptr && std::fgets(line, sizeof(line), maps) != nullptr) {
+                if (std::strstr(line, "freetype") == nullptr) continue;
+                const char* slash = std::strchr(line, '/');
+                if (slash == nullptr) continue;
+                const char* nl = std::strchr(slash, '\n');
+                std::string path(slash, nl != nullptr ? static_cast<size_t>(nl - slash)
+                                                      : std::strlen(slash));
+                void* h = dlopen(path.c_str(), RTLD_NOW);
+                if (h != nullptr) ftAddr = dlsym(h, "FT_Load_Glyph");
+                break;
+            }
+            if (maps != nullptr) std::fclose(maps);
+        }
+        if (ftAddr != nullptr) {
+            void* tramp = nullptr;
+            if (installInlineHook(ftAddr, reinterpret_cast<void*>(&hookedFTLoadGlyphInline),
+                                  &tramp)) {
+                gFtLoadGlyphTrampoline = reinterpret_cast<FTLayoutGlyphFnAlias>(tramp);
+                LOGI("ft probe: FT_Load_Glyph INLINE hooked (covers direct calls) addr=%p", ftAddr);
+            } else {
+                LOGW("ft probe: FT_Load_Glyph inline hook refused (pc-relative prologue?)");
+            }
+        } else {
+            LOGW("ft probe: FT_Load_Glyph address not found for inline hook");
+        }
+    }
+
     // 兜底通道 2：FT_Load_Char（按码点直接加载字形的路径）。
     void* origLoadChar = nullptr;
     if (krkr_bridge_got_hook(library, "FT_Load_Char",
