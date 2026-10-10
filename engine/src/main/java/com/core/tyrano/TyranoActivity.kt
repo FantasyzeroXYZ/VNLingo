@@ -275,9 +275,13 @@ class TyranoActivity : Activity() {
         // 叠在 WebView 之上；两者共用同一份按键绑定与输入核心（VirtualMouseInput）
         if (webGameType == WebGameType.RPG_MV || webGameType == WebGameType.RPG_MZ
             || webGameType == WebGameType.TYRANO) {
-            val layer = VirtualMouseLayer(this) { js ->
+            val layer = VirtualMouseLayer(this, { js ->
                 webView?.let { v -> runCatching { v.evaluateJavascript(js, null) } }
-            }
+            }, { x, y ->
+                // 光标点击优先命中平台控件（提取面板/右缘侧键）；extractPanel 晚于本层创建，
+                // 因此这里惰性取。
+                extractPanel?.dispatchCursorClick(x, y) == true
+            })
             virtualMouseLayer = layer
             root.addView(layer, FrameLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT))

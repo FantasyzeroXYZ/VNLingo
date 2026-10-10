@@ -31,6 +31,11 @@ import java.util.Locale
 class VirtualMouseLayer(
     context: Context,
     private val dispatchJs: (String) -> Unit,
+    /**
+     * 覆盖层优先命中：光标处命中平台控件（提取面板/右缘侧键）时点平台控件，不注入页面。
+     * 与 Tyrano 层的同名参数一致——此前 RPGM 缺这条，鼠标模式下点面板/侧键等于点进游戏。
+     */
+    private val overlayClickHandler: ((Float, Float) -> Boolean)? = null,
 ) : View(context) {
 
     private companion object {
@@ -335,8 +340,16 @@ class VirtualMouseLayer(
                         if (state == STATE_HANDLE && !handleDrag) {
                             setActive(!active)
                         } else if (quick && active) {
-                            flushNow()
-                            js("click", cnx * width / density, cny * height / density)
+                            // 平台控件优先（提取面板/右缘侧键）：命中就点它
+                            val handled = overlayClickHandler?.let { h ->
+                                val loc = IntArray(2)
+                                getLocationOnScreen(loc)
+                                h.invoke(loc[0] + cnx * width, loc[1] + cny * height)
+                            } == true
+                            if (!handled) {
+                                flushNow()
+                                js("click", cnx * width / density, cny * height / density)
+                            }
                         } else if (active) {
                             flushNow() // 拖动/滚轮收尾：立即派发剩余增量，不等 16ms 队列
                         }

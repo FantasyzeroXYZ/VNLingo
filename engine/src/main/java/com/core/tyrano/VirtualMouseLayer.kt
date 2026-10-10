@@ -31,6 +31,13 @@ import java.util.Locale
 class VirtualMouseLayer(
     context: Context,
     private val dispatchJs: (String) -> Unit,
+    /**
+     * 覆盖层优先命中：光标处命中平台控件（提取面板/右缘侧键）时点平台控件，
+     * 不注入游戏页面。宿主传 `extractPanel::dispatchCursorClick` 即可——
+     * 之前 Tyrano/RPGM 没接这条，导致鼠标模式下点面板/侧键等于点进游戏
+     * （与 Artemis 之前"剧情文本框点不掉"是同一个缺漏）。
+     */
+    private val overlayClickHandler: ((Float, Float) -> Boolean)? = null,
 ) : View(context) {
 
     /**
@@ -57,6 +64,14 @@ class VirtualMouseLayer(
 
             override fun click() {
                 if (!active) return
+                // 平台控件优先（提取面板/右缘侧键）：命中就点它，不往游戏页面注入点击。
+                if (overlayClickHandler != null) {
+                    val loc = IntArray(2)
+                    getLocationOnScreen(loc)
+                    val sx = loc[0] + cnx * width
+                    val sy = loc[1] + cny * height
+                    if (overlayClickHandler.invoke(sx, sy)) return
+                }
                 flushNow()
                 js("click", cnx * width / density, cny * height / density)
             }

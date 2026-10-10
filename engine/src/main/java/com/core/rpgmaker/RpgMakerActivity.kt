@@ -343,13 +343,18 @@ class RpgMakerActivity : Activity() {
         webView = browser
         root.addView(browser)
         // 虚拟鼠标层（issue #25）：叠在 WebView 之上
-        val layer = VirtualMouseLayer(this) { js ->
+        val layer = VirtualMouseLayer(this, { js ->
             webView?.let { v -> runCatching { v.evaluateJavascript(js, null) } }
-        }
+        }, { x, y ->
+            // 与 Artemis/Tyrano 一致：光标点击优先命中平台控件（提取面板/右缘侧键）
+            extractPanel?.dispatchCursorClick(x, y) == true
+        })
         virtualMouseLayer = layer
         root.addView(layer, FrameLayout.LayoutParams(
             ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT))
         setContentView(root)
+        // 沉浸式全屏（此前 RPGM 漏了这一步：状态栏/底部栏一直占着画面）
+        com.core.engine.ImmersiveMode.applyAndReapply(this)
 
         configureWebView(browser)
         browser.addJavascriptInterface(RpgMakerSaveBridge(saves), RPG_MAKER_SAVE_BRIDGE_NAME)
