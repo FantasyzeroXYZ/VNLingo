@@ -47,6 +47,14 @@
 
 namespace {
 
+// 前向声明：迟到安装需要调用它（定义在本文件后部，位于匿名命名空间之外）
+extern "C" bool krkr_install_ft_probe(void* gameHandle, const char* library);
+void krkrLateFtMaybe();   // 定义在本文件中部（运行时迟到安装 FT 链）
+extern void* gKrkrLateHandle;      // 运行时迟到安装所需的引擎句柄
+extern std::string gKrkrLateLibrary;
+
+
+
 // cocos2d::Label::setString(const std::string&) —— 三个版本符号一致（llvm-nm 核实）
 constexpr const char* kLabelSetString = "_ZN7cocos2d5Label9setStringERKSs";
 constexpr const char* kLabelVtable = "_ZTVN7cocos2d5LabelE";
@@ -165,6 +173,7 @@ void hookedLabelSetString(void* self, const void* legacyString) {
     if (gLastText == text) return;
     gLastText.assign(text);
     emitText(text);
+    krkrLateFtMaybe();   // Label 活动 = 引擎已在运行 → 触发 FT 链迟到安装
 }
 
 void* shadowhookLib() {
@@ -872,6 +881,33 @@ int hookedFTLoadGlyphInline(void* face, unsigned int glyphIndex, int loadFlags) 
     return err;
 }
 
+// ---- 运行时（迟到）安装 FT 链 ----
+void* gKrkrLateHandle = nullptr;
+std::string gKrkrLateLibrary;
+std::atomic<bool> gKrkrLateDone{false};
+std::chrono::steady_clock::time_point gKrkrFirstConsoleAt{};
+std::atomic<bool> gKrkrConsoleSeen{false};
+
+/**
+ * 由控制台活动触发的迟到安装：只有"引擎已在运行（有控制台输出）且距离首次输出≥30s"时才装，
+ * 从而彻底避开启动关键路径；且不使用 std::thread（引擎进程里线程不可靠）。
+ * 安装内容与启动期相同，但此时引擎已就绪，不会再卡启动。
+ */
+void krkrLateFtMaybe() {
+    if (gKrkrLateDone.load(std::memory_order_relaxed)) return;
+    if (gKrkrLateHandle == nullptr) return;
+    const auto now = std::chrono::steady_clock::now();
+    if (!gKrkrConsoleSeen.exchange(true)) {
+        gKrkrFirstConsoleAt = now;
+        return;
+    }
+    if (now - gKrkrFirstConsoleAt < std::chrono::seconds(30)) return;
+    if (gKrkrLateDone.exchange(true)) return;
+    LOGI("ft probe: LATE install triggered (engine running, label/console active ≥30s)");
+    krkr_install_ft_probe(gKrkrLateHandle,
+                          gKrkrLateLibrary.empty() ? "libfreetype.so" : gKrkrLateLibrary.c_str());
+}
+
 /** 字形观察（GOT 通道 hookedFTLoadGlyph 与 inline 通道 hookedFTLoadGlyphInline 共用）。 */
 void ftObserveGlyph(void* face, unsigned int glyphIndex) {
     const uint64_t calls = gFtGlyphCalls.fetch_add(1, std::memory_order_relaxed) + 1;
@@ -1088,6 +1124,7 @@ static bool isReadablePtr(const void* p, size_t len) {
 }
 
 extern "C" void krkr_on_console_log(const void* text);   // 定义见下方（UTF-16/UTF-8 自适应）
+extern "C" bool krkr_install_ft_probe(void* gameHandle, const char* library);
 
 /** B：tTJSString& 版的第一参数是对象，先把原始字节按 hex 打出来（确认布局/是否真的是文本）。 */
 extern "C" void krkr_on_console_log_obj(const void* obj) {
@@ -1147,6 +1184,7 @@ extern "C" void krkr_on_console_log_obj(const void* obj) {
     }
     // 兜底：把对象首地址当 UTF-8/UTF-16 文本直接试一次
     krkr_on_console_log(obj);
+    krkrLateFtMaybe();   // 引擎实际走的是这个重载（第 4 轮查明）→ 迟到安装的触发点必须在这里
 }
 
 extern "C" void krkr_console_log_hook();
@@ -1235,6 +1273,7 @@ extern "C" void krkr_on_console_log(const void* text) {
     if (utf8.empty()) return;
     LOGI("console text(%zu): %.60s", utf8.size(), utf8.c_str());
     emitText(utf8.c_str());
+    krkrLateFtMaybe();   // 控制台活动 → 视时机迟到安装 FT 链（不碰启动路径）
 }
 
 /**
@@ -1315,7 +1354,9 @@ extern "C" bool krkr_install_extract_hook(void* gameHandle, JNIEnv* env) {
     // 开关必须在最外层作用域声明（下面 env!=nullptr 分支与后续逻辑都要用）
     static const bool kKrkrExtractEnabled = true;   // 总开关（延后安装版）
     static const bool kEnableEngineIdentityLog = true;
-    static const bool kEnableConsoleInlineHook = true;    // 延后 20s 安装
+    static const bool kEnableConsoleInlineHook = true;
+    // 记录句柄：迟到安装 FT 链需要它（库名未知时由迟到安装自行回退/探测）
+    if (gKrkrLateHandle == nullptr) gKrkrLateHandle = gameHandle;
     // 注：曾用"后台线程延后 20s 安装"来避开启动关键路径，但真机证实
     // **引擎进程里 std::thread 不可靠**（FT 探针的延后二次调用从未发生）。
     // 阻塞的真正原因（在渲染线程同步建 65504×N 次字形反查表）已改为异步构建，
@@ -1467,7 +1508,17 @@ extern "C" bool krkr_install_ft_probe(void* gameHandle, const char* library) {
     // 【入口即打】无条件的调用轨迹：确认是否被调用、参数、是否二次（延后）进入
     LOGI("ft probe: ENTER handle=%p library=%s", gameHandle,
          library != nullptr ? library : "(null)");
-    static const bool kEnableFtProbe = false;   // 真机：FT 链安装本身会卡启动（引擎进程里 std::thread 又不可靠）→ 暂关
+    static const bool kEnableFtProbe = true;
+    // 【运行时安装】真机证实：FT 链若在引擎启动期安装会卡住启动（宿主等不到 UI 就绪）。
+    // 因此这里**不在启动期装**，改为由控制台活动 + 时间触发的"迟到安装"（见 krkrLateFtMaybe）。
+    static const bool kInstallAtStartup = false;
+    // 记录句柄/库名供迟到安装复用
+    gKrkrLateHandle = gameHandle;
+    gKrkrLateLibrary = library != nullptr ? library : "";
+    if (!kInstallAtStartup) {
+        LOGI("ft probe: skip startup install (will install late, once engine is running)");
+        return true;
+    }
     if (!kEnableFtProbe) {
         LOGI("ft probe: DISABLED");
         return false;
