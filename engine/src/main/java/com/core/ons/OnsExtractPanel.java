@@ -232,7 +232,7 @@ public class OnsExtractPanel {
         // 面板「自动」开关的初值与**全局自动朗读**保持一致：否则全局开着、面板显示"关"，
         // 用户把面板开关关掉后仍在自动朗读（用户反馈"开关没有正常发挥效果"）。
         // 之后两边靠 settingRow 的写透保持同步。
-        ttsAuto = prefs.getBoolean(KEY_TTS_AUTO, OnsTtsEngines.autoRead(activity));
+        ttsAuto = OnsTtsEngines.autoRead(activity);
         multiTtsEnabled = prefs.getBoolean(KEY_TTS_MULTI, false);
         ttsRate = prefs.getInt(KEY_TTS_RATE, 100);
         ttsJudou = prefs.getBoolean(KEY_TTS_JUDOU, false);
@@ -754,6 +754,9 @@ public class OnsExtractPanel {
      * 弹窗内切换与面板内开关按钮同源同持久化，变更后同步面板按钮视觉。
      */
     private void showSettingsDialog() {
+        // 每次打开都从**全局**读一次自动朗读状态：两个入口（游戏内/设置页）共用同一个值，
+        // 避免"面板显示关、其实全局开着还在念"这类不同步（用户反馈的问题）。
+        ttsAuto = OnsTtsEngines.autoRead(activity);
         LinearLayout box = new LinearLayout(activity);
         box.setOrientation(LinearLayout.VERTICAL);
         int pad = dp(16);
@@ -772,10 +775,9 @@ public class OnsExtractPanel {
         box.addView(settingRow(R.drawable.ic_autorenew,
                 R.string.engine_ons_extract_auto_toggle, ttsAuto, () -> {
                     ttsAuto = !ttsAuto;
-                    p.edit().putBoolean(KEY_TTS_AUTO, ttsAuto).apply();
-                    // **写透到全局「自动朗读」**：否则全局开着时，这里关掉不起作用
-                    // （自动朗读判定是 `ttsAuto || autoRead`）—— 用户反馈"开关没实现控制"。
+                    // **只写全局这一份**（面板不再单独存）：两个入口同步、开关真正生效。
                     OnsTtsEngines.setAutoRead(activity, ttsAuto);
+                    p.edit().putBoolean(KEY_TTS_AUTO, ttsAuto).apply();   // 兼容旧键
                     return ttsAuto;
                 }));
         box.addView(settingRow(R.drawable.ic_multi_tts,
@@ -3482,7 +3484,7 @@ public class OnsExtractPanel {
             if (text == null || text.isEmpty()) return;
             // 生效条件 = 面板「自动」快调 OR 设置页「自动朗读」全局开关（后者面板隐藏
             // 也生效——隐藏剧情文本框时更新文本后照常自动朗读）
-            final boolean autoOn = ttsAuto || OnsTtsEngines.autoRead(activity);
+            final boolean autoOn = OnsTtsEngines.autoRead(activity);   // 单一真相源（面板/设置页同一个值）
             if (!autoOn) return;
             // **有配对语音的对白一律不 TTS**：游戏自己会播那段语音，再念一遍就是双声。
             // 这条判定必须在最前面（补念分支以前漏了它 → 有语音的句子长出来时仍会念一段）。
@@ -3552,7 +3554,7 @@ public class OnsExtractPanel {
     private void autoPlayForNewSentence(String sentence) {
         if (sentence == null || sentence.isEmpty()) return;
         if (sentence.equals(lastSpokenSentence)) return;
-        boolean autoOn = ttsAuto || OnsTtsEngines.autoRead(activity);
+        boolean autoOn = OnsTtsEngines.autoRead(activity);   // 单一真相源：面板的「自动」开关写的就是它
         if (!autoOn) {
             Log.i(TAG, "auto speak skipped: auto off (panel=" + ttsAuto
                     + ", global=" + OnsTtsEngines.autoRead(activity) + ")");
