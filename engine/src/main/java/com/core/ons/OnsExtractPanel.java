@@ -3364,6 +3364,11 @@ public class OnsExtractPanel {
                 && sentence.startsWith(pendingSpokenSentence)
                 && sentence.length() > pendingSpokenSentence.length();
         pendingSpokenSentence = sentence;
+        // 用户要求：推进到下一句时，**上一句还在念就立即停掉**，随后转为当前句的朗读。
+        // 原来只有去抖到点后 speakSentence() 里的 tts.stop() 才停 → 400/650ms 内旧句会多念
+        // 一段（听感上就是"切句了还在念上一句"）。这里在新句（非"同句补念"）一到就抢先停。
+        stopTts();
+        android.util.Log.i(TAG, "auto speak: previous utterance stopped, pending new sentence");
         main.removeCallbacks(autoSpeakJob);
         main.postDelayed(autoSpeakJob, growing ? AUTO_SPEAK_GROW_MS : AUTO_SPEAK_STABLE_MS);
     }
