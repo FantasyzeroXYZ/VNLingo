@@ -869,6 +869,170 @@ extern "C" bool krkr_install_extract_hook(void* gameHandle, JNIEnv* env) {
 /** FT 字符流钩子：GOT 补丁 FT_Get_Char_Index（对白渲染的 Unicode 必经点）。 */
 static bool gFtProbeInstalled = false;
 
+// ============================================================================
+// 方案 A：通用钩子 —— TVPConsoleWindow::addLine(const tTJSString&, cocos2d::Color3B)
+// 离线依据见文件头注释：导出地址 0xaabbdc；序言含 stp x29,x30（trampoline 必须保 x30）。
+// 设计：handler 只做内存解码；**仅含假名/汉字**的文本才上行（天然避开启动期 ASCII 日志风暴）。
+// ============================================================================
+extern "C" void gAddLineTrampolinePtr();   // 占位，实际用全局变量保存 trampoline
+
+extern "C" __attribute__((visibility("hidden"))) void* gAddLineTrampoline = nullptr;
+std::string gLastAddLineEmitted;
+
+/** 含假名/汉字（UTF-8）→ 视为对白候选。 */
+bool hasKanaOrKanji(const char* s) {
+    if (s == nullptr) return false;
+    size_t i = 0;
+    const size_t n = std::strlen(s);
+    while (i < n) {
+        const unsigned char c = static_cast<unsigned char>(s[i]);
+        unsigned int cp = 0;
+        size_t len = 1;
+        if (c < 0x80) { cp = c; }
+        else if ((c & 0xE0) == 0xC0) { cp = c & 0x1F; len = 2; }
+        else if ((c & 0xF0) == 0xE0) { cp = c & 0x0F; len = 3; }
+        else if ((c & 0xF8) == 0xF0) { cp = c & 0x07; len = 4; }
+        else { ++i; continue; }
+        if (i + len > n) break;
+        for (size_t k = 1; k < len; ++k) {
+            const unsigned char cc = static_cast<unsigned char>(s[i + k]);
+            if ((cc & 0xC0) != 0x80) { cp = 0; break; }
+            cp = (cp << 6) | (cc & 0x3F);
+        }
+        i += len;
+        if ((cp >= 0x3040 && cp <= 0x30FF) || (cp >= 0x4E00 && cp <= 0x9FFF) ||
+            (cp >= 0xFF00 && cp <= 0xFFEF)) {
+            return true;
+        }
+    }
+    return false;
+}
+
+/** C 侧处理：x0 = const tTJSString*（第一参数）。只解码 + 过滤 + 上行。 */
+extern "C" void onConsoleAddLine(const void* tjsString) {
+    if (tjsString == nullptr) return;
+    // tTJSString：对象 offset0 = _Rep*（COW basic_string<char16_t>）
+    uintptr_t rep = 0;
+    std::memcpy(&rep, tjsString, sizeof(rep));
+    if (rep < 0x1000) return;
+    uint32_t len = 0;
+    std::memcpy(&len, reinterpret_cast<const void*>(rep), sizeof(len));
+    if (len == 0 || len > 8192) return;
+    const char16_t* chars = reinterpret_cast<const char16_t*>(rep + 0x18);
+    // UTF-16 → UTF-8（带越界保护：先读以确认可读，异常由进程自身处理；此处仅做长度上限）
+    std::string utf8;
+    utf8.reserve(len * 3);
+    for (uint32_t i = 0; i < len; ++i) {
+        const unsigned int cp = chars[i];
+        if (cp == 0) break;
+        if (cp < 0x80) {
+            utf8.push_back(static_cast<char>(cp));
+        } else if (cp < 0x800) {
+            utf8.push_back(static_cast<char>(0xC0 | (cp >> 6)));
+            utf8.push_back(static_cast<char>(0x80 | (cp & 0x3F)));
+        } else {
+            utf8.push_back(static_cast<char>(0xE0 | (cp >> 12)));
+            utf8.push_back(static_cast<char>(0x80 | ((cp >> 6) & 0x3F)));
+            utf8.push_back(static_cast<char>(0x80 | (cp & 0x3F)));
+        }
+    }
+    if (utf8.empty()) return;
+    // 只上行"像对白"的文本：含假名/汉字。启动期的 ASCII 日志（路径/标签）在此被挡掉，
+    // 从而**不会**在启动关键路径上触发 JNI（上次卡启动的根因）。
+    if (!hasKanaOrKanji(utf8.c_str())) return;
+    if (utf8 == gLastAddLineEmitted) return;   // 去重
+    gLastAddLineEmitted = utf8;
+    std::string out = "[FTLN]";
+    out += utf8;
+    LOGI("addline dialogue: %.60s", utf8.c_str());
+    emitText(out.c_str());
+}
+
+/** naked 替换函数：保存 x0-x9/q0-q7/**x30** → 调 handler → 恢复 → 跳 trampoline。 */
+extern "C" __attribute__((naked)) void addLineHook() {
+    __asm__ volatile(
+            "sub sp, sp, #304\n"
+            "stp x0, x1, [sp, #0]\n"
+            "stp x2, x3, [sp, #16]\n"
+            "stp x4, x5, [sp, #32]\n"
+            "stp x6, x7, [sp, #48]\n"
+            "stp x8, x9, [sp, #64]\n"
+            "stp q0, q1, [sp, #80]\n"
+            "stp q2, q3, [sp, #112]\n"
+            "stp q4, q5, [sp, #144]\n"
+            "stp q6, q7, [sp, #176]\n"
+            "str x30, [sp, #288]\n"          // ★ 保 LR：addLine 序言会 stp x29,x30
+            "bl onConsoleAddLine\n"
+            "ldr x30, [sp, #288]\n"          // ★ 还 LR（被搬移指令会用）
+            "ldp x0, x1, [sp, #0]\n"
+            "ldp x2, x3, [sp, #16]\n"
+            "ldp x4, x5, [sp, #32]\n"
+            "ldp x6, x7, [sp, #48]\n"
+            "ldp x8, x9, [sp, #64]\n"
+            "ldp q0, q1, [sp, #80]\n"
+            "ldp q2, q3, [sp, #112]\n"
+            "ldp q4, q5, [sp, #144]\n"
+            "ldp q6, q7, [sp, #176]\n"
+            "add sp, sp, #304\n"
+            "adrp x16, gAddLineTrampoline\n"
+            "add x16, x16, :lo12:gAddLineTrampoline\n"
+            "ldr x16, [x16]\n"
+            "br x16\n");
+}
+
+bool isPcRelativeInsn(uint32_t insn) {
+    if ((insn & 0x1F000000u) == 0x10000000u) return true;   // ADR/ADRP
+    if ((insn & 0x7C000000u) == 0x14000000u) return true;   // B/BL
+    if ((insn & 0x3B000000u) == 0x18000000u) return true;   // LDR literal
+    return false;
+}
+
+/** 安装 addLine 的 inline hook（失败仅记日志，不影响游戏）。 */
+bool installAddLineHook(void* gameHandle) {
+    void* target = dlsym(gameHandle,
+                         "_ZN16TVPConsoleWindow7addLineERKN3TJS10tTJSStringEN7cocos2d7Color3BE");
+    if (target == nullptr) {
+        LOGW("addline hook: symbol not found");
+        return false;
+    }
+    auto* insns = reinterpret_cast<uint32_t*>(target);
+    for (int i = 0; i < 4; ++i) {
+        if (isPcRelativeInsn(insns[i])) {
+            LOGW("addline hook: pc-relative insn[%d]=0x%08x → refuse", i, insns[i]);
+            return false;
+        }
+    }
+    const long pageSize = sysconf(_SC_PAGESIZE);
+    if (pageSize <= 0) return false;
+    void* tramp = mmap(nullptr, static_cast<size_t>(pageSize),
+                       PROT_READ | PROT_WRITE | PROT_EXEC, MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
+    if (tramp == MAP_FAILED) return false;
+    auto* tp = reinterpret_cast<uint32_t*>(tramp);
+    for (int i = 0; i < 4; ++i) tp[i] = insns[i];
+    tp[4] = 0x58000050u;   // ldr x16, #8
+    tp[5] = 0xD61F0200u;   // br x16
+    *reinterpret_cast<uint64_t*>(tp + 6) = reinterpret_cast<uint64_t>(target) + 16;
+    __builtin___clear_cache(reinterpret_cast<char*>(tramp),
+                            reinterpret_cast<char*>(tramp) + pageSize);
+    gAddLineTrampoline = tramp;
+    const uintptr_t page = reinterpret_cast<uintptr_t>(target)
+            & ~(static_cast<uintptr_t>(pageSize) - 1);
+    if (mprotect(reinterpret_cast<void*>(page), static_cast<size_t>(pageSize),
+                 PROT_READ | PROT_WRITE | PROT_EXEC) != 0) {
+        LOGW("addline hook: mprotect failed errno=%d", errno);
+        return false;
+    }
+    insns[0] = 0x58000050u;   // ldr x16, #8
+    insns[1] = 0xD61F0200u;   // br x16
+    *reinterpret_cast<uint64_t*>(insns + 2) = reinterpret_cast<uint64_t>(&addLineHook);
+    mprotect(reinterpret_cast<void*>(page), static_cast<size_t>(pageSize),
+             PROT_READ | PROT_EXEC);
+    __builtin___clear_cache(reinterpret_cast<char*>(target),
+                            reinterpret_cast<char*>(target) + 16);
+    LOGI("addline hook: armed target=%p trampoline=%p", target, tramp);
+    return true;
+}
+
 extern "C" bool krkr_install_ft_probe(void* gameHandle, const char* library) {
     if (gameHandle == nullptr || library == nullptr) return false;
     if (gFtProbeInstalled) return true;
@@ -907,6 +1071,8 @@ extern "C" bool krkr_install_ft_probe(void* gameHandle, const char* library) {
                              reinterpret_cast<void*>(&hookedFTGetNextChar), &origNextChar)) {
         gOrigFTGetNextChar = reinterpret_cast<FTGetNextCharFn>(origNextChar);
     }
+    // 方案 A：通用控制台行钩子（所有 KAG3 游戏通用）
+    installAddLineHook(gameHandle);
     if (gOrigFTGetCharIndex == nullptr && gOrigFTLoadGlyph == nullptr && gOrigFTLoadChar == nullptr) {
         return false;
     }
