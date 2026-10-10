@@ -1351,7 +1351,7 @@ extern "C" void krkr_on_console_log(const void* text) {
  */
 extern "C" __attribute__((naked)) void krkr_console_log_hook() {
     __asm__ volatile(
-            "sub sp, sp, #272\n"
+            "sub sp, sp, #320\n"
             "stp x0, x1, [sp, #0]\n"
             "stp x2, x3, [sp, #16]\n"
             "stp x4, x5, [sp, #32]\n"
@@ -1361,7 +1361,9 @@ extern "C" __attribute__((naked)) void krkr_console_log_hook() {
             "stp q2, q3, [sp, #112]\n"
             "stp q4, q5, [sp, #144]\n"
             "stp q6, q7, [sp, #176]\n"
+            "str x30, [sp, #304]\n"          // ★ 关键：保存 LR
             "bl krkr_on_console_log\n"
+            "ldr x30, [sp, #304]\n"          // ★ 关键：恢复 LR（被搬移的 stp x29,x30 会用）
             "ldp x0, x1, [sp, #0]\n"
             "ldp x2, x3, [sp, #16]\n"
             "ldp x4, x5, [sp, #32]\n"
@@ -1371,7 +1373,7 @@ extern "C" __attribute__((naked)) void krkr_console_log_hook() {
             "ldp q2, q3, [sp, #112]\n"
             "ldp q4, q5, [sp, #144]\n"
             "ldp q6, q7, [sp, #176]\n"
-            "add sp, sp, #272\n"
+            "add sp, sp, #320\n"
             "adrp x16, gKrkrTrampoline\n"
             "add x16, x16, :lo12:gKrkrTrampoline\n"
             "ldr x16, [x16]\n"
@@ -1381,7 +1383,7 @@ extern "C" __attribute__((naked)) void krkr_console_log_hook() {
 /** B 路（tTJSString& 重载）的 naked trampoline：同上，只是跳回自己的 trampoline 指针。 */
 extern "C" __attribute__((naked)) void krkr_console_log_hook_b() {
     __asm__ volatile(
-            "sub sp, sp, #272\n"
+            "sub sp, sp, #320\n"
             "stp x0, x1, [sp, #0]\n"
             "stp x2, x3, [sp, #16]\n"
             "stp x4, x5, [sp, #32]\n"
@@ -1391,7 +1393,9 @@ extern "C" __attribute__((naked)) void krkr_console_log_hook_b() {
             "stp q2, q3, [sp, #112]\n"
             "stp q4, q5, [sp, #144]\n"
             "stp q6, q7, [sp, #176]\n"
+            "str x30, [sp, #304]\n"          // ★ 关键：保存 LR
             "bl krkr_on_console_log_obj\n"
+            "ldr x30, [sp, #304]\n"          // ★ 关键：恢复 LR
             "ldp x0, x1, [sp, #0]\n"
             "ldp x2, x3, [sp, #16]\n"
             "ldp x4, x5, [sp, #32]\n"
@@ -1401,7 +1405,7 @@ extern "C" __attribute__((naked)) void krkr_console_log_hook_b() {
             "ldp q2, q3, [sp, #112]\n"
             "ldp q4, q5, [sp, #144]\n"
             "ldp q6, q7, [sp, #176]\n"
-            "add sp, sp, #272\n"
+            "add sp, sp, #320\n"
             "adrp x16, gKrkrTrampolineB\n"
             "add x16, x16, :lo12:gKrkrTrampolineB\n"
             "ldr x16, [x16]\n"
@@ -1421,9 +1425,9 @@ extern "C" bool krkr_bridge_got_hook(const char* library, const char* symbol,
 extern "C" bool krkr_install_extract_hook(void* gameHandle, JNIEnv* env) {
     if (gameHandle == nullptr) return false;
     // 开关必须在最外层作用域声明（下面 env!=nullptr 分支与后续逻辑都要用）
-    static const bool kKrkrExtractEnabled = false;  // 铁证：我的 inline hook 在 GLThread 上把引擎打崩（libgame.so 0xaa1fa0）→ 停用
+    static const bool kKrkrExtractEnabled = true;   // x30 修复后重开（控制台链）
     static const bool kEnableEngineIdentityLog = true;
-    static const bool kEnableConsoleInlineHook = false;
+    static const bool kEnableConsoleInlineHook = true;
     // 双开关：编译期硬开关（内核兼容性未确认前保持 false）+ 用户级开关（默认 false）。
     // 只有两者都放开才安装 → 默认状态下绝不会影响游戏启动。
     if (!kKrkrExtractEnabled) {
