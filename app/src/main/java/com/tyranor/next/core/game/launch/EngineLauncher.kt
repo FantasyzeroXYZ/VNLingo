@@ -200,6 +200,25 @@ object EngineLauncher {
         val path = resolveGameDirectory(context, game)
         // 三级设置（应用级 + 单游戏覆盖）一次性解析，后续 Intent 组装只消费生效值（P0-3）
         val settings = EngineSettingsResolver.resolve(context, game, path)
+        // Artemis：无论走官方还是 clean 内核，游戏目录里都必须有**松散的启动文件**
+        // （引擎不读 PFS 内的 system/*；缺 system/first.iet 直接起不来），且官方补丁卷
+        // （如 TheShell.pfs.080 日语补丁）也只有解出来才会生效——引擎读的是松散文件。
+        // 这里与 artemis_auto_patch 策略无关，只在「文件缺失」或「PFS 卷集合变化」时才解包。
+        if (game.engine == EngineType.ARTEMIS && !path.isNullOrBlank()) {
+            runCatching {
+                ArtemisPfsUnpacker.applyBasePatch(path)
+                ArtemisPfsUnpacker.applyAndroidSettings(
+                    path,
+                    ArtemisPfsUnpacker.AndroidSettings(
+                        resolution = settings.artResolution,
+                        sideCut = settings.artSideCut,
+                        surfaceCacheSize = settings.artSurfaceCacheSize,
+                        fontCacheSize = settings.artFontCacheSize,
+                        powerSaving = settings.artPowerSaving,
+                    ),
+                )
+            }.onFailure { Log.w(TAG, "artemis startup file sync failed", it) }
+        }
         ExternalEngineModuleRegistry.moduleForEngine(game.engine)?.let { defaultModule ->
             val module = ExternalEngineModuleRegistry.resolveModule(
                 game.engine,
@@ -1269,8 +1288,13 @@ object EngineLauncher {
      * ask 已按弹窗结果改写为 auto/off：auto（含 ask 遗留路径）幂等自动补丁，off 跳过。
      */
     private fun applyArtemisBasePatchIfNeeded(path: String, strategy: String) {
-        if (strategy == EngineSettingsStore.AUTO_PATCH_OFF) return
-        if (!ArtemisPfsUnpacker.needsBasePatch(path)) return
+        // strategy=off 只挡「首次补丁」，但 PFS 卷集合变化（用户新加官方补丁卷）必须重解：
+        // 引擎读的是松散启动文件，不解出来补丁内容（如日语语言菜单）永远不生效。
+        val needed = ArtemisPfsUnpacker.needsBasePatch(path)
+        if (!needed) return
+        if (strategy == EngineSettingsStore.AUTO_PATCH_OFF && !ArtemisPfsUnpacker.pfsVolumesChanged(path)) {
+            return
+        }
         ArtemisPfsUnpacker.applyBasePatch(path)
     }
 

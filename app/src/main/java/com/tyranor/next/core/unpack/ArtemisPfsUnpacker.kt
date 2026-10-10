@@ -37,6 +37,8 @@ object ArtemisPfsUnpacker {
 
     private const val MANAGED_BLOCK_BEGIN = "; TYRANOR_NEXT_ARTEMIS_SETTINGS_BEGIN"
     private const val MANAGED_BLOCK_END = "; TYRANOR_NEXT_ARTEMIS_SETTINGS_END"
+    /** PFS 卷指纹记录文件（PFS 卷集合变化 → 需要重新解出启动文件）。 */
+    private const val STAMP_FILE = ".tyranor_pfs_stamp"
     private val MANAGED_ANDROID_KEYS = setOf(
         "WIDTH",
         "HEIGHT",
@@ -64,6 +66,16 @@ object ArtemisPfsUnpacker {
                 powerSaving.isNotBlank()
     }
 
+    /**
+     * 是否需要把 PFS 里的**启动系统文件**解到游戏目录。
+     *
+     * 判据两档：
+     * 1. 启动文件缺失（`system.ini` / BOOT 脚本 / `system/init.lua` / `system/table/list_android*.tbl`）；
+     * 2. **PFS 卷集合有变化**（新增/替换/删除 `.pfs.NNN`，如官方补丁 `TheShell.pfs.080`）——
+     *    引擎读的是游戏目录里的松散启动文件（不是 PFS 内的），补丁卷不解出来就永远看不到
+     *    （用户实测：加了日语补丁却没有日语选项，PC 上正常）。
+     *    用 `[STAMP_FILE]` 记录上次解包时的卷指纹，避免每次启动都重新解包。
+     */
     fun needsBasePatch(rootPath: String?): Boolean {
         if (rootPath.isNullOrBlank() || rootPath.startsWith("content://")) return false
         val dir = File(rootPath)
@@ -72,7 +84,40 @@ object ArtemisPfsUnpacker {
         if (pfsFiles.isEmpty()) return false
         val systemIni = File(dir, "system.ini")
         if (!systemIni.isFile) return true
-        return hasMissingStartupFile(dir, systemIni)
+        if (hasMissingStartupFile(dir, systemIni)) return true
+        return pfsStampChanged(dir, pfsFiles)
+    }
+
+    /** PFS 卷集合是否相对上次解包有变化（新增/替换补丁卷）。 */
+    fun pfsVolumesChanged(rootPath: String?): Boolean {
+        if (rootPath.isNullOrBlank() || rootPath.startsWith("content://")) return false
+        val dir = File(rootPath)
+        if (!dir.isDirectory) return false
+        val pfsFiles = listPfsFiles(dir)
+        if (pfsFiles.isEmpty()) return false
+        return pfsStampChanged(dir, pfsFiles)
+    }
+
+    /** PFS 卷指纹（名字 + 大小 + 修改时间）；与记录不一致 = 有新补丁/改动。 */
+    private fun pfsFingerprint(pfsFiles: List<File>): String {
+        val raw = pfsFiles.joinToString("\n") { "${it.name}|${it.length()}|${it.lastModified()}" }
+        val digest = MessageDigest.getInstance("SHA-1").digest(raw.toByteArray(UTF_8))
+        return digest.joinToString("") { "%02x".format(it) }
+    }
+
+    private fun stampFile(dir: File): File = File(dir, STAMP_FILE)
+
+    private fun pfsStampChanged(dir: File, pfsFiles: List<File>): Boolean {
+        val expected = pfsFingerprint(pfsFiles)
+        val stored = runCatching { stampFile(dir).readText(UTF_8).trim() }.getOrNull()
+        if (stored == expected) return false
+        logInfo("pfs stamp changed (stored=${stored?.take(8)} now=${expected.take(8)})")
+        return true
+    }
+
+    private fun writePfsStamp(dir: File, pfsFiles: List<File>) {
+        runCatching { stampFile(dir).writeText(pfsFingerprint(pfsFiles), UTF_8) }
+            .onFailure { logWarn("write pfs stamp failed", it) }
     }
 
     fun applyBasePatch(rootPath: String?, force: Boolean = false): Boolean {
@@ -80,7 +125,8 @@ object ArtemisPfsUnpacker {
         val dir = File(rootPath.orEmpty())
         var totalBytes = 0L
         return try {
-            for (pfs in listPfsFiles(dir)) {
+            val pfsFiles = listPfsFiles(dir)
+            for (pfs in pfsFiles) {
                 totalBytes += unpackPfs(dir, pfs)
                 if (totalBytes > MAX_TOTAL_BYTES) {
                     logWarn("base patch total bytes exceed limit, abort")
@@ -89,6 +135,8 @@ object ArtemisPfsUnpacker {
             }
             ensureSystemIni(dir)
             ensureBootFileAvailable(dir)
+            // 记录本次解包对应的卷指纹：下次只在卷集合变化（新补丁）时才重解
+            writePfsStamp(dir, pfsFiles)
             true
         } catch (error: Exception) {
             logWarn("apply base patch failed root=$rootPath", error)

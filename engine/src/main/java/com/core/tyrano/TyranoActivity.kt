@@ -283,6 +283,8 @@ class TyranoActivity : Activity() {
                 ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT))
         }
         setContentView(root)
+        // 沉浸式全屏：状态栏 + 底部导航栏自动隐藏（用户要求游戏画面全屏）
+        com.core.engine.ImmersiveMode.applyAndReapply(this)
 
         configureWebView(browser)
         when (webGameType) {
@@ -676,14 +678,15 @@ class TyranoActivity : Activity() {
     private fun handleBackRequest() {
         val browser = webView
         if (!rpgMakerModEnabled || browser == null) {
-            DoubleBackExit.handleBack(this) { finish() }
+            // 系统返回键 → 悬浮确认框「是否退出游戏」（用户要求；不再双击直退）
+            com.core.engine.EngineConfirmDialog.showExitGame(this) { finish() }
             return
         }
         browser.evaluateJavascript(
             "(function(){if(window.TyranorModUI&&window.TyranorModUI.isOpen()){window.TyranorModUI.close();return true;}return false;})()",
         ) { handled ->
             if (!handled.equals("true", ignoreCase = true)) {
-                DoubleBackExit.handleBack(this) { finish() }
+                com.core.engine.EngineConfirmDialog.showExitGame(this) { finish() }
             }
         }
     }

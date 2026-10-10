@@ -557,7 +557,8 @@ public abstract class ArtemisLauncherBaseActivity extends com.ies_net.artemis.Ar
 
     @Override
     public void onBackPressed() {
-        DoubleBackExit.handleBack(this, this::exitFromBack);
+        // 系统返回键 → 悬浮确认框「是否退出游戏」（用户要求；不再双击直退）
+        com.core.engine.EngineConfirmDialog.showExitGame(this, this::exitFromBack);
     }
 
     private void exitFromBack() {

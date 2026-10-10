@@ -2669,6 +2669,17 @@ public class OnsExtractPanel {
         // 面板开着：吞掉非动作相位，防止长按重复/抬起透传游戏
         if (event.getAction() != KeyEvent.ACTION_DOWN) return true;
 
+        // ── 再按一次「剧情文本框」呼出键 = 收起面板（用户要求） ──────────────
+        // 默认呼出键 RB 同时也是释义下滚键，这里按「开关」语义优先：展开态再按即隐藏。
+        // 滚动仍可用：左肩键(L1)上滚、摇杆/十字键 HAT、面板内拖动与右缘滚动按钮。
+        if (PanelActionBindings.matches(PanelActionBindings.PANEL_TOGGLE, code)) {
+            if (event.getRepeatCount() == 0 && debounceToggle("panel")) {
+                Log.i(TAG, "panel toggle(close) via key code=" + code);
+                togglePanel();
+            }
+            return true;
+        }
+
         // ── 系统音量键：面板展开期间仍放行（既有约定） ──────────────────
         if (code == KeyEvent.KEYCODE_VOLUME_UP || code == KeyEvent.KEYCODE_VOLUME_DOWN
                 || code == KeyEvent.KEYCODE_VOLUME_MUTE || code == KeyEvent.KEYCODE_MUTE) {

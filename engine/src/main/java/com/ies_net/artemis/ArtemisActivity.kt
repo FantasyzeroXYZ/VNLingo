@@ -194,7 +194,9 @@ open class ArtemisActivity : NativeActivity() {
         appContext = applicationContext
         super.onCreate(bundle)
         window.addFlags(1024)
-        window.addFlags(128)
+        // 注意：不要再加 128（FLAG_FORCE_NOT_FULLSCREEN）——它会把状态栏钉在画面上，
+        // 与「游戏画面全屏、状态栏自动隐藏」冲突（用户要求）。
+        com.core.engine.ImmersiveMode.applyAndReapply(this)
     }
 
     override fun onNewIntent(intent: Intent?) {
@@ -213,6 +215,8 @@ open class ArtemisActivity : NativeActivity() {
     }
 
     override fun onWindowFocusChanged(hasFocus: Boolean) {
+        // 全屏：获得焦点时重新压住状态栏/导航栏（部分 ROM 会在焦点变化后放出系统栏）
+        if (hasFocus) com.core.engine.ImmersiveMode.apply(this)
         // 虚拟鼠标模式：失焦不传播到 native（native 循环失焦即停绘/停响应）。
         // 获得焦点与真实生命周期（onPause 等）照常传播。
         if (!hasFocus && keepNativeFocused) {

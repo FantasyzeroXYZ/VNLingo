@@ -877,6 +877,14 @@ public abstract class KirikiroidLauncherBaseActivity extends KR2Activity {
         KeyEvent mapped = com.core.engine.GamepadRemap.apply(event);
         com.core.ons.OnsExtractPanel panel = extractPanel;
         if (panel != null && panel.handleKey(mapped)) return true;
+        // 系统返回键（手机底部退出键）→ 悬浮确认框「是否退出游戏」（用户要求）；
+        // 面板未消费 BACK 时才拦，DOWN/UP 都吞掉避免游戏侧收到半按下状态。
+        if (mapped != null && mapped.getKeyCode() == KeyEvent.KEYCODE_BACK) {
+            if (mapped.getAction() == KeyEvent.ACTION_DOWN && mapped.getRepeatCount() == 0) {
+                com.core.engine.EngineConfirmDialog.showExitGame(this, this::finish);
+            }
+            return true;
+        }
         // 虚拟鼠标模式：D-pad/摇杆移动光标、A 键点击（消费后再不透传游戏键）
         if (virtualMouseMode && virtualMouse != null && virtualMouse.handleKey(mapped)) {
             return true;
@@ -931,11 +939,9 @@ public abstract class KirikiroidLauncherBaseActivity extends KR2Activity {
             window.setStatusBarContrastEnforced(false);
             window.setNavigationBarContrastEnforced(false);
         }
-        int flags = View.SYSTEM_UI_FLAG_LAYOUT_STABLE | View.SYSTEM_UI_FLAG_LAYOUT_FULLSCREEN;
-        if (!isLauncherDarkMode()) {
-            flags |= View.SYSTEM_UI_FLAG_LIGHT_STATUS_BAR | View.SYSTEM_UI_FLAG_LIGHT_NAVIGATION_BAR;
-        }
-        window.getDecorView().setSystemUiVisibility(flags);
+        // 沉浸式全屏（状态栏 + 底部导航栏都自动隐藏；用户要求游戏画面全屏）。
+        // 旧实现只有 LAYOUT_STABLE|LAYOUT_FULLSCREEN —— 内容铺到状态栏下，但状态栏仍然显示。
+        com.core.engine.ImmersiveMode.apply(this);
     }
 
     private int launcherPrimaryColor() {

@@ -124,6 +124,8 @@ public class ONScripter extends SDLActivity {
         ensureDefaultFont();
         super.onCreate(savedInstanceState);
         fixSurfaceCentering();  // 修复平板设备上画面不居中的问题
+        // 沉浸式全屏：状态栏 + 底部导航栏自动隐藏（用户要求游戏画面全屏）
+        com.core.engine.ImmersiveMode.applyAndReapply(this);
         observeSurfaceAdvanceTap();  // 游戏面点击观测：提取桥连续页累积的翻页边界信号
         try { nativeInitJavaCallbacks(); } catch (Throwable t) { Log.w(TAG, "nativeInitJavaCallbacks failed", t); }
         setupVirtualControls();
@@ -243,8 +245,8 @@ public class ONScripter extends SDLActivity {
             switch (event.getAction()) {
                 case KeyEvent.ACTION_DOWN:
                     if (event.getRepeatCount() == 0) {
-                        if (DoubleBackExit.shouldExit(this)) finish();
-                        else sendEscToOns();
+                        // 系统返回键：弹「是否退出游戏」悬浮框，不再双击直退（用户要求）
+                        com.core.engine.EngineConfirmDialog.showExitGame(this, this::finish);
                     }
                     return true;
                 default:
@@ -262,8 +264,8 @@ public class ONScripter extends SDLActivity {
     }
 
     @Override public void onBackPressed() {
-        // 无视图消费 BACK 时的兜底路径：只布防退出窗口，不向游戏透传
-        if (DoubleBackExit.shouldExit(this)) finish();
+        // 系统返回键（手机底部退出键）→ 悬浮确认框「是否退出游戏」（用户要求）
+        com.core.engine.EngineConfirmDialog.showExitGame(this, this::finish);
     }
 
     @Override protected void exitFromBack() {
