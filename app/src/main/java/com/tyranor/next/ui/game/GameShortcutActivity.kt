@@ -42,21 +42,28 @@ class GameShortcutActivity : ComponentActivity() {
 
         lifecycleScope.launch {
             try {
-                val shortcutTitle = intent.getStringExtra(EXTRA_SHORTCUT_TITLE)
+                // 标题来源：① 快捷方式 intent 自带的 extra（新装快捷方式）；
+                // ② 已固定快捷方式的 label（旧快捷方式也查得到，用于 uri 变化后的兜底）。
+                val intentTitle = intent.getStringExtra(EXTRA_SHORTCUT_TITLE)
+                val pinnedLabel = withContext(Dispatchers.IO) { pinnedShortcutLabel(shortcutId) }
+                val shortcutTitle = intentTitle?.takeIf { it.isNotBlank() } ?: pinnedLabel
                 val game = withContext(Dispatchers.IO) {
                     val games = GameLibraryFacade.loadGames(applicationContext)
                     games.firstOrNull { GameShortcutManager.shortcutId(it.uri) == shortcutId }
-                        // 兜底：游戏目录被移动/重命名后，库内 uri 会变、旧快捷方式的 hash 就失效，
-                        // 之前的表现是「点了直接弹提示退回桌面」（用户反馈的偶发启动退出桌面）。
-                        // 标题兜底能让旧快捷方式继续找到同一个游戏。
+                        // 兜底：游戏目录被移动/重命名后库内 uri 会变，旧快捷方式 hash 失效——
+                        // 之前表现正是「点快捷方式弹提示后回到桌面」（用户反馈的偶发启动退出桌面）。
+                        // 用标题（intent extra 或快捷方式 label）找回同一个游戏。
                         ?: shortcutTitle?.takeIf { it.isNotBlank() }?.let { title ->
                             games.firstOrNull { it.title.trim() == title.trim() }
                         }
                 }
                 if (game == null) {
-                    Log.w(TAG, "shortcut unresolved id=$shortcutId title=$shortcutTitle")
+                    Log.w(TAG, "shortcut unresolved id=$shortcutId title=$shortcutTitle pinned=$pinnedLabel")
                     showUnavailable()
                     return@launch
+                }
+                if (GameShortcutManager.shortcutId(game.uri) != shortcutId) {
+                    Log.i(TAG, "shortcut resolved by title fallback id=$shortcutId -> uri=${game.uri}")
                 }
 
                 val needsArtemisPatchConfirm = withContext(Dispatchers.IO) {
@@ -116,6 +123,18 @@ class GameShortcutActivity : ComponentActivity() {
     private fun showUnavailable() {
         Toast.makeText(localizedContext, R.string.game_desktop_shortcut_unavailable, Toast.LENGTH_LONG).show()
     }
+
+    /**
+     * 已固定快捷方式的显示名（= 游戏标题）。旧快捷方式的 intent 里没有标题 extra，
+     * 但 launcher 里固定着的 ShortcutInfo 一定带 label，用它做 uri 变化后的兜底解析。
+     */
+    private fun pinnedShortcutLabel(shortcutId: String): String? = runCatching {
+        val manager = getSystemService(android.content.pm.ShortcutManager::class.java) ?: return null
+        val info = manager.pinnedShortcuts.firstOrNull { it.id == shortcutId } ?: return null
+        val label = info.longLabel?.toString()?.takeIf { it.isNotBlank() }
+            ?: info.shortLabel?.toString()?.takeIf { it.isNotBlank() }
+        label
+    }.getOrNull()
 
     /** Shows the missing-game message and closes the transparent trampoline. */
     private fun showUnavailableAndFinish() {
