@@ -798,6 +798,16 @@ public class OnsExtractPanel {
                     }
                 }));
 
+        // TTS 流式播放开关（用户要求：设置里可开关，开启后 HTTP 类引擎边收边播降低延迟）。
+        // 系统 TTS 的 speak() 本身就是边合成边播，此开关对它无影响。
+        box.addView(SettingsWidgets.switchRow(activity, R.drawable.ic_volume,
+                activity.getString(R.string.engine_ons_tts_streaming),
+                OnsTtsEngines.streaming(activity),
+                on -> {
+                    OnsTtsEngines.setStreaming(activity, on);
+                    android.util.Log.i(TAG, "tts streaming = " + on);
+                }));
+
         // 翻译 / 词典 / 云同步设置已移至应用「设置」页（产品调整：游戏内不再放配置类条目）
         TextView movedHint = new TextView(activity);
         movedHint.setText(R.string.engine_ons_settings_moved_hint);

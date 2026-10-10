@@ -34,6 +34,8 @@ object OnsTtsEngines {
     private const val KEY_VOLUME = "volume"      // 0..100（合成音量；系统引擎为播放音量映射）
     private const val KEY_VOICE = "voice"        // 发音人（multi=目录/名字；system=Voice.name）
     private const val KEY_MULTI_HOST = "multi_host" // MultiTTS 服务地址 host:port
+    /** TTS 流式播放：HTTP 类引擎边收边播（不等整段合成完），降低起播延迟。 */
+    private const val KEY_STREAM = "tts_streaming"
 
     /** 默认 HTTP 模板：TTS Server / LunaTranslator 兼容格式。 */
     const val DEFAULT_HTTP_TEMPLATE = "http://127.0.0.1:1221/api/tts?text={text}"
@@ -68,6 +70,19 @@ object OnsTtsEngines {
     @JvmStatic
     fun setVolume(context: Context, value: Int) {
         prefs(context).edit().putInt(KEY_VOLUME, value.coerceIn(0, 100)).apply()
+    }
+
+    /**
+     * TTS 流式播放（默认开）：HTTP 类引擎**边收边播** —— 不等整段音频合成完再播，
+     * 收到足够数据即起播，显著降低"按下到出声"的延迟。系统 TTS 本身已是边合成边播，
+     * 该开关对它只作说明（不影响）。
+     */
+    @JvmStatic
+    fun streaming(context: Context): Boolean = prefs(context).getBoolean(KEY_STREAM, true)
+
+    @JvmStatic
+    fun setStreaming(context: Context, value: Boolean) {
+        prefs(context).edit().putBoolean(KEY_STREAM, value).apply()
     }
 
     /** 发音人：multi = 「目录/名字」；system = Voice.name；http = 模板内自行指定。 */

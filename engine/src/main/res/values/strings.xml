@@ -135,6 +135,7 @@
     <string name="engine_ons_side_screenshot">截图</string>
     <string name="engine_ons_side_magnifier">放大镜</string>
     <string name="engine_ons_side_settings">游戏设置</string>
+    <string name="engine_ons_tts_streaming">TTS 流式播放（降低延迟）</string>
     <string name="engine_ons_settings_game_volume">游戏音量（软件内）</string>
     <string name="engine_ons_magnifier_select_hint">拖动框选要放大的区域，松手确认</string>
     <string name="engine_ons_settings_title">游戏设置</string>

@@ -1483,6 +1483,12 @@ public final class OnsExtractSettingsDialogs {
                 OnsTtsEngines.volume(activity), "%d%%",
                 value -> OnsTtsEngines.setVolume(activity, value)));
 
+        // TTS 流式播放（HTTP 类引擎边收边播，降低起播延迟；系统 TTS 本就是流式）
+        box.addView(SettingsWidgets.switchRow(activity, R.drawable.ic_volume,
+                activity.getString(R.string.engine_ons_tts_streaming),
+                OnsTtsEngines.streaming(activity),
+                on -> OnsTtsEngines.setStreaming(activity, on)));
+
         // 发音人行：点击按当前引擎拉取发音人列表（后台）弹单选
         TextView voiceValue = new TextView(activity);
         styleNavValue(activity, voiceValue);
