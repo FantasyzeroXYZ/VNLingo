@@ -1304,7 +1304,7 @@ extern "C" bool krkr_install_extract_hook(void* gameHandle, JNIEnv* env) {
     //   C FT 字形链（GOT + 按-face 反查表 + 停顿直发）
     static const bool kKrkrExtractEnabled = true;   // 总开关（止血时置 false）
     static const bool kEnableEngineIdentityLog = true;
-    static const bool kEnableConsoleInlineHook = false;
+    static const bool kEnableConsoleInlineHook = true;   // bisect：单独验证 B 段
     if (!kKrkrExtractEnabled) {
         LOGW("krkr extract hooks DISABLED (regression emergency switch)");
         return false;
