@@ -98,11 +98,31 @@ public final class OnsSaveCloud {
     // 状态查询（存档管理页云同步区用）
     // ------------------------------------------------------------------
 
-    /** 远端路径名与 run() 一致：dir/name.zip。 */
-    private static String remotePath(SharedPreferences p, String gameName) {
+    /**
+     * 云端目录布局（每个游戏一个专属子文件夹）：
+     * `<dir>/<标题去非法字符>/saves.zip`
+     *
+     * 旧版本是 `<dir>/<标题>.zip`（同目录下平铺）；[legacyRemotePath] 保留兼容，
+     * 读到旧文件仍可下载，下一次上传会迁到新布局并清掉旧的。
+     */
+    private static final String SAVE_FILE_NAME = "saves.zip";
+
+    /** 游戏专属远端目录（含末尾 /）。 */
+    private static String remoteDirForGame(SharedPreferences p, String gameName) {
         String dir = p.getString(KEY_DIR, DEFAULT_DIR);
-        return (dir.endsWith("/") ? dir : dir + "/")
-                + (gameName == null || gameName.isEmpty() ? "ons" : gameName) + ".zip";
+        String base = dir.endsWith("/") ? dir : dir + "/";
+        return base + cloudNameFor(gameName) + "/";
+    }
+
+    /** 远端 zip 路径（新布局）：dir/name/saves.zip。 */
+    private static String remotePath(SharedPreferences p, String gameName) {
+        return remoteDirForGame(p, gameName) + SAVE_FILE_NAME;
+    }
+
+    /** 旧布局路径：dir/name.zip（仅兼容读取/清理）。 */
+    private static String legacyRemotePath(SharedPreferences p, String gameName) {
+        String dir = p.getString(KEY_DIR, DEFAULT_DIR);
+        return (dir.endsWith("/") ? dir : dir + "/") + cloudNameFor(gameName) + ".zip";
     }
 
     /** 是否已配置到可用程度（WebDAV 要 server；GitHub 要 repo）。 */
@@ -165,9 +185,14 @@ public final class OnsSaveCloud {
         return name.trim().isEmpty() ? "game" : name;
     }
 
-    /** 远端 zip 相对路径：dir/name.zip（与 upload/download 一致）。 */
+    /** 远端内容路径（新布局）：dir/name/saves.zip。 */
     public static String remoteZipPath(Context context, String cloudName) {
         return remotePath(prefs(context), cloudName);
+    }
+
+    /** 旧的平铺路径：dir/name.zip（仅用于兼容读取/迁移清理）。 */
+    public static String legacyRemoteZipPath(Context context, String cloudName) {
+        return legacyRemotePath(prefs(context), cloudName);
     }
 
     /** 上传成功后记录时间（调用方在上传回调 ok 后调用）。 */
@@ -185,19 +210,10 @@ public final class OnsSaveCloud {
                     String[] target = webdavTarget(p);
                     String base = target[0];
                     if (!base.isEmpty()) {
-                        HttpURLConnection conn = open((base.endsWith("/") ? base : base + "/")
-                                + remotePath(p, gameName),
-                                target[1], target[2]);
-                        try {
-                            conn.setRequestMethod("HEAD");
-                            if (conn.getResponseCode() < 400) {
-                                String date = conn.getHeaderField("Last-Modified");
-                                if (date != null) {
-                                    result = parseHttpDate(date);
-                                }
-                            }
-                        } finally {
-                            conn.disconnect();
+                        // 先看新布局（游戏专属子文件夹），没有再回退旧平铺布局
+                        result = headModified(p, base, target, remotePath(p, gameName));
+                        if (result == 0) {
+                            result = headModified(p, base, target, legacyRemotePath(p, gameName));
                         }
                     }
                 }
@@ -206,6 +222,28 @@ public final class OnsSaveCloud {
             }
             callback.onResult(result);
         }, "ons-cloud-time").start();
+    }
+
+    /** HEAD 一个远端路径，返回 Last-Modified（ms；不存在/失败返回 0）。 */
+    private static long headModified(SharedPreferences p, String base, String[] target, String path) {
+        try {
+            HttpURLConnection conn = open((base.endsWith("/") ? base : base + "/") + path,
+                    target[1], target[2]);
+            try {
+                conn.setRequestMethod("HEAD");
+                if (conn.getResponseCode() < 400) {
+                    String date = conn.getHeaderField("Last-Modified");
+                    if (date != null) return parseHttpDate(date);
+                    // 服务端没给 Last-Modified：至少说明存在
+                    return 1L;
+                }
+            } finally {
+                conn.disconnect();
+            }
+        } catch (Throwable t) {
+            Log.w(TAG, "HEAD " + path + " failed", t);
+        }
+        return 0;
     }
 
     /** RFC 1123（ Last-Modified）解析；失败返回 0。 */
@@ -231,22 +269,44 @@ public final class OnsSaveCloud {
                 if (MODE_GITHUB.equals(p.getString(KEY_MODE, MODE_WEBDAV))) {
                     githubPut(p, remotePath, zip);
                 } else {
-                    webdavEnsureDir(p);
+                    // 新布局：先建 dir 与 dir/<游戏>/ 两级目录，再写 saves.zip
+                    webdavEnsureDir(p, gameName);
                     webdavRequest(p, "PUT", remotePath, zip);
+                    // 迁移：清掉旧平铺布局的 zip（失败无所谓）
+                    try {
+                        webdavRequest(p, "DELETE", legacyRemotePath(p, gameName), null);
+                        Log.i(TAG, "legacy flat zip removed: " + legacyRemotePath(p, gameName));
+                    } catch (Throwable ignored) {
+                    }
                 }
             }
         });
     }
 
-    /** 下载 zip 到 dest（后台线程执行）。云端不存在时 callback(false, "404")。 */
+    /**
+     * 下载 zip 到 dest（后台线程执行）。云端不存在时 callback(false, "404")。
+     * 新布局找不到时回退旧平铺布局（老用户上传的内容仍可下载）。
+     */
     public static void download(Context context, String gameName, File dest, Callback callback) {
         run(context, gameName, callback, new Transfer() {
             @Override
             public void run(SharedPreferences p, String remotePath) throws Exception {
-                if (MODE_GITHUB.equals(p.getString(KEY_MODE, MODE_WEBDAV))) {
-                    githubGet(p, remotePath, dest);
-                } else {
-                    webdavRequest(p, "GET", remotePath, dest);
+                Transfer get = new Transfer() {
+                    @Override
+                    public void run(SharedPreferences pp, String path) throws Exception {
+                        if (MODE_GITHUB.equals(pp.getString(KEY_MODE, MODE_WEBDAV))) {
+                            githubGet(pp, path, dest);
+                        } else {
+                            webdavRequest(pp, "GET", path, dest);
+                        }
+                    }
+                };
+                try {
+                    get.run(p, remotePath);
+                } catch (Throwable t) {
+                    String legacy = legacyRemotePath(p, gameName);
+                    Log.w(TAG, "download " + remotePath + " failed, try legacy " + legacy, t);
+                    get.run(p, legacy);
                 }
             }
         });
@@ -260,9 +320,7 @@ public final class OnsSaveCloud {
         SharedPreferences p = prefs(context);
         new Thread(() -> {
             try {
-                String dir = p.getString(KEY_DIR, DEFAULT_DIR);
-                String remote = (dir.endsWith("/") ? dir : dir + "/")
-                        + (gameName == null || gameName.isEmpty() ? "ons" : gameName) + ".zip";
+                String remote = remotePath(p, gameName);
                 transfer.run(p, remote);
                 callback.onResult(true, remote);
             } catch (Throwable t) {
@@ -312,28 +370,40 @@ public final class OnsSaveCloud {
         }
     }
 
-    /** 逐级确保远程目录存在（已存在时 MKCOL 报 405/409，忽略）。 */
-    private static void webdavEnsureDir(SharedPreferences p) {
+    /** 逐级确保远端目录存在（已存在时 MKCOL 报 405/409，忽略）。含游戏专属子文件夹。 */
+    private static void webdavEnsureDir(SharedPreferences p, String gameName) {
         try {
             String[] target = webdavTarget(p);
             String base = target[0];
             if (base.isEmpty()) throw new IllegalStateException("server not configured");
             String dir = p.getString(KEY_DIR, DEFAULT_DIR);
-            String[] parts = dir.split("/");
             StringBuilder path = new StringBuilder();
+            String[] parts = dir.split("/");
             for (String part : parts) {
                 if (part.isEmpty()) continue;
                 path.append(part).append('/');
-                // 必须用裸 socket：Android 的 HttpURLConnection 方法白名单不含 MKCOL，
-                // setRequestMethod("MKCOL") 抛 ProtocolException（原来被 catch 吞掉 →
-                // 目录永远建不出来 → upload 的 PUT 报 409 AncestorsNotFound）。
-                int code = rawRequest("MKCOL",
-                        (base.endsWith("/") ? base : base + "/") + path,
-                        "MKCOL", target[1], target[2]);
-                Log.i(TAG, "MKCOL " + path + " -> " + code);
+                mkcolQuiet(p, base, target, path.toString());
             }
+            // 每个游戏一个专属子文件夹：dir/<标题>/
+            path.append(cloudNameFor(gameName)).append('/');
+            mkcolQuiet(p, base, target, path.toString());
         } catch (Throwable t) {
             Log.w(TAG, "webdav mkcol skipped", t);
+        }
+    }
+
+    /** 发一次 MKCOL（已存在/无权限都不抛；仅记日志）。 */
+    private static void mkcolQuiet(SharedPreferences p, String base, String[] target, String path) {
+        try {
+            // 必须用裸 socket：Android 的 HttpURLConnection 方法白名单不含 MKCOL，
+            // setRequestMethod("MKCOL") 抛 ProtocolException（原来被 catch 吞掉 →
+            // 目录永远建不出来 → upload 的 PUT 报 409 AncestorsNotFound）。
+            int code = rawRequest("MKCOL",
+                    (base.endsWith("/") ? base : base + "/") + path,
+                    target[1], target[2]);
+            Log.i(TAG, "MKCOL " + path + " -> " + code);
+        } catch (Throwable t) {
+            Log.w(TAG, "MKCOL " + path + " failed", t);
         }
     }
 
@@ -344,7 +414,7 @@ public final class OnsSaveCloud {
      *
      * @return HTTP 状态码；异常时抛出
      */
-    private static int rawRequest(String method, String url, String label,
+    private static int rawRequest(String method, String url,
                                   String user, String token) throws Exception {
         java.net.URI uri = java.net.URI.create(url);
         String host = uri.getHost();

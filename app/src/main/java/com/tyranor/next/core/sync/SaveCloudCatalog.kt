@@ -146,7 +146,10 @@ class SaveCloudCatalog(private val context: Context) {
         }
     }
 
-    /** 删除云端 zip（仅 WebDAV；GitHub 模式由 isListable 拦截）。 */
+    /**
+     * 删除云端存档：先删新布局的 `dir/<标题>/saves.zip`（再顺手删空的游戏子文件夹），
+     * 新布局没有则删旧平铺布局的 `dir/<标题>.zip`。
+     */
     fun deleteRemote(row: Row, onResult: (Boolean, String) -> Unit) {
         val target = OnsSaveCloud.webdavTargetForHost(appContext)
         val base = target.getOrNull(0).orEmpty()
@@ -157,8 +160,18 @@ class SaveCloudCatalog(private val context: Context) {
         Thread({
             try {
                 val client = WebDavClient(base, target.getOrNull(1).orEmpty(), target.getOrNull(2).orEmpty())
-                val path = OnsSaveCloud.remoteZipPath(appContext, row.cloudName)
-                val ok = client.delete(path)
+                val fresh = OnsSaveCloud.remoteZipPath(appContext, row.cloudName)
+                val legacy = OnsSaveCloud.legacyRemoteZipPath(appContext, row.cloudName)
+                var ok = client.delete(fresh)
+                if (!ok) {
+                    ok = client.delete(legacy)
+                } else {
+                    // 顺带清掉旧布局遗留的同类 zip（迁移后可能还留着）
+                    client.delete(legacy)
+                    // 再删空的游戏子文件夹（服务端对非空目录会拒绝，失败无所谓）
+                    val gameDir = fresh.substringBeforeLast('/') + "/"
+                    client.delete(gameDir)
+                }
                 onResult(ok, if (ok) "已删除云端存档" else "删除失败")
             } catch (t: Throwable) {
                 Log.w(TAG, "deleteRemote failed", t)
@@ -180,18 +193,19 @@ class SaveCloudCatalog(private val context: Context) {
     /**
      * 云端存档索引：zip 名 → 最后修改时间（0 = 不存在/未知）。
      *
+     * 布局：`<dir>/<标题>/saves.zip`（每个游戏一个专属子文件夹）；旧版本是
+     * `<dir>/<标题>.zip`，这里两个都查，兼容老上传。
+     *
      * 注意：**不使用 PROPFIND 列目录**。Android 自带的 HttpURLConnection（okhttp 实现）
      * 只允许 OPTIONS/GET/HEAD/POST/PUT/DELETE/TRACE/PATCH，`setRequestMethod("PROPFIND")`
-     * 直接抛 `ProtocolException`（这也是 `WebDavClient.listFiles` 事实上不可用的原因）。
-     * 这里改为对"本地已知的每个游戏"各发一次 HEAD（与存档管理页 `cloudModified` 同一链路），
-     * 代价是列不出"本地没有、只有云端"的 zip——本列表的用途（看哪些游戏同步过）不受影响。
+     * 直接抛 `ProtocolException`。这里改为对"本地已知的每个游戏"各发一次 HEAD
+     * （与存档管理页 `cloudModified` 同一链路），代价是列不出"本地没有、只有云端"的 zip。
      */
     private fun remoteIndex(cloudNames: Collection<String>): Map<String, Long> {
         if (!OnsSaveCloud.isConfigured(appContext)) return emptyMap()
         val target = OnsSaveCloud.webdavTargetForHost(appContext)
         val base = target.getOrNull(0).orEmpty()
         if (base.isEmpty()) return emptyMap()
-        val dir = OnsSaveCloud.remoteDir(appContext).trimEnd('/')
         val client = try {
             WebDavClient(base, target.getOrNull(1).orEmpty(), target.getOrNull(2).orEmpty())
         } catch (t: Throwable) {
@@ -201,7 +215,15 @@ class SaveCloudCatalog(private val context: Context) {
         val out = HashMap<String, Long>()
         for (name in cloudNames) {
             val modified = try {
-                client.getLastModified("$dir/$name.zip")
+                val fresh = OnsSaveCloud.remoteZipPath(appContext, name)
+                var value = client.getLastModified(fresh)
+                if (value <= 0) {
+                    // 旧平铺布局兼容
+                    val legacy = OnsSaveCloud.legacyRemoteZipPath(appContext, name)
+                    value = client.getLastModified(legacy)
+                    if (value > 0) Log.i(TAG, "cloud save uses legacy path: $legacy")
+                }
+                value
             } catch (t: Throwable) {
                 Log.w(TAG, "HEAD $name failed", t)
                 0L
