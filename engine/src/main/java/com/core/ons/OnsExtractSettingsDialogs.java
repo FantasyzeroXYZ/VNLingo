@@ -187,7 +187,7 @@ public final class OnsExtractSettingsDialogs {
     }
 
     /** TTS 引擎显示名：应用名（读不到就退回包名，避免下拉里出现空白项）。 */
-    static String ttsEngineLabel(android.content.Context context, String pkg) {
+    public static String ttsEngineLabel(android.content.Context context, String pkg) {
         try {
             android.content.pm.PackageManager pm = context.getPackageManager();
             android.content.pm.ApplicationInfo ai = pm.getApplicationInfo(pkg, 0);

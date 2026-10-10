@@ -185,6 +185,7 @@ internal fun TtsSettingsScreen() {
     val defaultTestText = stringResource(EngineR.string.engine_ons_tts_test_default)
     var testText by remember { mutableStateOf(defaultTestText) }
     var autoRead by remember { mutableStateOf(com.core.ons.OnsTtsEngines.autoRead(ctx)) }
+    var streaming by remember { mutableStateOf(com.core.ons.OnsTtsEngines.streaming(ctx)) }
     var judou by remember { mutableStateOf(ttsPrefs.getBoolean("tts_judou", false)) }
     var loop by remember { mutableStateOf(ttsPrefs.getInt("tts_loop", 0)) }
     var showHostDialog by remember { mutableStateOf(false) }
@@ -254,6 +255,42 @@ internal fun TtsSettingsScreen() {
                     },
                 )
                 SettingsHint(stringResource(EngineR.string.engine_ons_tts_system_hint))
+                // 系统 TTS 的**具体引擎**（我们直接传给 TextToSpeech 构造函数，无需特殊权限、
+                // 也不改系统默认）+ 跳系统 TTS 设置（装语音数据用）。仅选「系统」时显示。
+                if (com.core.ons.OnsTtsEngines.ENGINE_SYSTEM == engine) {
+                    val sysPkgs = remember {
+                        com.core.ons.OnsTtsEngines.installedEngines(ctx).toList()
+                    }
+                    var sysEngine by remember {
+                        mutableStateOf(com.core.ons.OnsTtsEngines.systemEngine(ctx))
+                    }
+                    val sysLabels = buildList {
+                        add(stringResource(EngineR.string.engine_ons_tts_sys_engine_default))
+                        sysPkgs.forEach {
+                            add(com.core.ons.OnsExtractSettingsDialogs.ttsEngineLabel(ctx, it))
+                        }
+                    }
+                    OverlayDropdownPreference(
+                        title = stringResource(EngineR.string.engine_ons_tts_sys_engine),
+                        items = sysLabels,
+                        selectedIndex = (sysPkgs.indexOf(sysEngine) + 1).coerceAtLeast(0),
+                        onSelectedIndexChange = { i ->
+                            val pkg = if (i <= 0) "" else sysPkgs.getOrNull(i - 1).orEmpty()
+                            sysEngine = pkg
+                            com.core.ons.OnsTtsEngines.setSystemEngine(ctx, pkg)
+                        },
+                    )
+                    ArrowPreference(
+                        title = stringResource(EngineR.string.engine_ons_tts_sys_settings),
+                        onClick = {
+                            runCatching {
+                                ctx.startActivity(
+                                    android.content.Intent("com.android.settings.TTS_SETTINGS")
+                                        .addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK))
+                            }
+                        },
+                    )
+                }
                 SettingsHint(stringResource(EngineR.string.engine_ons_tts_http_template))
                 androidx.compose.material3.OutlinedTextField(
                     value = httpTemplate,
@@ -281,6 +318,14 @@ internal fun TtsSettingsScreen() {
                     onCheckedChange = {
                         autoRead = it
                         com.core.ons.OnsTtsEngines.setAutoRead(ctx, it)
+                    },
+                )
+                SwitchPreference(
+                    title = stringResource(EngineR.string.engine_ons_tts_streaming),
+                    checked = streaming,
+                    onCheckedChange = {
+                        streaming = it
+                        com.core.ons.OnsTtsEngines.setStreaming(ctx, it)
                     },
                 )
                 SwitchPreference(
