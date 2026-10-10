@@ -85,6 +85,23 @@ object OnsTtsEngines {
     @JvmStatic
     fun setStreaming(context: Context, value: Boolean) {
         prefs(context).edit().putBoolean(KEY_STREAM, value).apply()
+        notifySettingsChanged()
+    }
+
+    /**
+     * 设置变更通知：面板（游戏内设置悬浮框）与设置页共用同一份 prefs，
+     * 但设置页把值缓存在 Compose 的 remember 里 → 面板改了它不会刷新（用户反馈"状态不同步"）。
+     * 这里提供一个极简监听器：任一处写设置就通知，另一处据此重读。
+     */
+    @JvmStatic
+    var settingsListener: (() -> Unit)? = null
+
+    @JvmStatic
+    fun notifySettingsChanged() {
+        try {
+            settingsListener?.invoke()
+        } catch (t: Throwable) {
+        }
     }
 
     /**
@@ -143,6 +160,7 @@ object OnsTtsEngines {
     @JvmStatic
     fun setAutoRead(context: Context, value: Boolean) {
         prefs(context).edit().putBoolean(KEY_AUTO_READ, value).apply()
+        notifySettingsChanged()
     }
 
     /** MultiTTS 服务地址（host:port）；空 = 默认 127.0.0.1:8774。 */

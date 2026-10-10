@@ -186,6 +186,20 @@ internal fun TtsSettingsScreen() {
     var testText by remember { mutableStateOf(defaultTestText) }
     var autoRead by remember { mutableStateOf(com.core.ons.OnsTtsEngines.autoRead(ctx)) }
     var streaming by remember { mutableStateOf(com.core.ons.OnsTtsEngines.streaming(ctx)) }
+    // 与游戏内设置悬浮框**实时同步**：两边共用同一份 prefs，任一处改动都会通知到这里重读
+    // （否则设置页 remember 里缓存的是旧值，表现为"流式播放/自动朗读状态不同步"）。
+    androidx.compose.runtime.DisposableEffect(Unit) {
+        val listener: () -> Unit = {
+            streaming = com.core.ons.OnsTtsEngines.streaming(ctx)
+            autoRead = com.core.ons.OnsTtsEngines.autoRead(ctx)
+        }
+        com.core.ons.OnsTtsEngines.settingsListener = listener
+        onDispose {
+            if (com.core.ons.OnsTtsEngines.settingsListener === listener) {
+                com.core.ons.OnsTtsEngines.settingsListener = null
+            }
+        }
+    }
     var judou by remember { mutableStateOf(ttsPrefs.getBoolean("tts_judou", false)) }
     var loop by remember { mutableStateOf(ttsPrefs.getInt("tts_loop", 0)) }
     var showHostDialog by remember { mutableStateOf(false) }
