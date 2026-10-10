@@ -885,8 +885,9 @@ public abstract class KirikiroidLauncherBaseActivity extends KR2Activity {
             }
             return true;
         }
-        // 虚拟鼠标模式：D-pad/摇杆移动光标、A 键点击（消费后再不透传游戏键）
-        if (virtualMouseMode && virtualMouse != null && virtualMouse.handleKey(mapped)) {
+        // 统一路由：虚拟鼠标（仅鼠标模式；D-pad/摇杆移动光标、A 键点击）
+        if (com.core.engine.EngineOverlayRouting.routeKey(
+                extractPanel, virtualMouse, virtualMouseMode, mapped)) {
             return true;
         }
         // 决定/回车类按键透传给游戏 = 推进尝试（连续页累积的边界信号）；
@@ -901,11 +902,9 @@ public abstract class KirikiroidLauncherBaseActivity extends KR2Activity {
 
     @Override
     public boolean dispatchGenericMotionEvent(android.view.MotionEvent event) {
-        // 面板展开：摇杆/轴事件全吞（既不驱动游戏也不驱动虚拟光标，见复刻方案 §3.2 手段 A）
-        com.core.ons.OnsExtractPanel panel = extractPanel;
-        if (panel != null && panel.handleMotion(event)) return true;
-        // 左摇杆连续移动虚拟光标（手柄类摇杆事件）
-        if (virtualMouseMode && virtualMouse != null && virtualMouse.handleMotion(event)) {
+        // 统一路由：面板展开时轴事件全吞，否则左摇杆连续移动虚拟光标
+        if (com.core.engine.EngineOverlayRouting.routeMotion(
+                extractPanel, virtualMouse, virtualMouseMode, event)) {
             return true;
         }
         return super.dispatchGenericMotionEvent(event);

@@ -559,25 +559,22 @@ public abstract class ArtemisLauncherBaseActivity extends com.ies_net.artemis.Ar
 
     @Override
     public boolean dispatchKeyEvent(KeyEvent event) {
-        // 顺序（与 KRKR/ONS 一致，见复刻方案 §3.4）：**面板优先**——面板展开时按键
-        // 只进面板、不透传游戏，也不驱动虚拟鼠标光标；面板收起时面板只认呼出键。
+        // 顺序（与 KRKR/ONS/Tyrano/RPGM 统一，见 EngineOverlayRouting）：手柄重映射 →
+        // **面板优先**（展开时按键只进面板、不透传游戏，也不驱动虚拟鼠标光标）→
+        // 虚拟鼠标（鼠标模式时才接管）。
         KeyEvent mapped = com.core.engine.GamepadRemap.apply(event);
-        if (extractPanel != null && mapped != null && extractPanel.handleKey(mapped)) return true;
-        // 虚拟鼠标模式：D-pad 移动光标、A 键点击（消费后不再走 EmulateKeyEvent
-        // 游戏键映射）；其余按键交父类既有映射链路（重映射也在其内再做一次）
-        if (virtualMouseMode && virtualMouse != null) {
-            if (mapped != null && virtualMouse.handleKey(mapped)) return true;
+        if (com.core.engine.EngineOverlayRouting.routeKey(
+                extractPanel, virtualMouse, virtualMouseMode, mapped)) {
+            return true;
         }
         return super.dispatchKeyEvent(event);
     }
 
     @Override
     public boolean dispatchGenericMotionEvent(android.view.MotionEvent event) {
-        // 面板展开：摇杆/轴事件全吞，既不驱动游戏也不驱动虚拟光标（复刻方案 §3.2 手段 A）
-        if (extractPanel != null && extractPanel.handleMotion(event)) return true;
-        // 左摇杆移动虚拟光标（若内核/框架把摇杆事件预派发到 Java 侧则生效；
-        // 未预派发时摇杆事件不会到达此处，D-pad 仍可用）
-        if (virtualMouseMode && virtualMouse != null && virtualMouse.handleMotion(event)) {
+        // 面板展开：摇杆/轴事件全吞；否则左摇杆移动虚拟光标（统一入口）
+        if (com.core.engine.EngineOverlayRouting.routeMotion(
+                extractPanel, virtualMouse, virtualMouseMode, event)) {
             return true;
         }
         return super.dispatchGenericMotionEvent(event);

@@ -653,11 +653,9 @@ class RpgMakerActivity : Activity() {
     override fun dispatchKeyEvent(event: KeyEvent): Boolean {
         // 手柄按键重映射（手柄→键盘/其他手柄键），先于面板/游戏链路
         val mapped = com.core.engine.GamepadRemap.apply(event)
-        // 提取面板按键路由（webgametxt 语义：RB 呼出；展开时消费手柄/键盘）
-        if (extractPanel?.handleKey(mapped) == true) return true
-        // 虚拟鼠标：方向键/摇杆移动光标、确认键点击（面板收起时才轮到它）。
-        // 此前 RPGM 没有这一步（层里也没有手柄输入），虚拟鼠标只有触摸能用——统一后补齐。
-        if (virtualMouseLayer?.handleGamepadKey(mapped) == true) return true
+        // 统一路由（面板优先 → 虚拟鼠标），见 EngineOverlayRouting
+        if (com.core.engine.EngineOverlayRouting.routeKey(
+                extractPanel, virtualMouseLayer, true, mapped)) return true
         if (mapped.keyCode == KeyEvent.KEYCODE_BACK) {
             if (mapped.action == KeyEvent.ACTION_UP) handleBackRequest()
             return true
@@ -666,9 +664,9 @@ class RpgMakerActivity : Activity() {
     }
 
     override fun dispatchGenericMotionEvent(event: android.view.MotionEvent): Boolean {
-        // 面板展开时轴事件全吞；否则交给虚拟鼠标（摇杆/十字键移动光标）
-        if (extractPanel?.handleMotion(event) == true) return true
-        if (virtualMouseLayer?.handleGamepadMotion(event) == true) return true
+        // 统一路由：面板展开时轴事件全吞；否则交给虚拟鼠标（摇杆/十字键移动光标）
+        if (com.core.engine.EngineOverlayRouting.routeMotion(
+                extractPanel, virtualMouseLayer, true, event)) return true
         return super.dispatchGenericMotionEvent(event)
     }
 

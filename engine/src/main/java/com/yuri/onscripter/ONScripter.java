@@ -197,25 +197,26 @@ public class ONScripter extends SDLActivity {
     @Override public boolean dispatchKeyEvent(KeyEvent event) {
         // 手柄按键重映射（手柄→键盘/其他手柄键），先于面板/虚拟鼠标/游戏链路
         event = com.core.engine.GamepadRemap.apply(event);
-        // 提取面板按键（webgametxt 语义）：面板收起只认 RB 呼出；展开时消费全部按键
-        // （手柄不再注入游戏），故置于虚拟鼠标之前
-        if (extractPanel != null && extractPanel.handleKey(event)) return true;
-        // 手柄方向键虚拟鼠标：D-pad 移动光标、A 键点击（仅虚拟鼠标模式；触摸模式直传游戏）。
+        // 统一路由（见 EngineOverlayRouting）：**面板优先**（展开时消费全部按键，手柄不再
+        // 注入游戏）→ 虚拟鼠标（仅虚拟鼠标模式；触摸模式直传游戏）。
         // 诊断日志（首按一条）：真机手柄实际键值/来源/设备名——定位「无法移动/连续点击」
         // 类反馈的输入流差异；未消费的键也记一条（按键被上游吃掉的排查入口）。
-        if (virtualMouseMode && virtualMouse != null) {
-            if (event != null && event.getAction() == android.view.KeyEvent.ACTION_DOWN
-                    && event.getRepeatCount() == 0) {
-                android.view.InputDevice dev = android.view.InputDevice.getDevice(event.getDeviceId());
-                Log.i(TAG, "vmouse key code=" + event.getKeyCode()
-                        + " source=" + event.getSource()
-                        + " device=" + (dev == null ? "?" : dev.getName()));
-            }
-            if (virtualMouse.handleKey(event)) return true;
-            if (event != null && event.getAction() == android.view.KeyEvent.ACTION_DOWN
-                    && event.getRepeatCount() == 0) {
-                Log.i(TAG, "vmouse key NOT consumed: code=" + event.getKeyCode());
-            }
+        boolean firstDown = event != null
+                && event.getAction() == android.view.KeyEvent.ACTION_DOWN
+                && event.getRepeatCount() == 0;
+        if (firstDown && virtualMouseMode && virtualMouse != null) {
+            android.view.InputDevice dev = android.view.InputDevice.getDevice(event.getDeviceId());
+            Log.i(TAG, "vmouse key code=" + event.getKeyCode()
+                    + " source=" + event.getSource()
+                    + " device=" + (dev == null ? "?" : dev.getName()));
+        }
+        if (com.core.engine.EngineOverlayRouting.routeKey(
+                extractPanel, virtualMouse, virtualMouseMode, event)) {
+            return true;
+        }
+        if (firstDown && virtualMouseMode && virtualMouse != null
+                && (extractPanel == null || !extractPanel.isExpanded())) {
+            Log.i(TAG, "vmouse key NOT consumed: code=" + event.getKeyCode());
         }
         // 播片期间按键优先给视频层：任意键跳过，音量键仍交还系统。
         // BACK 不在此列——它沿用下面 tyn 自己的双击退出语义，
@@ -619,10 +620,11 @@ public class ONScripter extends SDLActivity {
 
     @Override
     public boolean dispatchGenericMotionEvent(MotionEvent event) {
-        // 面板展开：摇杆/轴事件全吞（既不驱动游戏也不驱动虚拟光标，见复刻方案 §3.2 手段 A）
-        if (extractPanel != null && extractPanel.handleMotion(event)) return true;
-        // 手柄左摇杆移动虚拟光标（面板展开时也可用；音量类事件交还系统）
-        if (virtualMouseMode && virtualMouse != null && virtualMouse.handleMotion(event)) return true;
+        // 统一路由：面板展开时摇杆/轴事件全吞，否则交给虚拟鼠标移动光标
+        if (com.core.engine.EngineOverlayRouting.routeMotion(
+                extractPanel, virtualMouse, virtualMouseMode, event)) {
+            return true;
+        }
         return super.dispatchGenericMotionEvent(event);
     }
 

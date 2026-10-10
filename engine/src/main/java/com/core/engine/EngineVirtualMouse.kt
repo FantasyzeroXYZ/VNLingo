@@ -42,7 +42,7 @@ class EngineVirtualMouse(
     private val surfaceProvider: () -> View?,
     private val clickInjector: ClickInjector,
     private val overlayClickHandler: OverlayClickHandler? = null,
-) : View(overlay.context), VirtualMouseInput.Target {
+) : View(overlay.context), VirtualMouseInput.Target, VirtualMouseController {
 
     /** 光标统一绘制器（与 Tyrano/RPGM 光标层同一套样式）。 */
     private val cursorRenderer = VirtualMouseCursorRenderer(resources.displayMetrics.density)
@@ -71,10 +71,10 @@ class EngineVirtualMouse(
     }
 
     /** 返回 true 表示该按键已被虚拟鼠标消费（Activity.dispatchKeyEvent 应直接返回）。 */
-    fun handleKey(event: KeyEvent): Boolean = input.handleKey(event)
+    override fun handleKey(event: KeyEvent): Boolean = input.handleKey(event)
 
     /** 摇杆 / 十字键 HAT 移动（Activity.dispatchGenericMotionEvent 前置调用）。 */
-    fun handleMotion(event: MotionEvent): Boolean = input.handleMotion(event)
+    override fun handleMotion(event: MotionEvent): Boolean = input.handleMotion(event)
 
     /** 宿主退出/隐藏光标时调用：停掉所有重复任务。 */
     fun cancel() {
@@ -82,14 +82,14 @@ class EngineVirtualMouse(
     }
 
     /** 隐藏光标（切回触摸模式时调用）：光标隐藏后方向/确认不再被消费，长按态一并复位。 */
-    fun hideCursor() {
+    override fun hideCursor() {
         input.cancel()
         cursorVisible = false
         invalidate()
     }
 
     /** 立即显示光标（切进鼠标模式时调用）：悬停画面中心，无需先按方向键。 */
-    fun showCursor() {
+    override fun showCursor() {
         ensureCursor()
     }
 

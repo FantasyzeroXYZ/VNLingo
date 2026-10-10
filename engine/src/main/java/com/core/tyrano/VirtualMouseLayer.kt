@@ -38,7 +38,7 @@ class VirtualMouseLayer(
      * （与 Artemis 之前"剧情文本框点不掉"是同一个缺漏）。
      */
     private val overlayClickHandler: ((Float, Float) -> Boolean)? = null,
-) : View(context) {
+) : View(context), com.core.engine.VirtualMouseController {
 
     /**
      * **手柄驱动的虚拟鼠标**（与 KRKR/ONS/Artemis 同一套抽象 [com.core.engine.VirtualMouseInput]
@@ -89,6 +89,13 @@ class VirtualMouseLayer(
 
     /** 手柄轴路由（宿主 dispatchGenericMotionEvent 调用）：返回 true = 已消费。 */
     fun handleGamepadMotion(event: MotionEvent): Boolean = gamepadInput.handleMotion(event)
+
+    // ---- VirtualMouseController（统一接口：宿主与覆盖层路由只依赖它）----
+    override fun handleKey(event: android.view.KeyEvent): Boolean = handleGamepadKey(event)
+    override fun handleMotion(event: MotionEvent): Boolean = handleGamepadMotion(event)
+    override fun isCursorVisible(): Boolean = active
+    override fun showCursor() = setActive(true)
+    override fun hideCursor() = setActive(false)
 
     /** 当前是否处于虚拟鼠标（光标）模式。 */
     fun isActive(): Boolean = active
