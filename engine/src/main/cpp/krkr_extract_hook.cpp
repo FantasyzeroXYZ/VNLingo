@@ -739,16 +739,27 @@ unsigned long hookedFTLoadChar(void* face, unsigned long code, int flags) {
 // 映射在字体装载期由引擎自己建立（码点→字形），运行期只剩字形索引；
 // 这里用「让内核自己回答」的方式重建：对 BMP 区间逐码点问 gOrigFTGetCharIndex，
 // 取该字形索引的首次命中码点。65504 次 cmap 二分查找，一次性、毫秒级。
+//
+// **按 FT_Face 分别建表**（真机教训）：Yosuga 的对白字体与系统回退字体是两个不同的 face，
+// 之前全进程只建一份、且用**第一个**遇到的 face → 对白字体的字形号查不到 → 有字形无文本
+// （日志表现：glyph 有 calls，却 known=166/nextchar=0）。现在每个 face 各建一份。
 std::mutex gGlyphMapMutex;
-unsigned gGlyphMapBuildAttempts = 0;
+std::unordered_map<void*, std::unordered_map<unsigned int, unsigned long>*> gGlyphMaps;
+std::unordered_map<void*, unsigned> gGlyphMapAttempts;
 
-void maybeBuildGlyphMap(void* face) {
-    if (gGlyphToCode.load(std::memory_order_acquire) != nullptr) return;
-    if (gOrigFTGetCharIndex == nullptr || face == nullptr) return;
+std::unordered_map<unsigned int, unsigned long>* glyphMapFor(void* face) {
+    if (face == nullptr || gOrigFTGetCharIndex == nullptr) return nullptr;
+    {
+        std::lock_guard<std::mutex> lock(gGlyphMapMutex);
+        auto it = gGlyphMaps.find(face);
+        if (it != gGlyphMaps.end()) return it->second;
+    }
     std::lock_guard<std::mutex> lock(gGlyphMapMutex);
-    if (gGlyphToCode.load(std::memory_order_acquire) != nullptr) return;
-    if (gGlyphMapBuildAttempts >= 5) return;  // 字型表尚未就绪时不反复扫
-    ++gGlyphMapBuildAttempts;
+    auto it = gGlyphMaps.find(face);
+    if (it != gGlyphMaps.end()) return it->second;
+    unsigned& attempts = gGlyphMapAttempts[face];
+    if (attempts >= 5) return nullptr;   // 字型表尚未就绪时不反复扫
+    ++attempts;
     auto* map = new std::unordered_map<unsigned int, unsigned long>();
     map->reserve(8192);
     for (unsigned long code = 0x20; code <= 0xFFFF; ++code) {
@@ -757,10 +768,9 @@ void maybeBuildGlyphMap(void* face) {
         if (index == 0) continue;
         map->emplace(static_cast<unsigned int>(index), code);
     }
-    LOGI("ft glyph map built: face=%p entries=%zu attempts=%u", face, map->size(), gGlyphMapBuildAttempts);
-    if (!map->empty()) {
-        gGlyphToCode.store(map, std::memory_order_release);
-    }
+    LOGI("ft glyph map built: face=%p entries=%zu attempts=%u", face, map->size(), attempts);
+    gGlyphMaps[face] = map;
+    return map;
 }
 
 int hookedFTLoadGlyph(void* face, unsigned int glyphIndex, int loadFlags) {
@@ -771,8 +781,7 @@ int hookedFTLoadGlyph(void* face, unsigned int glyphIndex, int loadFlags) {
              glyphIndex, err);
     }
     if (!gHookInstalled.load(std::memory_order_relaxed)) return err;
-    if (gGlyphToCode.load(std::memory_order_acquire) == nullptr) maybeBuildGlyphMap(face);
-    const auto* map = gGlyphToCode.load(std::memory_order_acquire);
+    const auto* map = glyphMapFor(face);
     if (map == nullptr) return err;
     const auto it = map->find(glyphIndex);
     if (it != map->end()) ftOnCode(it->second);
