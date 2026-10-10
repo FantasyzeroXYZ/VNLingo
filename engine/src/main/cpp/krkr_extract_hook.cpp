@@ -1421,9 +1421,9 @@ extern "C" bool krkr_bridge_got_hook(const char* library, const char* symbol,
 extern "C" bool krkr_install_extract_hook(void* gameHandle, JNIEnv* env) {
     if (gameHandle == nullptr) return false;
     // 开关必须在最外层作用域声明（下面 env!=nullptr 分支与后续逻辑都要用）
-    static const bool kKrkrExtractEnabled = true;   // 实验：仅控制台链 + 启动期不上行
+    static const bool kKrkrExtractEnabled = false;  // 用户点游戏仍闪退 → 全关（止血，未获同意不再开）
     static const bool kEnableEngineIdentityLog = true;
-    static const bool kEnableConsoleInlineHook = true;
+    static const bool kEnableConsoleInlineHook = false;
     // 双开关：编译期硬开关（内核兼容性未确认前保持 false）+ 用户级开关（默认 false）。
     // 只有两者都放开才安装 → 默认状态下绝不会影响游戏启动。
     if (!kKrkrExtractEnabled) {
@@ -1584,7 +1584,7 @@ extern "C" bool krkr_install_ft_probe(void* gameHandle, const char* library) {
     // 【入口即打】无条件的调用轨迹：确认是否被调用、参数、是否二次（延后）进入
     LOGI("ft probe: ENTER handle=%p library=%s", gameHandle,
          library != nullptr ? library : "(null)");
-    static const bool kEnableFtProbe = true;   // 队列化后重试 FT 链（对白字形来源）
+    static const bool kEnableFtProbe = false;
     // 【运行时安装】真机证实：FT 链若在引擎启动期安装会卡住启动（宿主等不到 UI 就绪）。
     // 因此这里**不在启动期装**，改为由控制台活动 + 时间触发的"迟到安装"（见 krkrLateFtMaybe）。
     static const bool kInstallAtStartup = false;
