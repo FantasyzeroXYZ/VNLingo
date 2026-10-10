@@ -193,6 +193,38 @@ object ImmersiveMode {
     }
 
     /**
+     * 对**某个 View 所属的窗口**隐藏系统栏（`systemUiVisibility` / insets controller 都是
+     * 按窗口生效的）。
+     *
+     * 用途：Artemis 宿主用独立 WindowManager 窗口做按键捕获（虚拟鼠标模式下的光标窗、
+     * 面板展开时的面板窗）。这些窗口一旦去掉 `FLAG_NOT_FOCUSABLE` 取得焦点，**系统栏就会
+     * 重新出现**——因为沉浸式 flag 没设在那份额外的窗口上（用户反馈：切到虚拟鼠标模式后
+     * 状态栏/底部栏藏不住了）。所以每次让它们可聚焦时都要补一次。
+     */
+    @JvmStatic
+    fun applyToView(view: android.view.View?) {
+        val v = view ?: return
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+            val controller = ViewCompat.getWindowInsetsController(v)
+            if (controller != null) {
+                controller.hide(WindowInsetsCompat.Type.systemBars())
+                controller.systemBarsBehavior =
+                    WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
+            }
+        } else {
+            @Suppress("DEPRECATION")
+            v.systemUiVisibility = (
+                View.SYSTEM_UI_FLAG_LAYOUT_STABLE
+                    or View.SYSTEM_UI_FLAG_LAYOUT_HIDE_NAVIGATION
+                    or View.SYSTEM_UI_FLAG_LAYOUT_FULLSCREEN
+                    or View.SYSTEM_UI_FLAG_HIDE_NAVIGATION
+                    or View.SYSTEM_UI_FLAG_FULLSCREEN
+                    or View.SYSTEM_UI_FLAG_IMMERSIVE_STICKY
+                )
+        }
+    }
+
+    /**
      * 延时再应用一次：部分 ROM 在窗口焦点变化/启动动画后会重新显示状态栏，
      * 创建时调用本方法（立即 + 300ms + 1000ms 三次）能稳定压住。
      */

@@ -280,6 +280,8 @@ public abstract class ArtemisLauncherBaseActivity extends com.ies_net.artemis.Ar
             Log.w("YukiArtemis", "panel focus flags failed", t);
         }
         applyMouseWindowFocusFlags();
+        // 面板窗同样是独立窗口，可聚焦时也会把系统栏带出来，一并补沉浸式 flag。
+        applyImmersiveToCatcherWindow(panelKeyCatcher);
         try {
             com.ies_net.artemis.ArtemisActivity.setKeepNativeFocused(expanded || virtualMouseMode);
         } catch (Throwable t) {
@@ -319,6 +321,10 @@ public abstract class ArtemisLauncherBaseActivity extends com.ies_net.artemis.Ar
                 mouseKeyCatcher.setFocusable(true);
                 mouseKeyCatcher.setFocusableInTouchMode(true);
                 mouseKeyCatcher.requestFocus();
+                // 该窗口取得焦点后系统栏会重新出现（沉浸式 flag 按窗口生效，之前没给这个
+                // 额外窗口设）——用户反馈「切到虚拟鼠标模式后状态栏/底部栏藏不住」就是它。
+                // 取得焦点时补一次，并延时再补两次压住 ROM 的焦点变化重放。
+                applyImmersiveToCatcherWindow(mouseKeyCatcher);
             } else {
                 cursorWindowLp.flags |= android.view.WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE;
             }
@@ -326,6 +332,16 @@ public abstract class ArtemisLauncherBaseActivity extends com.ies_net.artemis.Ar
         } catch (Throwable t) {
             Log.w("YukiArtemis", "apply mouse focus flags failed", t);
         }
+        // 无论焦点给谁，活动窗口自身也再压一次，避免系统栏被这次焦点切换带出来
+        com.core.engine.ImmersiveMode.applyLegacy(this);
+    }
+
+    /** 给独立捕获窗（光标窗/面板窗）补沉浸式系统栏 flag：立即 + 300ms + 1000ms。 */
+    private void applyImmersiveToCatcherWindow(android.view.View windowRoot) {
+        if (windowRoot == null) return;
+        com.core.engine.ImmersiveMode.applyToView(windowRoot);
+        windowRoot.postDelayed(() -> com.core.engine.ImmersiveMode.applyToView(windowRoot), 300L);
+        windowRoot.postDelayed(() -> com.core.engine.ImmersiveMode.applyToView(windowRoot), 1000L);
     }
 
     /** 坐标换算基准：游戏窗口 decor（全屏，与内核窗口像素坐标同基准）。 */
