@@ -586,8 +586,14 @@ void deriveAndMaybeEmitLocked(bool pageEnd, const std::string& snap) {
 void flushTimerLoop() {
     // 400ms 轮询 + 锁内只拷 512 字节尾部快照、推导在锁外：ARM 转译下
     // O(n²) 推导全速跑会饿死持同一锁的游戏渲染线程（实测 KRKR 主线程 ANR）
+    LOGI("flush thread: started (diag=%d)", diagEnabled() ? 1 : 0);
+    uint64_t heartbeat = 0;
     while (gFlushThreadRunning.load(std::memory_order_relaxed)) {
         std::this_thread::sleep_for(std::chrono::milliseconds(400));
+        // 心跳：证明线程活着并持续轮询（第 10 轮排查用；25 tick ≈ 10s 一条，不刷屏）
+        if (++heartbeat % 25 == 0) {
+            LOGI("flush thread: alive tick=%llu", static_cast<unsigned long long>(heartbeat));
+        }
         std::string snap;
         std::string rawCopy;
         size_t rawSize = 0;
