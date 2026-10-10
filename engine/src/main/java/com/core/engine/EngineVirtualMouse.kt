@@ -140,7 +140,24 @@ class EngineVirtualMouse(
 
     private fun clickAtCursor() {
         // 覆盖层优先：光标悬停在悬浮球/面板控件/侧键上时点平台控件，不穿进游戏画面
-        if (overlayClickHandler != null && overlayClickHandler.onClickAt(cursorX, cursorY)) return
+        if (overlayClickHandler != null) {
+            // **必须换算成屏幕坐标**：面板/侧键窗口是独立窗口（Artemis 的面板是
+            // gravity=BOTTOM 的独立窗，展开后还会把系统栏带出来 → 光标窗原点相对屏幕
+            // 发生偏移）。cursorX/Y 是光标窗的**局部**坐标，而面板侧命中判定
+            // （OnsExtractPanel.dispatchCursorClick → hitView）用的是 getLocationOnScreen
+            // 的**屏幕**坐标；不换算就会整体偏移 → 鼠标点面板/侧键落空，
+            // 表现即"剧情文本框点不掉"（WebView 版 VirtualMouseLayer 早已这样换算）。
+            val overlayLocation = IntArray(2)
+            getLocationOnScreen(overlayLocation)
+            val screenX = overlayLocation[0] + cursorX
+            val screenY = overlayLocation[1] + cursorY
+            // 诊断：光标窗原点与换算后的屏幕坐标（面板/侧键命中失败时一眼看出偏移量）
+            android.util.Log.i("YukiVmouse", "click cursor=(" + Math.round(cursorX) + ","
+                    + Math.round(cursorY) + ") origin=(" + overlayLocation[0] + ","
+                    + overlayLocation[1] + ") screen=(" + Math.round(screenX) + ","
+                    + Math.round(screenY) + ")")
+            if (overlayClickHandler.onClickAt(screenX, screenY)) return
+        }
         val surface = surfaceProvider() ?: return
         val surfaceLocation = IntArray(2)
         surface.getLocationOnScreen(surfaceLocation)

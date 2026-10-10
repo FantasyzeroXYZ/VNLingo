@@ -244,11 +244,16 @@ public abstract class ArtemisLauncherBaseActivity extends com.ies_net.artemis.Ar
 
     /**
      * 面板窗按键路由（面板展开时该窗可聚焦）：重映射 →「面板动作表」；
-     * 未消费的键再交游戏映射链，保证面板收起瞬间不会吞掉游戏按键。
+     * 未消费的键再交**虚拟鼠标**（否则鼠标模式下 A/方向键全被面板吃掉，
+     * 光标动不了、点不着右缘「剧情文本框」侧键 → 文本框关不掉）；
+     * 再未消费才交游戏映射链，保证面板收起瞬间不会吞掉游戏按键。
      */
     private boolean routePanelKey(android.view.KeyEvent event) {
         KeyEvent mapped = com.core.engine.GamepadRemap.apply(event);
         if (extractPanel != null && mapped != null && extractPanel.handleKey(mapped)) return true;
+        // 面板没消费的动作落到虚拟鼠标：面板展开时也能用光标点侧键/面板控件
+        // （真机现象：面板展开→面板窗持焦→A 键不再进光标窗→侧键点不掉）。
+        if (virtualMouse != null && mapped != null && virtualMouse.handleKey(mapped)) return true;
         try {
             super.dispatchKeyEvent(mapped == null ? event : mapped);
         } catch (Throwable t) {
@@ -266,14 +271,20 @@ public abstract class ArtemisLauncherBaseActivity extends com.ies_net.artemis.Ar
     private void applyPanelKeyFocus() {
         if (panelKeyCatcher == null || panelWindowLp == null) return;
         boolean expanded = extractPanel != null && extractPanel.isExpanded();
+        // 鼠标模式下**面板窗不抢焦点**：面板动作表默认就把 A/ENTER/DPAD_CENTER 绑成"确认"、
+        // DPAD 绑成"导航"，和虚拟鼠标是同一批按键；一旦面板窗持焦，鼠标就既动不了也点不了
+        // ——真机表现就是"打开剧情文本框后点不着右缘侧键、文本框关不掉"。
+        boolean panelTakesFocus = expanded && !virtualMouseMode;
         try {
-            if (expanded) {
+            if (panelTakesFocus) {
                 panelWindowLp.flags &= ~android.view.WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE;
                 panelKeyCatcher.setFocusable(true);
                 panelKeyCatcher.setFocusableInTouchMode(true);
                 panelKeyCatcher.requestFocus();
             } else {
                 panelWindowLp.flags |= android.view.WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE;
+                panelKeyCatcher.setFocusable(false);
+                panelKeyCatcher.setFocusableInTouchMode(false);
             }
             getWindowManager().updateViewLayout(panelKeyCatcher, panelWindowLp);
         } catch (Throwable t) {
@@ -283,7 +294,7 @@ public abstract class ArtemisLauncherBaseActivity extends com.ies_net.artemis.Ar
         // 面板窗同样是独立窗口，可聚焦时也会把系统栏带出来，一并补沉浸式 flag。
         applyImmersiveToCatcherWindow(panelKeyCatcher);
         try {
-            com.ies_net.artemis.ArtemisActivity.setKeepNativeFocused(expanded || virtualMouseMode);
+            com.ies_net.artemis.ArtemisActivity.setKeepNativeFocused(panelTakesFocus || virtualMouseMode);
         } catch (Throwable t) {
             Log.w("YukiArtemis", "setKeepNativeFocused failed", t);
         }
@@ -300,8 +311,12 @@ public abstract class ArtemisLauncherBaseActivity extends com.ies_net.artemis.Ar
         Log.i("YukiArtemis", "mouse catcher key code=" + event.getKeyCode()
                 + " action=" + event.getAction()
                 + " source=0x" + Integer.toHexString(event.getSource()));
+        // 鼠标**优先**于面板动作表：两者默认共用 A/ENTER/DPAD（面板把 A 绑"确认"、DPAD 绑
+        // "导航"）；面板优先会把光标按键吃光 → 鼠标模式下既动不了光标也点不着右缘
+        // 「剧情文本框」侧键（用户反馈的"文本框关不掉"）。面板动作退到鼠标之后，
+        // 需要面板导航时按 R2 关掉鼠标模式即可。
+        if (virtualMouse != null && mapped != null && virtualMouse.handleKey(mapped)) return true;
         if (extractPanel != null && mapped != null && extractPanel.handleKey(mapped)) return true;
-        if (virtualMouse != null && virtualMouse.handleKey(mapped)) return true;
         try {
             super.dispatchKeyEvent(mapped);
         } catch (Throwable t) {
@@ -316,7 +331,10 @@ public abstract class ArtemisLauncherBaseActivity extends com.ies_net.artemis.Ar
         if (mouseKeyCatcher == null || cursorWindowLp == null) return;
         boolean panelExpanded = extractPanel != null && extractPanel.isExpanded();
         try {
-            if (virtualMouseMode && !panelExpanded) {
+            // 鼠标模式下光标窗**始终持焦**（面板展开时也让面板窗让出）：否则面板动作表会把
+            // A/ENTER/DPAD 全部吃掉，光标既不能移动也不能点击 —— "点不着文本框侧键"的根因。
+            // 面板自身动作仍可用：面板展开时按 R2 关掉鼠标模式即回到面板导航。
+            if (virtualMouseMode) {
                 cursorWindowLp.flags &= ~android.view.WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE;
                 mouseKeyCatcher.setFocusable(true);
                 mouseKeyCatcher.setFocusableInTouchMode(true);
@@ -447,7 +465,11 @@ public abstract class ArtemisLauncherBaseActivity extends com.ies_net.artemis.Ar
         // 等于点进游戏画面、剧情文本框关不掉（Kirikiroid 早已用 dispatchCursorClick）。
         // 未命中就不消费：交给宿主注入游戏画面，不要在面板隐藏时再往面板里塞触摸
         // （隐藏面板仍持有旧尺寸，误派发会让面板被"莫名点开/点关"）。
-        return extractPanel != null && extractPanel.dispatchCursorClick(x, y);
+        boolean handled = extractPanel != null && extractPanel.dispatchCursorClick(x, y);
+        // 诊断：鼠标点面板/侧键是否命中（"剧情文本框点不掉"这类问题靠这条定位坐标偏移）
+        Log.i("YukiArtemis", "vm overlay click (" + Math.round(x) + "," + Math.round(y)
+                + ") handled=" + handled);
+        return handled;
     }
 
     /** 在视图坐标处合成完整触摸（down 立即、up 延时 60ms）。 */
