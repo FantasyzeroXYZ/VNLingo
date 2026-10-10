@@ -37,6 +37,24 @@ open class ArtemisActivity : NativeActivity() {
         @JvmStatic
         fun getExtractCacheDir(): String = extractCacheDirOverride
 
+        /**
+         * 软件内**游戏音量**（0..100）：只衰减引擎输出，**不动手机系统音量**。
+         * clean 内核导出 `nativeSetGameVolume`；官方内核没有该符号 →
+         * UnsatisfiedLinkError 静默降级（音量滑块不起作用，但不崩）。
+         */
+        @JvmStatic
+        fun setGameVolume(percent: Int) {
+            val p = percent.coerceIn(0, 100)
+            try {
+                nativeSetGameVolume(p)
+            } catch (t: Throwable) {
+                // 官方内核无此导出：忽略
+            }
+        }
+
+        @JvmStatic
+        private external fun nativeSetGameVolume(percent: Int)
+
         /** 宿主 Context（onCreate 里设置），供 [artemisSkipVideo] 读 prefs。 */
         @Volatile
         private var appContext: android.content.Context? = null

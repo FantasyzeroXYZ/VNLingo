@@ -1228,3 +1228,22 @@
    其他引擎实测：KIRIKIRI（Yosuga no Sora）与 ONS（ESG-13556）切后台再回来**均在剧情中**
    （无重载）；Tyrano/RPGM 是 WebView 且设备上没有该类游戏，未能实测 —— 它们的活动已带全
    `configChanges` 且各自独立进程，只要进程不被系统回收即可保持（被回收则必然重载）。
+34. **游戏音量（软件内）接到内核：只用 app 内主音量，不动系统音量（2026-10-10）**：
+   需求：音量键不要调手机系统音量，只调本软件里的游戏音量；且放进右侧「设置」悬浮框，
+   用进度条调（框内百分比项一律改进度条）。
+   现状盘点：右缘音量键原来调的是 `AudioManager.setStreamVolume(STREAM_MUSIC)`（系统音量）；
+   设置悬浮框里语速/透明度是 5 档下拉（`SettingsWidgets.dropdownRow`）。
+   改动：
+   - `SettingsWidgets.sliderRow()`：图标+标题+当前值(第一行) / 整行 SeekBar(第二行)；
+     语速 25..300%、透明度 10..100%、新增「游戏音量（软件内）」0..100% 全部改进度条；
+   - 移除右缘独立音量键（弹窗调系统音量，与需求相反）；音量并入设置悬浮框；
+   - 新增 `OnsExtractPanel.setGameVolumeHook(IntConsumer)` + `KEY_GAME_VOLUME` 持久化；
+   - **Artemis**（自研内核）真正落地：`audio.cpp` 文件级 atomic 主音量，在 OpenSL 回调
+     拷出的 PCM 上缩放（0 = 静音）；JNI 导出 `nativeSetGameVolume`；
+     `ArtemisActivity.setGameVolume()`（官核无符号则静默降级）；
+     `ArtemisLauncherBaseActivity` 里 `extractPanel.setGameVolumeHook(ArtemisActivity::setGameVolume)`。
+   真机验证：启动即见 `nativeSetGameVolume percent=45 (engine output only; system volume untouched)`
+   （面板把持久化值 45% 应用到内核）；`settings get system volume_music` 前后均为 10
+   → **程序没有改动系统音量**；`llvm-nm -D` 确认符号已导出。
+   待办（目标继续）：② Tyrano/RPGM（WebView）注入 JS 设 HTMLMediaElement.volume；
+   ③ ONS/KRKR/Siglus/FVP 预编译内核逐个确认是否有音量 API；④ 其它百分比项统一进度条。

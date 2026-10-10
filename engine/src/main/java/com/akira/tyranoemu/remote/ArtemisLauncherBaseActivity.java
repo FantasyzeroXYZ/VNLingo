@@ -168,6 +168,11 @@ public abstract class ArtemisLauncherBaseActivity extends com.ies_net.artemis.Ar
                     applyPanelKeyFocus();
                 });
                 Log.i("YukiArtemis", "extract panel installed (artemis, detached window)");
+                // 游戏音量：设置悬浮框里的进度条 → 内核主音量（只衰减引擎输出，
+                // 不动手机系统音量）。官方内核无 nativeSetGameVolume，内部静默降级。
+                extractPanel.setGameVolumeHook(
+                        percent -> com.ies_net.artemis.ArtemisActivity.setGameVolume(percent));
+                Log.i("YukiArtemis", "game volume hook wired (master gain in engine)");
             } catch (Throwable t) {
                 Log.w("YukiArtemis", "installPanels failed", t);
             }
