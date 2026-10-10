@@ -1305,8 +1305,13 @@ extern "C" void krkr_on_console_log(const void* text) {
     }
     if (utf8.empty()) return;
     LOGI("console text(%zu): %.60s", utf8.size(), utf8.c_str());
+    // 实验：启动期 20s 内**不调 JNI**——JNI→Kotlin→提取桥 可能阻塞引擎 update 线程，
+    // 使 TVPMainScene 的就绪判定跑不到、`launch UI forms ready` 恒为 0（卡启动）。
+    static const std::chrono::steady_clock::time_point sGateStart =
+            std::chrono::steady_clock::now();
+    if (std::chrono::steady_clock::now() - sGateStart < std::chrono::seconds(20)) return;
     emitText(utf8.c_str());
-    krkrLateFtMaybe();   // 控制台活动 → 视时机迟到安装 FT 链（不碰启动路径）
+    krkrLateFtMaybe();
 }
 
 /**
@@ -1385,9 +1390,9 @@ extern "C" bool krkr_bridge_got_hook(const char* library, const char* symbol,
 extern "C" bool krkr_install_extract_hook(void* gameHandle, JNIEnv* env) {
     if (gameHandle == nullptr) return false;
     // 开关必须在最外层作用域声明（下面 env!=nullptr 分支与后续逻辑都要用）
-    static const bool kKrkrExtractEnabled = false;  // 真机复测仍不稳定 → 回到已验证可玩的零钩子基线
+    static const bool kKrkrExtractEnabled = true;   // 实验：仅控制台链 + 启动期不上行
     static const bool kEnableEngineIdentityLog = true;
-    static const bool kEnableConsoleInlineHook = false;
+    static const bool kEnableConsoleInlineHook = true;
     // 双开关：编译期硬开关（内核兼容性未确认前保持 false）+ 用户级开关（默认 false）。
     // 只有两者都放开才安装 → 默认状态下绝不会影响游戏启动。
     if (!kKrkrExtractEnabled) {
