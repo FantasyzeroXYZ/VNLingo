@@ -42,11 +42,19 @@ class GameShortcutActivity : ComponentActivity() {
 
         lifecycleScope.launch {
             try {
+                val shortcutTitle = intent.getStringExtra(EXTRA_SHORTCUT_TITLE)
                 val game = withContext(Dispatchers.IO) {
-                    GameLibraryFacade.loadGames(applicationContext)
-                        .firstOrNull { GameShortcutManager.shortcutId(it.uri) == shortcutId }
+                    val games = GameLibraryFacade.loadGames(applicationContext)
+                    games.firstOrNull { GameShortcutManager.shortcutId(it.uri) == shortcutId }
+                        // 兜底：游戏目录被移动/重命名后，库内 uri 会变、旧快捷方式的 hash 就失效，
+                        // 之前的表现是「点了直接弹提示退回桌面」（用户反馈的偶发启动退出桌面）。
+                        // 标题兜底能让旧快捷方式继续找到同一个游戏。
+                        ?: shortcutTitle?.takeIf { it.isNotBlank() }?.let { title ->
+                            games.firstOrNull { it.title.trim() == title.trim() }
+                        }
                 }
                 if (game == null) {
+                    Log.w(TAG, "shortcut unresolved id=$shortcutId title=$shortcutTitle")
                     showUnavailable()
                     return@launch
                 }
@@ -124,12 +132,15 @@ class GameShortcutActivity : ComponentActivity() {
     companion object {
         private const val TAG = "GameShortcutActivity"
         private const val EXTRA_SHORTCUT_ID = "extra_shortcut_id"
+        private const val EXTRA_SHORTCUT_TITLE = "extra_shortcut_title"
 
         /** Builds the explicit trampoline intent carried by a pinned shortcut. */
-        fun createIntent(context: Context, gameUri: String): Intent =
+        fun createIntent(context: Context, gameUri: String, gameTitle: String? = null): Intent =
             Intent(context, GameShortcutActivity::class.java).apply {
                 action = Intent.ACTION_VIEW
                 putExtra(EXTRA_SHORTCUT_ID, GameShortcutManager.shortcutId(gameUri))
+                // 标题随快捷方式一起保存：游戏目录被移动/重命名导致 uri 变化时用于兜底解析
+                if (!gameTitle.isNullOrBlank()) putExtra(EXTRA_SHORTCUT_TITLE, gameTitle)
             }
     }
 }

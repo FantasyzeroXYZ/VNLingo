@@ -77,6 +77,7 @@ public abstract class ArtemisLauncherBaseActivity extends com.ies_net.artemis.Ar
     @Override
     protected void onResume() {
         super.onResume();
+        Log.i("YukiArtemis", "onResume +" + diagElapsed() + "ms");
         // 从后台回来/对话框关闭后同样要重新隐藏系统栏
         com.core.engine.ImmersiveMode.applyLegacy(this);
     }
@@ -577,6 +578,33 @@ public abstract class ArtemisLauncherBaseActivity extends com.ies_net.artemis.Ar
     private void exitFromBack() {
         userRequestedFinish = true;
         super.onBackPressed();
+    }
+
+    // ---- 启动期异常退出诊断（用户反馈「偶发启动退回桌面」）----
+    // 本类 onDestroy 会直接杀进程，所以「谁 finish 了 Activity」＝「谁把用户踢回桌面」。
+    // 这里把 finish/生命周期节点连同调用栈打出来，用于区分：我们的代码 / 系统回收 / 引擎 native 主动结束。
+
+    private long diagElapsed() {
+        return createdAtElapsed > 0 ? SystemClock.elapsedRealtime() - createdAtElapsed : -1L;
+    }
+
+    @Override
+    public void finish() {
+        Log.w("YukiArtemis", "finish() at +" + diagElapsed() + "ms userRequested=" + userRequestedFinish,
+                new Throwable("finish-caller"));
+        super.finish();
+    }
+
+    @Override
+    protected void onPause() {
+        Log.i("YukiArtemis", "onPause +" + diagElapsed() + "ms finishing=" + isFinishing());
+        super.onPause();
+    }
+
+    @Override
+    protected void onStop() {
+        Log.i("YukiArtemis", "onStop +" + diagElapsed() + "ms finishing=" + isFinishing());
+        super.onStop();
     }
 
     @Override

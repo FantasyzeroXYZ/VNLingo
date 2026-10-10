@@ -732,7 +732,7 @@ internal fun GameActionsSheet(
                 GameShortcutManager.requestPinShortcut(
                     context = context,
                     game = game,
-                    launchIntent = GameShortcutActivity.createIntent(context, game.uri),
+                    launchIntent = GameShortcutActivity.createIntent(context, game.uri, game.title),
                     customIconUri = customIconUri,
                 )
             } catch (error: Throwable) {

@@ -120,14 +120,22 @@ object ArtemisPfsUnpacker {
             .onFailure { logWarn("write pfs stamp failed", it) }
     }
 
-    fun applyBasePatch(rootPath: String?, force: Boolean = false): Boolean {
+    fun applyBasePatch(
+        rootPath: String?,
+        force: Boolean = false,
+        includeMovies: Boolean = false,
+    ): Boolean {
         if (!force && !needsBasePatch(rootPath)) return true
         val dir = File(rootPath.orEmpty())
         var totalBytes = 0L
         return try {
             val pfsFiles = listPfsFiles(dir)
+            // 启动路径默认**不解影片**：movie/op1.dat 142MB 的读+解密+XOR 写盘会让启动链路
+            // 超时/被取消，表现为「偶发直接退回桌面且引擎 Activity 都没起来」（实测）。
+            val filter: (String) -> Boolean =
+                if (includeMovies) ::shouldExtract else ::shouldExtractStartupOnly
             for (pfs in pfsFiles) {
-                totalBytes += unpackPfs(dir, pfs)
+                totalBytes += unpackPfs(dir, pfs, filter)
                 if (totalBytes > MAX_TOTAL_BYTES) {
                     logWarn("base patch total bytes exceed limit, abort")
                     return false
@@ -142,6 +150,13 @@ object ArtemisPfsUnpacker {
             logWarn("apply base patch failed root=$rootPath", error)
             false
         }
+    }
+
+    /** 启动路径用：只解 system.ini 与 system 目录下的脚本/表，不含影片（见 applyBasePatch）。 */
+    private fun shouldExtractStartupOnly(relPath: String): Boolean {
+        val lower = relPath.lowercase(Locale.ROOT)
+        if (lower == "system.ini") return true
+        return isArtemisStartupSystemFile(lower)
     }
 
     /**

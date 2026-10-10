@@ -122,6 +122,7 @@ object EngineLauncher {
         // 条目「调试信息」：记录本次启动发起 + 失败原因（成功也留痕，便于区分"没跑过"与"跑成功"）
         GameRunRecord.begin(context, game, patchChoice?.name)
         val result = withContext(Dispatchers.IO) { launchInternal(context, game, patchChoice) }
+        Log.i(TAG, "launch result=" + result + " engine=" + game.engine + " title=" + game.title)
         if (result is LaunchResult.Success) {
             GameRunRecord.markSuccess(context, game.uri)
         } else {
@@ -206,7 +207,10 @@ object EngineLauncher {
         // 这里与 artemis_auto_patch 策略无关，只在「文件缺失」或「PFS 卷集合变化」时才解包。
         if (game.engine == EngineType.ARTEMIS && !path.isNullOrBlank()) {
             runCatching {
-                ArtemisPfsUnpacker.applyBasePatch(path)
+                val startedAt = android.os.SystemClock.elapsedRealtime()
+                // includeMovies=false：影片（movie/op1.dat 142MB）在本路径解包会让启动超时、
+                // 表现为偶发直接退回桌面；启动只解系统脚本/表（补丁仍会生效）。
+                ArtemisPfsUnpacker.applyBasePatch(path, includeMovies = false)
                 ArtemisPfsUnpacker.applyAndroidSettings(
                     path,
                     ArtemisPfsUnpacker.AndroidSettings(
@@ -216,6 +220,11 @@ object EngineLauncher {
                         fontCacheSize = settings.artFontCacheSize,
                         powerSaving = settings.artPowerSaving,
                     ),
+                )
+                Log.i(
+                    TAG,
+                    "artemis startup file sync took "
+                        + (android.os.SystemClock.elapsedRealtime() - startedAt) + "ms",
                 )
             }.onFailure { Log.w(TAG, "artemis startup file sync failed", it) }
         }
@@ -1295,7 +1304,7 @@ object EngineLauncher {
         if (strategy == EngineSettingsStore.AUTO_PATCH_OFF && !ArtemisPfsUnpacker.pfsVolumesChanged(path)) {
             return
         }
-        ArtemisPfsUnpacker.applyBasePatch(path)
+        ArtemisPfsUnpacker.applyBasePatch(path, includeMovies = false)
     }
 
     /**
