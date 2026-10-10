@@ -229,7 +229,10 @@ public class OnsExtractPanel {
         android.content.SharedPreferences prefs =
                 activity.getSharedPreferences(TTS_PREFS, android.content.Context.MODE_PRIVATE);
         ttsEnabled = prefs.getBoolean(KEY_TTS_ON, true);
-        ttsAuto = prefs.getBoolean(KEY_TTS_AUTO, false);
+        // 面板「自动」开关的初值与**全局自动朗读**保持一致：否则全局开着、面板显示"关"，
+        // 用户把面板开关关掉后仍在自动朗读（用户反馈"开关没有正常发挥效果"）。
+        // 之后两边靠 settingRow 的写透保持同步。
+        ttsAuto = prefs.getBoolean(KEY_TTS_AUTO, OnsTtsEngines.autoRead(activity));
         multiTtsEnabled = prefs.getBoolean(KEY_TTS_MULTI, false);
         ttsRate = prefs.getInt(KEY_TTS_RATE, 100);
         ttsJudou = prefs.getBoolean(KEY_TTS_JUDOU, false);
