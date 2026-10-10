@@ -1131,3 +1131,18 @@
    - 真机验收：测试连接 → 「连接成功」；立即同步 → 状态出现"上次同步"、远端
      `VNLingo/VNLingo_sync.json` HEAD 返回 200；编辑保存后仍是 1 个账户且保持"当前"、
      再次测试连接仍成功（密码被保留）。
+26. **云同步凭据的本地加密存储（2026-10-10）**：
+   此前 `vnlingo_sync.xml` 里 `webdav_password` / `webdav_accounts` 是**明文**。
+   现按 Android 平台标准做法加密：
+   - 新增 `com.tyranor.next.core.sync.SyncSecretStore`：密钥在 **AndroidKeyStore** 中生成
+     （别名 `vnlingo_webdav_credentials_v1`，AES-256-GCM，`setRandomizedEncryptionRequired`），
+     密钥不可导出；每次加密随机 12B IV，存 `Base64(IV||ciphertext||tag)`；GCM 自带完整性校验；
+     解密失败（换机/还原导致密钥丢失）返回 null，调用方降级为"需重新登录"。
+     等价于 Jetpack `EncryptedSharedPreferences` 的安全性，但不新增依赖（该库已被 deprecated）。
+   - `SyncManager`：明文键 `webdav_server/username/password/accounts` →
+     `*_enc`；读取优先密文，只有密文键不存在时才读旧明文**并即时迁移**（写密文+删明文）；
+     加密不可用时回退明文写入（保证功能不坏）并打日志。
+   - 真机验证：升级+启动后四个明文键全部消失，`webdav_password_enc`(60)/`webdav_accounts_enc`(188)
+     存在，明文密码在全文件中已搜不到；同步页账户仍正常显示、连接测试仍「连接成功」、同步正常。
+   注意：`auto_sync`/`last_sync_*` 非敏感，保持明文；备份文件里会带上密文，跨设备因密钥不同
+   无法解密 → 应用会清掉并要求重新登录（预期行为）。

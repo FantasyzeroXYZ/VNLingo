@@ -52,9 +52,9 @@ class SyncManager(private val context: Context) {
 
     val config: SyncConfig
         get() = SyncConfig(
-            syncPrefs.getString(KEY_SERVER_URL, "") ?: "",
-            syncPrefs.getString(KEY_USERNAME, "") ?: "",
-            syncPrefs.getString(KEY_PASSWORD, "") ?: "",
+            readSecret(KEY_SERVER_URL, KEY_SERVER_URL_ENC) ?: "",
+            readSecret(KEY_USERNAME, KEY_USERNAME_ENC) ?: "",
+            readPassword(),
             syncPrefs.getBoolean(KEY_AUTO_SYNC, false),
         )
 
@@ -67,20 +67,100 @@ class SyncManager(private val context: Context) {
     @Synchronized
     fun saveConfig(serverUrl: String?, username: String?, password: String?, autoSync: Boolean) {
         syncPrefs.edit()
-            .putString(KEY_SERVER_URL, serverUrl?.trim() ?: "")
-            .putString(KEY_USERNAME, username?.trim() ?: "")
-            .putString(KEY_PASSWORD, password ?: "")
             .putBoolean(KEY_AUTO_SYNC, autoSync)
             .apply()
+        writeSecret(KEY_SERVER_URL, KEY_SERVER_URL_ENC, serverUrl?.trim() ?: "")
+        writeSecret(KEY_USERNAME, KEY_USERNAME_ENC, username?.trim() ?: "")
+        writeSecret(KEY_PASSWORD, KEY_PASSWORD_ENC, password ?: "")
         client = null
     }
+
+    // ------------------------------------------------------------------
+    // 凭据的加密存储（AndroidKeyStore AES-256-GCM，见 SyncSecretStore）
+    //
+    // 历史版本把账号/密码**明文**写在 SharedPreferences 里。这里统一改为：
+    // - 写入：`*_enc` 存密文，并删除旧的明文键；
+    // - 读取：先读密文；只有密文键不存在时才读旧明文键，且**读到即迁移**（加密后删明文）；
+    // - 加密不可用（极罕见，如 KeyStore 异常）时回退明文写入，保证功能不因加固而坏掉。
+    // ------------------------------------------------------------------
+
+    /** 读敏感字符串：优先密文，其次旧明文（顺带迁移）。 */
+    private fun readSecret(plainKey: String, encKey: String): String? {
+        val enc = syncPrefs.getString(encKey, null)
+        if (!enc.isNullOrEmpty()) {
+            val value = SyncSecretStore.decrypt(enc)
+            if (value != null) return value
+            // 密文存在但解不开（换机/还原导致密钥丢失）：清掉，返回 null 让用户重新登录。
+            Log.w(TAG, "secret $encKey undecryptable; clearing (re-login required)")
+            syncPrefs.edit().remove(encKey).apply()
+            return null
+        }
+        val legacy = syncPrefs.getString(plainKey, null)
+        if (legacy.isNullOrEmpty()) return null
+        writeSecret(plainKey, encKey, legacy)
+        return legacy
+    }
+
+    /** 写敏感字符串：能加密就只存密文并删除明文键。 */
+    private fun writeSecret(plainKey: String, encKey: String, value: String) {
+        val enc = SyncSecretStore.encrypt(value)
+        syncPrefs.edit().apply {
+            if (enc != null) {
+                putString(encKey, enc)
+                remove(plainKey)
+            } else {
+                // 加密不可用：退回明文，避免数据丢失（并在日志里留痕）
+                Log.w(TAG, "secret store unavailable; storing $plainKey as plaintext")
+                putString(plainKey, value)
+                remove(encKey)
+            }
+        }.apply()
+    }
+
+    private fun readPassword(): String = readSecret(KEY_PASSWORD, KEY_PASSWORD_ENC) ?: ""
 
     // ---- 账号管理（多账户注册表；活动账户 = 上方 saveConfig 写入的单账户键）----
 
     /** 已保存的 WebDAV 账户（服务器地址+账号 唯一）。 */
     data class WebDavAccount(val serverUrl: String, val username: String, val password: String)
 
-    fun accounts(): List<WebDavAccount> = decodeAccounts(syncPrefs.getString(KEY_ACCOUNTS, "[]") ?: "[]")
+    /**
+     * 已保存的 WebDAV 账户（服务器地址+账号 唯一）。
+     *
+     * 存储：整个账户列表序列化后由 [SyncSecretStore] 加密为单个密文串
+     * （密钥在 AndroidKeyStore 中，见该类注释）；旧版本的明文列表读到即迁移。
+     */
+    fun accounts(): List<WebDavAccount> {
+        val enc = syncPrefs.getString(KEY_ACCOUNTS_ENC, null)
+        if (!enc.isNullOrEmpty()) {
+            val plain = SyncSecretStore.decrypt(enc)
+            if (plain != null) return decodeAccounts(plain)
+            Log.w(TAG, "accounts undecryptable (keystore key lost?); requiring re-login")
+            syncPrefs.edit().remove(KEY_ACCOUNTS_ENC).apply()
+            return emptyList()
+        }
+        val legacy = syncPrefs.getString(KEY_ACCOUNTS, null)
+        if (legacy.isNullOrEmpty()) return emptyList()
+        val list = decodeAccounts(legacy)
+        persistAccounts(list) // 迁移：加密保存并删除明文
+        return list
+    }
+
+    /** 加密保存账户列表（加密不可用时回退明文，避免丢数据）。 */
+    private fun persistAccounts(list: List<WebDavAccount>) {
+        val json = encodeAccounts(list)
+        val enc = SyncSecretStore.encrypt(json)
+        syncPrefs.edit().apply {
+            if (enc != null) {
+                putString(KEY_ACCOUNTS_ENC, enc)
+                remove(KEY_ACCOUNTS)
+            } else {
+                Log.w(TAG, "secret store unavailable; storing accounts as plaintext")
+                putString(KEY_ACCOUNTS, json)
+                remove(KEY_ACCOUNTS_ENC)
+            }
+        }.apply()
+    }
 
     /** 添加账户（同 服务器+账号 视为改密重登）；新账户置顶并设为活动账户。 */
     @Synchronized
@@ -95,7 +175,7 @@ class SyncManager(private val context: Context) {
         val list = accounts().toMutableList()
         list.removeAll { it.serverUrl.equals(server, ignoreCase = true) && it.username == user }
         list.add(0, WebDavAccount(server, user, password))
-        syncPrefs.edit().putString(KEY_ACCOUNTS, encodeAccounts(list)).apply()
+        persistAccounts(list)
         saveConfig(server, user, password, autoSync)
         return list
     }
@@ -107,7 +187,7 @@ class SyncManager(private val context: Context) {
         val user = username.trim()
         val list = accounts().toMutableList()
         list.removeAll { it.serverUrl.equals(server, ignoreCase = true) && it.username == user }
-        syncPrefs.edit().putString(KEY_ACCOUNTS, encodeAccounts(list)).apply()
+        persistAccounts(list)
         val active = config
         if (active.serverUrl.equals(server, ignoreCase = true) && active.username == user) {
             val next = list.firstOrNull()
@@ -162,7 +242,7 @@ class SyncManager(private val context: Context) {
         val insertAt = position.coerceIn(0, list.size)
         list.add(insertAt, updated)
 
-        syncPrefs.edit().putString(KEY_ACCOUNTS, encodeAccounts(list)).apply()
+        persistAccounts(list)
         if (wasActive) {
             saveConfig(updated.serverUrl, updated.username, updated.password, autoSync)
         }
@@ -644,6 +724,13 @@ class SyncManager(private val context: Context) {
         private const val KEY_ACCOUNTS = "webdav_accounts"
         private const val KEY_LAST_SYNC = "last_sync_time"
         private const val KEY_LAST_SYNC_HASH = "last_sync_hash"
+
+        // 加密后的凭据键（AndroidKeyStore AES-256-GCM，见 SyncSecretStore）。
+        // 上面的明文键仅用于读取历史数据并做一次性迁移，写入时一律删除。
+        private const val KEY_SERVER_URL_ENC = "webdav_server_enc"
+        private const val KEY_USERNAME_ENC = "webdav_username_enc"
+        private const val KEY_PASSWORD_ENC = "webdav_password_enc"
+        private const val KEY_ACCOUNTS_ENC = "webdav_accounts_enc"
 
         /** 整文件同步的策展配置 prefs（TTS/制卡/手柄重映射/虚拟鼠标绑定）。 */
         private val SYNCED_PREF_FILES = listOf(
