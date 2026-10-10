@@ -45,6 +45,11 @@ class VirtualMouseInput(
     private companion object {
         const val REPEAT_DELAY_MS = 350L
         const val REPEAT_INTERVAL_MS = 60L
+        // 点击键（A/CONFIRM）长按连点：先按一次，按住 CLICK_REPEAT_DELAY_MS 后开始以
+        // CLICK_REPEAT_INTERVAL_MS 连点。系统长按重复事件被 repeatCount==0 过滤掉了，
+        // 所以必须自己做——否则「按住 A 只点一次」（用户反馈：手柄连按无效）。
+        const val CLICK_REPEAT_DELAY_MS = 320L
+        const val CLICK_REPEAT_INTERVAL_MS = 120L
         const val STEP_BASE = 14f
         const val STEP_MAX = 48f
         const val HAT_STEP_DP = 12f
@@ -57,6 +62,29 @@ class VirtualMouseInput(
     // ---- 按键长按重复 ----
     private var heldAction = -1
     private var heldSteps = 0
+
+    // ---- 点击键长按连点 ----
+    private var clickHeldCode = -1
+    private val clickStepper = object : Runnable {
+        override fun run() {
+            if (clickHeldCode < 0) return
+            target.click()
+            target.requestRender()
+            android.util.Log.i("YukiVmouse", "click repeat tick code=$clickHeldCode")
+            handler.postDelayed(this, CLICK_REPEAT_INTERVAL_MS)
+        }
+    }
+
+    private fun startClickRepeat(code: Int) {
+        clickHeldCode = code
+        handler.removeCallbacks(clickStepper)
+        handler.postDelayed(clickStepper, CLICK_REPEAT_DELAY_MS)
+    }
+
+    private fun stopClickRepeat() {
+        clickHeldCode = -1
+        handler.removeCallbacks(clickStepper)
+    }
 
     // ---- HAT 轴长按连续移动 ----
     private var hatActive = false
@@ -72,6 +100,8 @@ class VirtualMouseInput(
             target.ensureCursor()
             if (action == VirtualMouseBindings.ACTION_CONFIRM) {
                 target.click()
+                // 按住不放 → 连点（长按连按；松开在 ACTION_UP 里停）
+                startClickRepeat(code)
             } else {
                 startHold(action)
                 target.requestRender()
@@ -79,6 +109,10 @@ class VirtualMouseInput(
             return true
         }
         if (event.action == KeyEvent.ACTION_UP) {
+            if (clickHeldCode >= 0 && VirtualMouseBindings.matches(VirtualMouseBindings.ACTION_CONFIRM, code)) {
+                stopClickRepeat()
+                return true
+            }
             val wasHeld = heldAction >= 0 && VirtualMouseBindings.matches(heldAction, code)
             if (wasHeld) stopHold()
             // 抬起相位一律消费：防止方向/确认键的 UP 泄漏给游戏（半按下状态）
@@ -140,6 +174,7 @@ class VirtualMouseInput(
     fun cancel() {
         stopHold()
         stopHatMove()
+        stopClickRepeat()
     }
 
     private fun startHold(action: Int) {

@@ -57,6 +57,9 @@ class EngineVirtualMouse(
         const val REPEAT_DELAY_MS = 350L
         const val REPEAT_INTERVAL_MS = 60L
         const val CLICK_COOLDOWN_MS = 250L
+        /** 点击键长按连点：320ms 后起、120ms/次（与共享核心 VirtualMouseInput 对齐）。 */
+        const val CLICK_REPEAT_DELAY_MS = 320L
+        const val CLICK_REPEAT_INTERVAL_MS = 120L
         const val STEP_BASE = 14f
         const val STEP_MAX = 48f
 
@@ -112,6 +115,9 @@ class EngineVirtualMouse(
             ensureCursor()
             if (action == VirtualMouseBindings.ACTION_CONFIRM) {
                 clickAtCursor()
+                // 按住不放 → 连点（与共享输入核心 VirtualMouseInput 同一语义：
+                // 系统长按重复事件被 repeatCount==0 过滤掉，必须自己做，否则按住 A 只点一次）
+                startClickRepeat(code)
             } else {
                 startHold(action)
                 invalidate()
@@ -119,13 +125,44 @@ class EngineVirtualMouse(
             return true
         }
         if (event.action == KeyEvent.ACTION_UP) {
+            if (clickHeldCode >= 0 &&
+                VirtualMouseBindings.matches(VirtualMouseBindings.ACTION_CONFIRM, code)) {
+                stopClickRepeat()
+                return true
+            }
             val wasHeld = heldAction >= 0 && VirtualMouseBindings.matches(heldAction, code)
             if (wasHeld) stopHold()
             // 抬起相位一律消费：防止方向/确认键的 UP 泄漏给游戏（半按下状态）
             return wasHeld || cursorVisible
         }
         // 系统长按重复事件：连续移动由内部重复引擎驱动，吞掉即可
-        return heldAction >= 0 || cursorVisible
+        return heldAction >= 0 || cursorVisible || clickHeldCode >= 0
+    }
+
+    // ---- 点击键长按连点 ----
+    private var clickHeldCode = -1
+    private val clickStepper = object : Runnable {
+        override fun run() {
+            if (clickHeldCode < 0) return
+            if (!isAttachedToWindow) {
+                stopClickRepeat()
+                return
+            }
+            clickAtCursor(bypassCooldown = true)
+            android.util.Log.i("YukiVmouse", "engine click repeat tick code=$clickHeldCode")
+            repeatHandler.postDelayed(this, CLICK_REPEAT_INTERVAL_MS)
+        }
+    }
+
+    private fun startClickRepeat(code: Int) {
+        clickHeldCode = code
+        repeatHandler.removeCallbacks(clickStepper)
+        repeatHandler.postDelayed(clickStepper, CLICK_REPEAT_DELAY_MS)
+    }
+
+    private fun stopClickRepeat() {
+        clickHeldCode = -1
+        repeatHandler.removeCallbacks(clickStepper)
     }
 
     private fun resolveAction(keyCode: Int): Int? {
@@ -343,6 +380,7 @@ class EngineVirtualMouse(
     /** 隐藏光标（切回触摸模式时调用）：光标隐藏后方向/确认不再被消费，长按态一并复位。 */
     fun hideCursor() {
         stopHold()
+        stopClickRepeat()
         cursorVisible = false
         invalidate()
     }
@@ -360,9 +398,11 @@ class EngineVirtualMouse(
         cursorY = cursorY.coerceIn(0f, maxY)
     }
 
-    private fun clickAtCursor() {
+    private fun clickAtCursor(bypassCooldown: Boolean = false) {
         val now = android.os.SystemClock.uptimeMillis()
-        if (now - lastClickAtMs < CLICK_COOLDOWN_MS) return
+        // 连点由本类的重复引擎驱动，间隔小于冷却窗口，所以自主连点要绕过冷却；
+        // 冷却只用于吸收手柄/ROM 重复下发确认键造成的抖动点击。
+        if (!bypassCooldown && now - lastClickAtMs < CLICK_COOLDOWN_MS) return
         lastClickAtMs = now
         // 覆盖层优先：光标悬停在悬浮球/面板控件上时点平台控件，不穿进游戏画面
         if (overlayClickHandler != null && overlayClickHandler.onClickAt(cursorX, cursorY)) return
