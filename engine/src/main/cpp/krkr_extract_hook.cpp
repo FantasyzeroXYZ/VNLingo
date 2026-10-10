@@ -922,10 +922,73 @@ static void logEngineIdentity(void* gameHandle) {
 // —— 这类指令搬到 trampoline 会算错地址（宁可不钩，也不能把引擎改坏）。
 // 注意：必须用 extern "C" 且 **hidden 可见性**，naked 里的 adrp/:lo12: 才能按本地符号解析
 // （C++ static 内部链接符号汇编引用不到；默认可见性又会要求走 GOT → 报 -fPIC 重定位错误）。
-extern "C" __attribute__((visibility("hidden"))) void* gKrkrTrampoline = nullptr;  // 被搬移指令之后的返回点
+extern "C" __attribute__((visibility("hidden"))) void* gKrkrTrampoline = nullptr;   // A: const char16_t* 版
+extern "C" __attribute__((visibility("hidden"))) void* gKrkrTrampolineB = nullptr;  // B: const tTJSString& 版
 static void* gKrkrHookTarget = nullptr;      // 被 inline hook 的原函数入口
 
-extern "C" void krkr_console_log_hook();    // 见下方 naked 函数
+extern "C" void krkr_console_log_hook();    // A: 见下方 naked 函数
+extern "C" void krkr_console_log_hook_b();  // B: tTJSString& 版
+
+extern "C" void krkr_on_console_log(const void* text);   // 定义见下方（UTF-16/UTF-8 自适应）
+
+/** B：tTJSString& 版的第一参数是对象，先把原始字节按 hex 打出来（确认布局/是否真的是文本）。 */
+extern "C" void krkr_on_console_log_obj(const void* obj) {
+    if (obj == nullptr) return;
+    const unsigned char* p = static_cast<const unsigned char*>(obj);
+    char hex[3 * 48 + 1];
+    size_t n = 0;
+    for (int i = 0; i < 48 && n + 3 < sizeof(hex); ++i) {
+        n += static_cast<size_t>(snprintf(hex + n, sizeof(hex) - n, "%02x ", p[i]));
+    }
+    hex[n] = '\0';
+    LOGI("console-obj raw: %s", hex);
+    // tTJSString 内部存的是**指针**（真机 raw 显示前两个 8 字节就是带 tag 的地址；
+    // arm64 TBI 允许直接解引用带 tag 的用户指针）。真机 off=8 解出 1 个"空字符"→ 说明还有一层
+    // 间接：对象里存的是 tTJSVariantString 之类的**字符串对象**，字符指针在它内部。
+    // 这里做**两级**探测：候选指针 → 该对象的前 3 个字 → 逐个按 UTF-16 试解码。
+    auto looksLikeWide = [](const unsigned char* sp, size_t* unitsOut, size_t* wideOut) {
+        size_t units = 0, wide = 0;
+        for (size_t i = 0; i < 64; i += 2) {
+            const unsigned c0 = sp[i], c1 = sp[i + 1];
+            if (c0 == 0 && c1 == 0) break;
+            ++units;
+            if (c1 == 0 || (c1 >= 0x30 && c1 <= 0x9F)) ++wide;
+        }
+        *unitsOut = units;
+        *wideOut = wide;
+        return units >= 2 && wide * 2 >= units;
+    };
+    for (int off = 0; off + 8 <= 32; off += 8) {
+        uintptr_t cand = 0;
+        memcpy(&cand, p + off, sizeof(cand));
+        if (cand < 0x1000u) continue;
+        const unsigned char* sp = reinterpret_cast<const unsigned char*>(cand);
+        size_t units = 0, wide = 0;
+        if (looksLikeWide(sp, &units, &wide)) {
+            LOGI("console-obj: off=%d units=%zu wide=%zu → 一级 UTF-16 解码", off, units, wide);
+            krkr_on_console_log(sp);
+            return;
+        }
+        // 二级：把该对象的前 3 个字当作字符指针再试
+        for (int off2 = 0; off2 + 8 <= 24; off2 += 8) {
+            uintptr_t inner = 0;
+            memcpy(&inner, sp + off2, sizeof(inner));
+            if (inner < 0x1000u || inner == cand) continue;
+            const unsigned char* sp2 = reinterpret_cast<const unsigned char*>(inner);
+            size_t u2 = 0, w2 = 0;
+            if (looksLikeWide(sp2, &u2, &w2)) {
+                LOGI("console-obj: off=%d/%d units=%zu wide=%zu → 二级 UTF-16 解码",
+                     off, off2, u2, w2);
+                krkr_on_console_log(sp2);
+                return;
+            }
+        }
+    }
+    // 兜底：把对象首地址当 UTF-8/UTF-16 文本直接试一次
+    krkr_on_console_log(obj);
+}
+
+extern "C" void krkr_console_log_hook();
 
 static bool isPcRelative(uint32_t insn) {
     if ((insn & 0x1F000000u) == 0x10000000u) return true;   // ADR / ADRP
@@ -1045,6 +1108,36 @@ extern "C" __attribute__((naked)) void krkr_console_log_hook() {
             "br x16\n");
 }
 
+/** B 路（tTJSString& 重载）的 naked trampoline：同上，只是跳回自己的 trampoline 指针。 */
+extern "C" __attribute__((naked)) void krkr_console_log_hook_b() {
+    __asm__ volatile(
+            "sub sp, sp, #272\n"
+            "stp x0, x1, [sp, #0]\n"
+            "stp x2, x3, [sp, #16]\n"
+            "stp x4, x5, [sp, #32]\n"
+            "stp x6, x7, [sp, #48]\n"
+            "stp x8, x9, [sp, #64]\n"
+            "stp q0, q1, [sp, #80]\n"
+            "stp q2, q3, [sp, #112]\n"
+            "stp q4, q5, [sp, #144]\n"
+            "stp q6, q7, [sp, #176]\n"
+            "bl krkr_on_console_log_obj\n"
+            "ldp x0, x1, [sp, #0]\n"
+            "ldp x2, x3, [sp, #16]\n"
+            "ldp x4, x5, [sp, #32]\n"
+            "ldp x6, x7, [sp, #48]\n"
+            "ldp x8, x9, [sp, #64]\n"
+            "ldp q0, q1, [sp, #80]\n"
+            "ldp q2, q3, [sp, #112]\n"
+            "ldp q4, q5, [sp, #144]\n"
+            "ldp q6, q7, [sp, #176]\n"
+            "add sp, sp, #272\n"
+            "adrp x16, gKrkrTrampolineB\n"
+            "add x16, x16, :lo12:gKrkrTrampolineB\n"
+            "ldr x16, [x16]\n"
+            "br x16\n");
+}
+
 extern "C" bool krkr_bridge_got_hook(const char* library, const char* symbol,
                                      void* replacement, void** original);
 
@@ -1095,14 +1188,20 @@ extern "C" bool krkr_install_extract_hook(void* gameHandle, JNIEnv* env) {
     for (const char* sym : kConsoleLogSymbols) {
         void* addr = dlsym(gameHandle, sym);
         LOGI("extract identify: dlsym %s -> %s", sym, addr != nullptr ? "FOUND" : "missing");
-        if (addr == nullptr || consoleHooked) continue;
-        // tTJSString& 版第一参数是对象（布局不同），先只上指针版
-        if (std::strcmp(sym, "_Z13TVPConsoleLogRKN3TJS10tTJSStringEb") == 0) continue;
-        if (installInlineHook(addr, reinterpret_cast<void*>(&krkr_console_log_hook),
-                              &gKrkrTrampoline)) {
-            gKrkrHookTarget = addr;
-            consoleHooked = true;
-            LOGI("extract hook: TVPConsoleLog armed via inline hook (%s)", sym);
+        if (addr == nullptr) continue;
+        // 每个重载用**各自独立**的 trampoline（共用会跳错返回点）
+        if (std::strcmp(sym, "_ZN3TJS13TVPConsoleLogEPKDs") == 0) {
+            if (installInlineHook(addr, reinterpret_cast<void*>(&krkr_console_log_hook),
+                                  &gKrkrTrampoline)) {
+                consoleHooked = true;
+                LOGI("extract hook: TVPConsoleLog(const char16_t*) armed (%s)", sym);
+            }
+        } else {
+            if (installInlineHook(addr, reinterpret_cast<void*>(&krkr_console_log_hook_b),
+                                  &gKrkrTrampolineB)) {
+                consoleHooked = true;
+                LOGI("extract hook: TVPConsoleLog(const tTJSString&,bool) armed (%s)", sym);
+            }
         }
     }
     if (consoleHooked) {
