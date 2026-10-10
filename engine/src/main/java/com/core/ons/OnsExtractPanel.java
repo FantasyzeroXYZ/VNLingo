@@ -3305,8 +3305,8 @@ public class OnsExtractPanel {
      *    确保等到这句彻底显示完再念一次；
      * 4. 手动「播放」不受影响（走 speakSentence 直呼）。
      */
-    private static final long AUTO_SPEAK_STABLE_MS = 400;
-    private static final long AUTO_SPEAK_GROW_MS = 650;
+    private static final long AUTO_SPEAK_STABLE_MS = 700;
+    private static final long AUTO_SPEAK_GROW_MS = 900;
     private String pendingSpokenSentence;
     /**
      * 待补念的"新增部分"（同上：交给去抖任务念，见 speakOnlyAppendedPart）。
