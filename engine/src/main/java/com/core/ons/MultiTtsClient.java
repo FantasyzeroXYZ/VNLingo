@@ -41,6 +41,38 @@ public final class MultiTtsClient {
         return synthesizeOn(text, voice, speed, volume, pitch, hostPort());
     }
 
+    /**
+     * 流式播放用：打开 MultiTTS 合成的**响应连接**（不读取字节，交给调用方边收边播）。
+     * 调用方负责 disconnect()。失败返回 null。
+     */
+    public static HttpURLConnection openStream(String text, String voice, int speed, int volume,
+                                               int pitch, String hostPort) {
+        if (text == null || text.isEmpty()) return null;
+        String hp = hostPort == null || hostPort.isEmpty() ? HOST_PORT : hostPort;
+        try {
+            String v = voice == null || voice.isEmpty() ? DEFAULT_VOICE : voice;
+            String query = "text=" + URLEncoder.encode(text, "UTF-8")
+                    + "&speed=" + clamp(speed, 0, 100)
+                    + "&volume=" + clamp(volume, 0, 100)
+                    + "&pitch=" + clamp(pitch, 0, 100)
+                    + "&voice=" + URLEncoder.encode(v, "UTF-8");
+            HttpURLConnection conn = (HttpURLConnection) new URL(
+                    "http://" + hp + "/forward?" + query).openConnection();
+            conn.setConnectTimeout(4000);
+            conn.setReadTimeout(30_000);
+            int code = conn.getResponseCode();
+            if (code != 200) {
+                Log.w(TAG, "forward HTTP " + code);
+                conn.disconnect();
+                return null;
+            }
+            return conn;
+        } catch (Throwable t) {
+            Log.w(TAG, "forward open failed", t);
+            return null;
+        }
+    }
+
     /** 指定服务地址的合成（设置页试听/面板共用）。 */
     public static byte[] synthesizeOn(String text, String voice, int speed, int volume,
                                       int pitch, String hostPort) {

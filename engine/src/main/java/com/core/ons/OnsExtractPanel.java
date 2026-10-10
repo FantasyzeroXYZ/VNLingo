@@ -3276,6 +3276,15 @@ public class OnsExtractPanel {
             // 安卓自带 TTS（系统引擎）走方法末尾的 TextToSpeech 直呼路径。
             String engine = OnsTtsEngines.engine(activity);
             if (OnsTtsEngines.ENGINE_HTTP.equals(engine)) {
+                if (OnsTtsEngines.streaming(activity)) {
+                    // 流式：边收边播（不等整段合成完）
+                    final java.net.HttpURLConnection conn =
+                            OnsTtsEngines.openHttpConnection(activity, sentence);
+                    if (conn != null) {
+                        playStreamingAudio(conn, epoch, "http_tts");
+                        return;
+                    }
+                }
                 new Thread(() -> {
                     byte[] wav = OnsTtsEngines.httpSynthesize(activity, sentence);
                     if (wav == null) {
@@ -3296,6 +3305,16 @@ public class OnsExtractPanel {
             // MultiTTS HTTP 合成 + 本地 MediaPlayer 播放（WAV），后台线程。
             // 语速 = 面板语速档位（游戏内快调）；音高/音量/发音人/服务器 = TTS 设置。
             int speed = Math.round(OnsTtsEngines.rate(activity) * ttsRate / 100f);
+            if (OnsTtsEngines.streaming(activity)) {
+                final java.net.HttpURLConnection conn = MultiTtsClient.openStream(sentence,
+                        OnsTtsEngines.voice(activity), speed,
+                        OnsTtsEngines.volume(activity), OnsTtsEngines.pitch(activity),
+                        OnsTtsEngines.multiHost(activity));
+                if (conn != null) {
+                    playStreamingAudio(conn, epoch, "multitts");
+                    return;
+                }
+            }
             new Thread(() -> {
                 byte[] wav = MultiTtsClient.synthesizeOn(sentence,
                         OnsTtsEngines.voice(activity), speed,
@@ -3436,7 +3455,163 @@ public class OnsExtractPanel {
         toast(res);
     }
 
-    private void stopTts() {        // 作废所有在途的异步合成（见 ttsEpoch 注释）：否则它们回来后会播上一条的声音。
+    /**
+     * **流式播放**（HTTP / MultiTTS）：拿到响应连接后边收边播，不等整段合成完 ——
+     * 起播延迟从"整段合成时间"降到"首个数据包到达 + 少量缓冲"。
+     *
+     * 实现：解析 WAV 头（RIFF/fmt/data）→ `AudioTrack`（流式模式）持续写入 PCM；
+     * 切句/停止时用 [ttsEpoch] 判断并立即停掉。响应不是 WAV 或解析失败 → 回退整段下载播放。
+     */
+    private void playStreamingAudio(final java.net.HttpURLConnection conn, final int epoch,
+                                    final String tag) {
+        if (conn == null) return;
+        new Thread(() -> {
+            android.media.AudioTrack track = null;
+            java.io.InputStream in = null;
+            try {
+                in = new java.io.BufferedInputStream(conn.getInputStream(), 64 * 1024);
+                android.util.Log.i(TAG, tag + " streaming: reading wav header");
+                int[] fmt = readWavFormat(in);      // {sampleRate, channels, bits}
+                if (fmt == null) {
+                    android.util.Log.w(TAG, tag + " streaming: not WAV → fallback");
+                    streamFallback(conn, epoch, tag);
+                    return;
+                }
+                int channelMask = fmt[1] >= 2
+                        ? android.media.AudioFormat.CHANNEL_OUT_STEREO
+                        : android.media.AudioFormat.CHANNEL_OUT_MONO;
+                int minBuf = android.media.AudioTrack.getMinBufferSize(
+                        fmt[0], channelMask, android.media.AudioFormat.ENCODING_PCM_16BIT);
+                if (minBuf <= 0) minBuf = 8192;
+                track = new android.media.AudioTrack.Builder()
+                        .setAudioFormat(new android.media.AudioFormat.Builder()
+                                .setEncoding(android.media.AudioFormat.ENCODING_PCM_16BIT)
+                                .setSampleRate(fmt[0])
+                                .setChannelMask(channelMask)
+                                .build())
+                        .setBufferSizeInBytes(Math.max(minBuf * 2, 16384))
+                        .setTransferMode(android.media.AudioTrack.MODE_STREAM)
+                        .build();
+                final android.media.AudioTrack play = track;
+                // 起播顺带停掉上一条（MediaPlayer 路径）
+                main.post(() -> {
+                    try {
+                        if (epoch == ttsEpoch) {
+                            stopVoice();
+                            play.play();
+                        }
+                    } catch (Throwable ignored) {
+                    }
+                });
+                byte[] buf = new byte[16384];
+                int n;
+                long total = 0;
+                while ((n = in.read(buf)) > 0) {
+                    if (epoch != ttsEpoch) {
+                        android.util.Log.i(TAG, tag + " streaming: epoch changed → stop immediately");
+                        break;
+                    }
+                    int off = 0;
+                    while (off < n) {
+                        int written = play.write(buf, off, n - off);
+                        if (written <= 0) break;
+                        off += written;
+                    }
+                    total += n;
+                }
+                android.util.Log.i(TAG, tag + " streaming: done " + total + " bytes");
+            } catch (Throwable t) {
+                android.util.Log.w(TAG, tag + " streaming failed", t);
+            } finally {
+                try { if (in != null) in.close(); } catch (Throwable ignored) {}
+                try { if (track != null) { track.stop(); track.release(); } } catch (Throwable ignored) {}
+                try { conn.disconnect(); } catch (Throwable ignored) {}
+            }
+        }, "ons-tts-stream").start();
+    }
+
+    /** 流不是 WAV → 整段读完后走原有播放路径（保底不丢声音）。 */
+    private void streamFallback(java.net.HttpURLConnection conn, int epoch, String tag) {
+        new Thread(() -> {
+            try {
+                java.io.InputStream in = conn.getInputStream();
+                java.io.ByteArrayOutputStream out = new java.io.ByteArrayOutputStream();
+                byte[] buf = new byte[16384];
+                int n;
+                while ((n = in.read(buf)) > 0) out.write(buf, 0, n);
+                in.close();
+                conn.disconnect();
+                final byte[] bytes = out.toByteArray();
+                main.post(() -> {
+                    if (epoch != ttsEpoch || bytes.length == 0) return;
+                    stopVoice();
+                    playVoiceBytes(bytes, tag);
+                });
+            } catch (Throwable t) {
+                android.util.Log.w(TAG, tag + " streaming fallback failed", t);
+                try { conn.disconnect(); } catch (Throwable ignored) {}
+            }
+        }, "ons-tts-fallback").start();
+    }
+
+    /** 解析 WAV 头，返回 {sampleRate, channels, bits}；非 WAV 或非 16bit PCM 返回 null。 */
+    private static int[] readWavFormat(java.io.InputStream in) throws java.io.IOException {
+        byte[] head = new byte[12];
+        if (!readFully(in, head, 12)) return null;
+        if (head[0] != 'R' || head[1] != 'I' || head[2] != 'F' || head[3] != 'F'
+                || head[8] != 'W' || head[9] != 'A' || head[10] != 'V' || head[11] != 'E') {
+            return null;
+        }
+        int sampleRate = 0, channels = 0, bits = 0;
+        byte[] chunk = new byte[8];
+        while (readFully(in, chunk, 8)) {
+            String id = new String(chunk, 0, 4, java.nio.charset.StandardCharsets.US_ASCII);
+            long size = ((long) (chunk[4] & 0xFF)) | ((long) (chunk[5] & 0xFF) << 8)
+                    | ((long) (chunk[6] & 0xFF) << 16) | ((long) (chunk[7] & 0xFF) << 24);
+            if ("fmt ".equals(id)) {
+                byte[] fmt = new byte[(int) Math.min(size, 64)];
+                if (!readFully(in, fmt, fmt.length)) return null;
+                if (fmt.length >= 16) {
+                    channels = (fmt[2] & 0xFF) | ((fmt[3] & 0xFF) << 8);
+                    sampleRate = (fmt[4] & 0xFF) | ((fmt[5] & 0xFF) << 8)
+                            | ((fmt[6] & 0xFF) << 16) | ((fmt[7] & 0xFF) << 24);
+                    bits = (fmt[14] & 0xFF) | ((fmt[15] & 0xFF) << 8);
+                }
+                long rest = size - fmt.length;
+                while (rest > 0) {
+                    long skipped = in.skip(rest);
+                    if (skipped <= 0) break;
+                    rest -= skipped;
+                }
+            } else if ("data".equals(id)) {
+                return (sampleRate > 0 && channels > 0 && bits == 16)
+                        ? new int[]{sampleRate, channels, bits} : null;
+            } else {
+                long rest = size;
+                while (rest > 0) {
+                    long skipped = in.skip(rest);
+                    if (skipped <= 0) break;
+                    rest -= skipped;
+                }
+            }
+            if ((size & 1) == 1) in.skip(1);
+        }
+        return null;
+    }
+
+    private static boolean readFully(java.io.InputStream in, byte[] buf, int len)
+            throws java.io.IOException {
+        int off = 0;
+        while (off < len) {
+            int n = in.read(buf, off, len - off);
+            if (n < 0) return false;
+            off += n;
+        }
+        return true;
+    }
+
+    private void stopTts() {
+        // 作废所有在途的异步合成（见 ttsEpoch 注释）：否则它们回来后会播上一条的声音。
         ttsEpoch++;
         if (tts != null) {
             try { tts.stop(); } catch (Throwable ignored) {}

@@ -181,6 +181,32 @@ object OnsTtsEngines {
     fun isHttpTemplateValid(template: String): Boolean =
         template.contains("{text}") && template.startsWith("http")
 
+    /**
+     * 流式播放用：打开 HTTP 合成的**响应连接**（不读取字节，交给调用方边收边播）。
+     * 调用方负责 `disconnect()`。失败返回 null。
+     */
+    @JvmStatic
+    fun openHttpConnection(context: Context, text: String): java.net.HttpURLConnection? {
+        val template = httpTemplate(context)
+        if (!isHttpTemplateValid(template) || text.isEmpty()) return null
+        return try {
+            val encoded = URLEncoder.encode(text, "UTF-8")
+            val url = template.replace("{text}", encoded)
+            val conn = (URL(url).openConnection() as java.net.HttpURLConnection).apply {
+                connectTimeout = 8000
+                readTimeout = 30000
+                requestMethod = "GET"
+            }
+            if (conn.responseCode !in 200..299) {
+                conn.disconnect()
+                return null
+            }
+            conn
+        } catch (t: Throwable) {
+            null
+        }
+    }
+
     /** HTTP 引擎合成：GET 模板（{text} → URL 编码文本）→ 音频字节；失败返回 null。 */
     @JvmStatic
     fun httpSynthesize(context: Context, text: String): ByteArray? {
