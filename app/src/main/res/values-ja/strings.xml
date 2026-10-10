@@ -908,4 +908,5 @@
     <string name="sync_save_github_unsupported">セーブチャンネルが GitHub モードのため、ここでの一覧表示は未対応です。</string>
     <string name="sync_save_working">処理中…</string>
     <string name="sync_save_never">未実施</string>
+    <string name="sync_save_remote_path">クラウドフォルダ: %1$s（ゲームごとに saves.zip を格納）。メイン同期は VNLingo/VNLingo_sync.json</string>
 </resources>

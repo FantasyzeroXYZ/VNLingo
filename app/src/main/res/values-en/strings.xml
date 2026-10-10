@@ -908,4 +908,5 @@
     <string name="sync_save_github_unsupported">The save channel uses GitHub mode; listing cloud saves here is not supported yet.</string>
     <string name="sync_save_working">Working…</string>
     <string name="sync_save_never">Never</string>
+    <string name="sync_save_remote_path">Cloud folder: %1$s (one sub-folder per game containing saves.zip); the main snapshot is VNLingo/VNLingo_sync.json</string>
 </resources>

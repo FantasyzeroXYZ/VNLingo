@@ -907,4 +907,5 @@
     <string name="sync_save_github_unsupported">当前存档通道为 GitHub 模式，暂不支持在此列出云端存档。</string>
     <string name="sync_save_working">处理中…</string>
     <string name="sync_save_never">从未</string>
+    <string name="sync_save_remote_path">云端目录：%1$s（每个游戏一个子文件夹，内容为 saves.zip）；主同步快照在 VNLingo/VNLingo_sync.json</string>
 </resources>

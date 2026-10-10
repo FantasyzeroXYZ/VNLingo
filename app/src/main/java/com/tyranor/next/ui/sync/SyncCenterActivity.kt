@@ -513,6 +513,17 @@ class SyncCenterActivity : AppScreenActivity() {
                                         modifier = Modifier.padding(top = 6.dp),
                                     )
                                 }
+                                // 云端真实路径：用户要在坚果云/NextCloud 客户端里核对文件时最容易找不到，
+                                // 这里直接显示实际写入的目录与每个游戏的文件名规则。
+                                Text(
+                                    stringResource(
+                                        R.string.sync_save_remote_path,
+                                        com.core.ons.OnsSaveCloud.remoteDir(applicationContext),
+                                    ),
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    modifier = Modifier.padding(top = 6.dp),
+                                )
                                 if (saveRows.isEmpty()) {
                                     Text(
                                         stringResource(R.string.sync_save_empty),
