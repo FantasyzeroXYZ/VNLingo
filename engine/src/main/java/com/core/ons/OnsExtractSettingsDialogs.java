@@ -194,18 +194,41 @@ public final class OnsExtractSettingsDialogs {
         final String engine = OnsTtsEngines.engine(activity);
         if (OnsTtsEngines.ENGINE_SYSTEM.equals(engine)) {
             try {
-                android.speech.tts.TextToSpeech tts = new android.speech.tts.TextToSpeech(
-                        activity, status -> { });
-                tts.setLanguage(java.util.Locale.CHINA);
-                tts.setSpeechRate(OnsTtsEngines.rate(activity) / 50f);
-                tts.setPitch(Math.max(0.5f, Math.min(2f, OnsTtsEngines.pitch(activity) / 50f)));
-                String vn = OnsTtsEngines.voice(activity);
-                if (!vn.isEmpty() && tts.getVoices() != null) {
-                    for (android.speech.tts.Voice vo : tts.getVoices()) {
-                        if (vo != null && vn.equals(vo.getName())) { tts.setVoice(vo); break; }
+                // TextToSpeech 的初始化是**异步**的：以前用空监听 + 立刻 speak →
+                // 试听永远无声（与"游戏内系统 TTS 从来没成功过"同一个坑）。
+                // 这里改为等 init 回调成功后再设置语言/音色并朗读，失败给可见提示。
+                final String text = testText;
+                final android.speech.tts.TextToSpeech[] holder =
+                        new android.speech.tts.TextToSpeech[1];
+                holder[0] = new android.speech.tts.TextToSpeech(activity, status -> {
+                    if (status != android.speech.tts.TextToSpeech.SUCCESS) {
+                        Toast.makeText(activity, R.string.engine_ons_tts_engine_not_ready,
+                                Toast.LENGTH_LONG).show();
+                        return;
                     }
-                }
-                tts.speak(testText, android.speech.tts.TextToSpeech.QUEUE_FLUSH, null, "tts_test");
+                    try {
+                        android.speech.tts.TextToSpeech t = holder[0];
+                        int langResult = t.setLanguage(java.util.Locale.CHINA);
+                        if (langResult == android.speech.tts.TextToSpeech.LANG_MISSING_DATA
+                                || langResult == android.speech.tts.TextToSpeech.LANG_NOT_SUPPORTED) {
+                            Toast.makeText(activity, R.string.engine_ons_tts_lang_unsupported,
+                                    Toast.LENGTH_LONG).show();
+                            return;
+                        }
+                        t.setSpeechRate(OnsTtsEngines.rate(activity) / 50f);
+                        t.setPitch(Math.max(0.5f, Math.min(2f, OnsTtsEngines.pitch(activity) / 50f)));
+                        String vn = OnsTtsEngines.voice(activity);
+                        if (!vn.isEmpty() && t.getVoices() != null) {
+                            for (android.speech.tts.Voice vo : t.getVoices()) {
+                                if (vo != null && vn.equals(vo.getName())) { t.setVoice(vo); break; }
+                            }
+                        }
+                        t.speak(text, android.speech.tts.TextToSpeech.QUEUE_FLUSH, null, "tts_test");
+                    } catch (Throwable t2) {
+                        Toast.makeText(activity, String.valueOf(t2.getMessage()),
+                                Toast.LENGTH_SHORT).show();
+                    }
+                });
             } catch (Throwable t) {
                 Toast.makeText(activity, String.valueOf(t.getMessage()), Toast.LENGTH_SHORT).show();
             }

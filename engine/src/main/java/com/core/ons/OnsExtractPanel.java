@@ -770,6 +770,9 @@ public class OnsExtractPanel {
                 R.string.engine_ons_extract_auto_toggle, ttsAuto, () -> {
                     ttsAuto = !ttsAuto;
                     p.edit().putBoolean(KEY_TTS_AUTO, ttsAuto).apply();
+                    // **写透到全局「自动朗读」**：否则全局开着时，这里关掉不起作用
+                    // （自动朗读判定是 `ttsAuto || autoRead`）—— 用户反馈"开关没实现控制"。
+                    OnsTtsEngines.setAutoRead(activity, ttsAuto);
                     return ttsAuto;
                 }));
         box.addView(settingRow(R.drawable.ic_multi_tts,
@@ -3171,6 +3174,15 @@ public class OnsExtractPanel {
     // TTS 朗读（无配对语音部分）
     // ------------------------------------------------------------------
 
+    /**
+     * 待补念的系统 TTS 请求（初始化完成前到达，见 ensureTts 的 OnInitListener）。
+     * 只用于系统 TTS 分支；代次变化（切句/停止）时作废。
+     */
+    private String pendingTtsSentence;
+    private int pendingTtsEpoch = -1;
+    /** 初始化是否**失败过**（false 且 !ttsReady 表示仍在初始化中）。 */
+    private boolean ttsInitFailed;
+
     private void ensureTts() {
         // MultiTTS 作为系统 TTS 引擎绑定仅在高级引擎=MultiTTS 时生效
         String desired = multiTtsEnabled
@@ -3185,7 +3197,21 @@ public class OnsExtractPanel {
         }
         android.speech.tts.TextToSpeech.OnInitListener listener = status -> {
             ttsReady = status == android.speech.tts.TextToSpeech.SUCCESS;
+            ttsInitFailed = !ttsReady;
             Log.i(TAG, "tts init ready=" + ttsReady + " engine=" + activeTtsEngine);
+            // **初始化完成前到达的朗读请求不能丢**：TextToSpeech 的 init 是异步的，
+            // 第一句往往还在初始化中；之前直接丢弃 → 表现就是"系统 TTS 从来没出声过"。
+            // 这里就绪后补念（代次已变=已切句/停止，则不补）。
+            if (ttsReady) {
+                final String pending = pendingTtsSentence;
+                final int pendingEpoch = pendingTtsEpoch;
+                pendingTtsSentence = null;
+                pendingTtsEpoch = -1;
+                if (pending != null && !pending.isEmpty() && pendingEpoch == ttsEpoch) {
+                    Log.i(TAG, "tts ready → speak pending: " + pending.length() + " chars");
+                    speakText(pending);
+                }
+            }
         };
         tts = desired == null
                 ? new android.speech.tts.TextToSpeech(activity, listener)
@@ -3306,8 +3332,15 @@ public class OnsExtractPanel {
         }
         ensureTts();
         if (!ttsReady) {
-            // 之前这里静默 return → 用户只看到"点了没声音"（真机：默认 TTS 引擎是
-            // MultiTTS，若它自身服务/发音人未就绪，系统 TTS 这句就永远不会出声）。
+            if (!ttsInitFailed) {
+                // 仍在初始化（异步）：**不丢弃**，等 OnInitListener 就绪后补念。
+                // 之前这里直接 return → "系统 TTS 从来没成功过"的直接原因之一。
+                pendingTtsSentence = sentence;
+                pendingTtsEpoch = epoch;
+                Log.i(TAG, "system tts still initializing → queue utterance");
+                return;
+            }
+            // 初始化真的失败（引擎未就绪/被禁用）：给用户可见提示
             Log.w(TAG, "system tts not ready (engine=" + OnsTtsEngines.engine(activity)
                     + ", default=" + defaultTtsEngineName() + ")");
             toast(R.string.engine_ons_tts_engine_not_ready);
