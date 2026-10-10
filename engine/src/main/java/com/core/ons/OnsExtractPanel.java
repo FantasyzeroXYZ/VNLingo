@@ -3318,12 +3318,22 @@ public class OnsExtractPanel {
             // 也生效——隐藏剧情文本框时更新文本后照常自动朗读）
             final boolean autoOn = ttsAuto || OnsTtsEngines.autoRead(activity);
             if (!autoOn) return;
+            // **有配对语音的对白一律不 TTS**：游戏自己会播那段语音，再念一遍就是双声。
+            // 这条判定必须在最前面（补念分支以前漏了它 → 有语音的句子长出来时仍会念一段）。
+            if (!facade.getVoiceName().isEmpty()) {
+                android.util.Log.i(TAG, "auto speak skipped: 该句有游戏语音 voice="
+                        + facade.getVoiceName());
+                return;
+            }
             // ① 同句补念（去抖后只剩最后一次的新增部分：连切时前面几次已被取消）
             if (suffix != null && !suffix.isEmpty()) {
                 lastSpokenSentence = text;
                 if (!hasSpeakableContent(suffix)) return;
                 android.util.Log.i(TAG, "auto speak append(" + suffix.length() + "): " + suffix);
-                if (ttsEnabled || OnsTtsEngines.autoRead(activity)) speakText(suffix);
+                // 有游戏语音就不念（判定已在函数开头统一做过，这里是双保险）
+                if (facade.getVoiceName().isEmpty() && (ttsEnabled || OnsTtsEngines.autoRead(activity))) {
+                    speakText(suffix);
+                }
                 return;
             }
             if (text.equals(lastSpokenSentence)) return; // 去重：同一句不重复念

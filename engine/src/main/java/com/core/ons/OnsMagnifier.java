@@ -229,15 +229,19 @@ public final class OnsMagnifier {
     private void show() {
         int sw = activity.getResources().getDisplayMetrics().widthPixels;
         int sh = activity.getResources().getDisplayMetrics().heightPixels;
-        int lensW = Math.round(sw * 0.55f);
-        int lensH = Math.round(sh * 0.30f);
-        // 按**选中区域**的宽高比定镜头尺寸：内容不被拉伸，放大倍率 = 镜头宽 / 选区宽
-        if (hasRoi && roi.width() > 0 && roi.height() > 0) {
-            lensH = Math.round(lensW * (float) roi.height() / roi.width());
-            int minH = Math.round(sh * 0.12f), maxH = Math.round(sh * 0.60f);
-            lensH = Math.max(minH, Math.min(lensH, maxH));
-        }
         int ctrlH = Math.round(sh * 0.05f);
+        int margin = dp(activity, 8);
+        // **按倍率放大显示区**：镜头尺寸 = 选区尺寸 × 倍率 —— 内容才是真正被放大的，
+        // 而且能整块容纳（不裁切）。旧实现固定 0.55×屏宽、高度按宽高比反推，遇到
+        // 宽扁选区（例如一行对白）会算成很矮的一条 → 观感就是"没放大"。
+        int zoomI = Math.max(2, Math.round(zoom));
+        int wantW = Math.max(1, roi.width()) * zoomI;
+        int wantH = Math.max(1, roi.height()) * zoomI;
+        int availW = Math.max(1, sw - margin * 2);
+        int availH = Math.max(1, sh - margin * 2 - ctrlH);
+        float fit = Math.min(1f, Math.min((float) availW / wantW, (float) availH / wantH));
+        int lensW = Math.max(dp(activity, 96), Math.round(wantW * fit));
+        int lensH = Math.max(dp(activity, 64), Math.round(wantH * fit));
 
         frame = new LinearLayout(activity);
         frame.setOrientation(LinearLayout.VERTICAL);
@@ -315,9 +319,24 @@ public final class OnsMagnifier {
                 WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE,
                 android.graphics.PixelFormat.TRANSLUCENT);
         lp.gravity = Gravity.TOP | Gravity.START;
-        // 初始位置：右上区域（不压左缘按键列）
-        lp.x = Math.round(sw * 0.42f);
-        lp.y = Math.round(sh * 0.12f);
+        // **不遮挡选区**：优先放在选区正下方，放不下就放上方，再放不下就放屏幕另一侧；
+        // 最后整体钳进屏幕内（含控制条高度）。用户要求：选区不能被放大窗挡住。
+        int winW = lensW;
+        int winH = lensH + ctrlH;
+        int x = roi.centerX() - winW / 2;
+        int y = roi.bottom + margin;
+        if (y + winH > sh - margin) {
+            int above = roi.top - margin - winH;
+            if (above >= margin) {
+                y = above;
+            } else {
+                y = (roi.centerY() < sh / 2) ? (sh - winH - margin) : margin;
+            }
+        }
+        x = Math.max(margin, Math.min(x, sw - winW - margin));
+        y = Math.max(margin, Math.min(y, sh - winH - margin));
+        lp.x = x;
+        lp.y = y;
         activity.getWindowManager().addView(frame, lp);
         shown = true;
         failures = 0;
@@ -376,6 +395,11 @@ public final class OnsMagnifier {
         }
         zoom = next;
         if (zoomLabel != null) zoomLabel.setText(zoomLabel());
+        // 显示区尺寸 = 选区 × 倍率，倍率变了要按新尺寸重建窗口（同时重新避开选区）
+        if (shown) {
+            hideFrame();
+            show();
+        }
     }
 
     private String zoomLabel() {
