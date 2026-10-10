@@ -1366,9 +1366,9 @@ extern "C" bool krkr_bridge_got_hook(const char* library, const char* symbol,
 extern "C" bool krkr_install_extract_hook(void* gameHandle, JNIEnv* env) {
     if (gameHandle == nullptr) return false;
     // 开关必须在最外层作用域声明（下面 env!=nullptr 分支与后续逻辑都要用）
-    static const bool kKrkrExtractEnabled = false;  // 用户实测：开着就闪退/卡启动 → 全关（已验证可用基线）
+    static const bool kKrkrExtractEnabled = true;   // 放行：由用户开关（EXTRACT_HOOK）控制；FT 链仍单独关闭
     static const bool kEnableEngineIdentityLog = true;
-    static const bool kEnableConsoleInlineHook = false;
+    static const bool kEnableConsoleInlineHook = true;   // 控制台链：真机验证安全（round16 luma 104.1）
     // 双开关：编译期硬开关（内核兼容性未确认前保持 false）+ 用户级开关（默认 false）。
     // 只有两者都放开才安装 → 默认状态下绝不会影响游戏启动。
     if (!kKrkrExtractEnabled) {
