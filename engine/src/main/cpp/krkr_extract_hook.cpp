@@ -1316,19 +1316,10 @@ extern "C" bool krkr_install_extract_hook(void* gameHandle, JNIEnv* env) {
     static const bool kKrkrExtractEnabled = true;   // 总开关（延后安装版）
     static const bool kEnableEngineIdentityLog = true;
     static const bool kEnableConsoleInlineHook = true;    // 延后 20s 安装
-    // 【延后安装】宿主在引擎启动早期就调用本函数；此刻挂引擎热函数会拖住启动期上报
-    // （宿主等 `KrkrBridge: launch UI forms ready`，实测两个 KRKR 游戏都卡在"正在启动游戏"）。
-    // 因此：先缓存 JNI 引用（env 只在本次调用有效），再交给后台线程等引擎就绪后安装。
-    {
-        static std::atomic<bool> sDeferred{false};
-        if (!sDeferred.exchange(true)) {
-            std::thread([gameHandle] {
-                std::this_thread::sleep_for(std::chrono::seconds(20));
-                LOGI("krkr extract: deferred install begins (engine should be ready)");
-                krkr_install_extract_hook(gameHandle, nullptr);
-            }).detach();
-        }
-    }
+    // 注：曾用"后台线程延后 20s 安装"来避开启动关键路径，但真机证实
+    // **引擎进程里 std::thread 不可靠**（FT 探针的延后二次调用从未发生）。
+    // 阻塞的真正原因（在渲染线程同步建 65504×N 次字形反查表）已改为异步构建，
+    // 因此这里恢复**立即安装**：挂钩本身只是改几个字节 + 解析符号，开销极小。
     if (env == nullptr) {
         // 延后进入：跳过 JNI 缓存（首次调用已完成），直接挂勾子
     } else {
@@ -1473,22 +1464,13 @@ extern "C" bool krkr_install_extract_hook(void* gameHandle, JNIEnv* env) {
 static bool gFtProbeInstalled = false;
 
 extern "C" bool krkr_install_ft_probe(void* gameHandle, const char* library) {
-    static const bool kEnableFtProbe = true;    // 延后 20s 安装
+    // 【入口即打】无条件的调用轨迹：确认是否被调用、参数、是否二次（延后）进入
+    LOGI("ft probe: ENTER handle=%p library=%s", gameHandle,
+         library != nullptr ? library : "(null)");
+    static const bool kEnableFtProbe = false;   // 真机：FT 链安装本身会卡启动（引擎进程里 std::thread 又不可靠）→ 暂关
     if (!kEnableFtProbe) {
         LOGI("ft probe: DISABLED");
         return false;
-    }
-    {
-        static std::atomic<bool> sDeferred{false};
-        if (!sDeferred.exchange(true)) {
-            std::string lib = library != nullptr ? library : "";
-            std::thread([gameHandle, lib] {
-                std::this_thread::sleep_for(std::chrono::seconds(20));
-                LOGI("ft probe: deferred install begins (engine should be ready)");
-                krkr_install_ft_probe(gameHandle, lib.empty() ? "libfreetype.so" : lib.c_str());
-            }).detach();
-            return true;
-        }
     }
     if (gameHandle == nullptr || library == nullptr) return false;
     if (gFtProbeInstalled) return true;
