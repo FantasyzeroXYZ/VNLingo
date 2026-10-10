@@ -45,7 +45,14 @@ public final class OnsSaveCloud {
     public static final String MODE_WEBDAV = "webdav";
     public static final String MODE_GITHUB = "github";
     private static final String GITHUB_API = "https://api.github.com";
-    private static final String DEFAULT_DIR = "TyranorNext/saves";
+    /**
+     * 本软件在云端**只占一个主文件夹** `VNLingo/`，内部再按用途分子目录：
+     * `VNLingo/VNLingo_sync.json` 主同步快照、`VNLingo/saves/<游戏>/saves.zip` 存档。
+     * （旧版本存档目录是 `TyranorNext/saves`，见 [LEGACY_DIR] 兼容处理。）
+     */
+    private static final String DEFAULT_DIR = "VNLingo/saves";
+    /** 旧版本用过的存档主目录：仍读取/下载，并在下次上传时清理。 */
+    private static final String LEGACY_DIR = "TyranorNext/saves";
 
     /** WebDAV 凭据外部来源：返回 {server, username, password}，null/缺项 = 未配置。 */
     public interface WebDavCredentials {
@@ -190,6 +197,25 @@ public final class OnsSaveCloud {
         return remotePath(prefs(context), cloudName);
     }
 
+    /**
+     * 兼容路径（按优先级，仅在未自定义目录时返回旧目录候选）：
+     * 旧主目录的新布局 → 旧主目录平铺 → 当前目录平铺。读到即可下载，上传时会清理。
+     */
+    public static String[] fallbackRemoteZipPaths(Context context, String cloudName) {
+        SharedPreferences p = prefs(context);
+        String dir = p.getString(KEY_DIR, DEFAULT_DIR);
+        String name = cloudNameFor(cloudName);
+        java.util.List<String> out = new java.util.ArrayList<>();
+        String current = dir.endsWith("/") ? dir : dir + "/";
+        boolean custom = !dir.equals(DEFAULT_DIR) && !dir.equals(LEGACY_DIR);
+        if (!custom) {
+            out.add(LEGACY_DIR + "/" + name + "/" + SAVE_FILE_NAME);
+            out.add(LEGACY_DIR + "/" + name + ".zip");
+        }
+        out.add(current + name + ".zip"); // 同主目录的旧平铺布局
+        return out.toArray(new String[0]);
+    }
+
     /** 旧的平铺路径：dir/name.zip（仅用于兼容读取/迁移清理）。 */
     public static String legacyRemoteZipPath(Context context, String cloudName) {
         return legacyRemotePath(prefs(context), cloudName);
@@ -210,10 +236,13 @@ public final class OnsSaveCloud {
                     String[] target = webdavTarget(p);
                     String base = target[0];
                     if (!base.isEmpty()) {
-                        // 先看新布局（游戏专属子文件夹），没有再回退旧平铺布局
+                        // 先看新布局（VNLingo/saves/<游戏>/saves.zip），再按旧布局候选回退
                         result = headModified(p, base, target, remotePath(p, gameName));
                         if (result == 0) {
-                            result = headModified(p, base, target, legacyRemotePath(p, gameName));
+                            for (String legacy : legacyCandidates(p, gameName)) {
+                                result = headModified(p, base, target, legacy);
+                                if (result > 0) break;
+                            }
                         }
                     }
                 }
@@ -272,20 +301,75 @@ public final class OnsSaveCloud {
                     // 新布局：先建 dir 与 dir/<游戏>/ 两级目录，再写 saves.zip
                     webdavEnsureDir(p, gameName);
                     webdavRequest(p, "PUT", remotePath, zip);
-                    // 迁移：清掉旧平铺布局的 zip（失败无所谓）
-                    try {
-                        webdavRequest(p, "DELETE", legacyRemotePath(p, gameName), null);
-                        Log.i(TAG, "legacy flat zip removed: " + legacyRemotePath(p, gameName));
-                    } catch (Throwable ignored) {
+                    // 迁移清理：旧目录/旧平铺布局里的同名内容（失败无所谓）
+                    for (String legacy : legacyCandidates(p, gameName)) {
+                        try {
+                            webdavRequest(p, "DELETE", legacy, null);
+                            Log.i(TAG, "legacy remote removed: " + legacy);
+                        } catch (Throwable ignored) {
+                        }
+                    }
+                    // 顺带删旧目录留下的空文件夹（服务端对非空目录会拒绝，安全）
+                    if (!MODE_GITHUB.equals(p.getString(KEY_MODE, MODE_WEBDAV))) {
+                        for (String dir : legacyEmptyDirs(p)) {
+                            try {
+                                mkcolQuietDelete(p, dir);
+                            } catch (Throwable ignored) {
+                            }
+                        }
                     }
                 }
             }
         });
     }
 
+    /** 旧布局候选（旧主目录新布局 / 旧主目录平铺 / 当前主目录平铺）。 */
+    private static java.util.List<String> legacyCandidates(SharedPreferences p, String gameName) {
+        String dir = p.getString(KEY_DIR, DEFAULT_DIR);
+        String name = cloudNameFor(gameName);
+        java.util.List<String> out = new java.util.ArrayList<>();
+        boolean custom = !dir.equals(DEFAULT_DIR) && !dir.equals(LEGACY_DIR);
+        String current = dir.endsWith("/") ? dir : dir + "/";
+        if (!custom) {
+            out.add(LEGACY_DIR + "/" + name + "/" + SAVE_FILE_NAME);
+            out.add(LEGACY_DIR + "/" + name + ".zip");
+        }
+        out.add(current + name + ".zip");
+        return out;
+    }
+
+    /**
+     * 旧目录里应当被清掉的空文件夹（删除空 collection 成功、非空会被服务端拒绝，
+     * 因此顺序放在文件删除之后是安全的）。
+     */
+    private static java.util.List<String> legacyEmptyDirs(SharedPreferences p) {
+        String dir = p.getString(KEY_DIR, DEFAULT_DIR);
+        boolean custom = !dir.equals(DEFAULT_DIR) && !dir.equals(LEGACY_DIR);
+        java.util.List<String> out = new java.util.ArrayList<>();
+        if (custom) return out;
+        out.add(LEGACY_DIR);                       // TyranorNext/saves
+        out.add(LEGACY_DIR.substring(0, LEGACY_DIR.indexOf('/'))); // TyranorNext
+        return out;
+    }
+
+    /** DELETE 一个 collection（空目录才会成功；失败仅记日志）。 */
+    private static void mkcolQuietDelete(SharedPreferences p, String path) {
+        try {
+            String[] target = webdavTarget(p);
+            String base = target[0];
+            if (base.isEmpty()) return;
+            int code = rawRequest("DELETE",
+                    (base.endsWith("/") ? base : base + "/") + path,
+                    target[1], target[2]);
+            Log.i(TAG, "DELETE dir " + path + " -> " + code);
+        } catch (Throwable t) {
+            Log.w(TAG, "DELETE dir " + path + " failed", t);
+        }
+    }
+
     /**
      * 下载 zip 到 dest（后台线程执行）。云端不存在时 callback(false, "404")。
-     * 新布局找不到时回退旧平铺布局（老用户上传的内容仍可下载）。
+     * 新布局找不到时按 [legacyCandidates] 顺序回退（老用户上传的内容仍可下载）。
      */
     public static void download(Context context, String gameName, File dest, Callback callback) {
         run(context, gameName, callback, new Transfer() {
@@ -303,10 +387,18 @@ public final class OnsSaveCloud {
                 };
                 try {
                     get.run(p, remotePath);
-                } catch (Throwable t) {
-                    String legacy = legacyRemotePath(p, gameName);
-                    Log.w(TAG, "download " + remotePath + " failed, try legacy " + legacy, t);
-                    get.run(p, legacy);
+                } catch (Throwable first) {
+                    Throwable last = first;
+                    for (String legacy : legacyCandidates(p, gameName)) {
+                        try {
+                            Log.w(TAG, "download " + remotePath + " failed, try " + legacy, last);
+                            get.run(p, legacy);
+                            return;
+                        } catch (Throwable t) {
+                            last = t;
+                        }
+                    }
+                    throw last instanceof Exception ? (Exception) last : new IllegalStateException(last);
                 }
             }
         });

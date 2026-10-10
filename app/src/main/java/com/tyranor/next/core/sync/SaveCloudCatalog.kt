@@ -161,16 +161,20 @@ class SaveCloudCatalog(private val context: Context) {
             try {
                 val client = WebDavClient(base, target.getOrNull(1).orEmpty(), target.getOrNull(2).orEmpty())
                 val fresh = OnsSaveCloud.remoteZipPath(appContext, row.cloudName)
-                val legacy = OnsSaveCloud.legacyRemoteZipPath(appContext, row.cloudName)
+                val legacyPaths = OnsSaveCloud.fallbackRemoteZipPaths(appContext, row.cloudName)
                 var ok = client.delete(fresh)
-                if (!ok) {
-                    ok = client.delete(legacy)
-                } else {
-                    // 顺带清掉旧布局遗留的同类 zip（迁移后可能还留着）
-                    client.delete(legacy)
-                    // 再删空的游戏子文件夹（服务端对非空目录会拒绝，失败无所谓）
+                if (ok) {
+                    // 顺带清旧布局遗留（迁移后可能还在），并删空的游戏子文件夹
+                    for (legacy in legacyPaths) client.delete(legacy)
                     val gameDir = fresh.substringBeforeLast('/') + "/"
                     client.delete(gameDir)
+                } else {
+                    for (legacy in legacyPaths) {
+                        if (client.delete(legacy)) {
+                            ok = true
+                            break
+                        }
+                    }
                 }
                 onResult(ok, if (ok) "已删除云端存档" else "删除失败")
             } catch (t: Throwable) {
@@ -215,13 +219,16 @@ class SaveCloudCatalog(private val context: Context) {
         val out = HashMap<String, Long>()
         for (name in cloudNames) {
             val modified = try {
-                val fresh = OnsSaveCloud.remoteZipPath(appContext, name)
-                var value = client.getLastModified(fresh)
+                var value = client.getLastModified(OnsSaveCloud.remoteZipPath(appContext, name))
                 if (value <= 0) {
-                    // 旧平铺布局兼容
-                    val legacy = OnsSaveCloud.legacyRemoteZipPath(appContext, name)
-                    value = client.getLastModified(legacy)
-                    if (value > 0) Log.i(TAG, "cloud save uses legacy path: $legacy")
+                    // 旧布局兼容：旧主目录（TyranorNext/saves）与旧平铺文件
+                    for (legacy in OnsSaveCloud.fallbackRemoteZipPaths(appContext, name)) {
+                        value = client.getLastModified(legacy)
+                        if (value > 0) {
+                            Log.i(TAG, "cloud save uses legacy path: $legacy")
+                            break
+                        }
+                    }
                 }
                 value
             } catch (t: Throwable) {

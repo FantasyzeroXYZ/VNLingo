@@ -1173,3 +1173,14 @@
    真机验证：`MKCOL TyranorNext/saves/ESG-13556/ -> 201`、`legacy flat zip removed`、
    新路径 HEAD=200 / 旧路径 404；刷新列表后日志不再出现 legacy 回退（说明已读新路径）。
    注：坚果云对目录 HEAD 返回 403（不支持 HEAD 集合），属正常。
+29. **云端只占一个主文件夹 VNLingo/（2026-10-10）**：
+   布局统一为：
+     VNLingo/VNLingo_sync.json              主同步快照（SyncManager，原本就在这层）
+     VNLingo/saves/<游戏>/saves.zip          存档云同步（每游戏一个子文件夹）
+   此前存档通道默认目录是 `TyranorNext/saves` → 云端出现两个顶层文件夹，已改默认值为
+   `VNLingo/saves`，并在 UPLOAD 时清理旧目录：
+   - 删旧文件（`TyranorNext/saves/<游戏>/saves.zip`、`TyranorNext/saves/<游戏>.zip`）；
+   - 删旧空目录（`DELETE TyranorNext/saves -> 204`）。
+   读取侧保留全部旧布局回退（`fallbackRemoteZipPaths`），老上传不会丢。
+   实测：`DELETE dir TyranorNext -> 403`（坚果云不允许删顶层目录，即使为空），
+   旧目录已空、需用户在客户端手动删一次；之后云端只剩 `VNLingo/`。
