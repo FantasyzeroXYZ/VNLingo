@@ -1059,3 +1059,20 @@
    教训：读引擎内部结构参数前先在真机验证；新钩子先只记"被调用"，别一上来就读参数。
    修复：CommandVideo/CommandWait 只计数与打日志，不读参数；影片跳过后标记一次，
    让紧随其后的 wait 也过掉（官方内核版的"影片容错"）。
+22. **Artemis 补丁卷 `.pfs.NNN` 的扫描上限（已真机闭环，2026-10-10）**：
+   自研 clean 内核 `D:\Desktop\artemis-compat` 的 `src/pack/pack_manager.cpp:44`：
+   `for (uint32_t idx = 0; idx < 64; ++idx)` —— 只探测补丁卷 `.000`~`.063`。
+   本作日语补丁是 `TheShell.pfs.080`（索引 80）→ **从未被挂载** → 用的是基础 PFS 里的表
+   （语言行只有 en/cn/tw 三行）→ 设置页没有「日本語」。
+   改名 `TheShell.pfs.080` → `TheShell.pfs.062` 后，**真机确认设置页出现日语选项** ✓。
+   根治：把上限提高（如 128/999）并重编 `build-artemis`（`cmake --build build-android -j8`），
+   替换 `files/engine_plugins/artemis/current/arm64-v8a/libartemis-clean.so`。
+   排查中被证伪的推断（记下来避免重复走）：
+   - ✗「补丁没被解出来」：App 解包正常（表尺寸等于补丁版）；
+   - ✗「缺 pc/ja 资源」：补丁只给 en/cn/tw 图，与日语行无关；
+   - ✗「auth.lua 覆盖导致」：清空后无变化；
+   - ✗「list_windows→list_android 重命名」：无关；
+   根因是 `PackManager::Read` 的**包内优先、松散文件兜底**——所以 App 往游戏目录放什么都不生效，
+   只有让内核挂载到补丁卷才行。**这条也解释了为什么 App 侧所有尝试都"没反应"。**
+   （`system/extend/**` 不覆盖的修复仍保留：那是防止破坏用户/补丁覆盖文件的健壮性修复，
+   不是本问题的原因——之前提交信息里把它写成"真因"是错的，以本条为准。）
