@@ -804,6 +804,49 @@ static const char* kEngineTraits[] = {
         "KiriKiriZ", "krkrz", "KAGParser", "KAG3", "TVPMainScene", "TVP", ".tjs",
 };
 
+/**
+ * 列出模块里**与文本相关的导出符号**（.dynstr 是明文串表，按关键字筛即可，无需解析 ELF）。
+ *
+ * 目的（对齐 LunaHook 的"先识别、再选靶"）：KRKR 常把 C++ 符号隐藏，dlsym 时有时无；
+ * 只有先看清 libgame.so 里到底有哪些与文本/标签相关的名字，才能决定钩谁、或改走代码特征。
+ */
+static void dumpTextSymbols(const char* path, const char* tag) {
+    FILE* f = std::fopen(path, "rb");
+    if (f == nullptr) return;
+    static const char* kKeywords[] = {"Label", "Text", "String", "KAG", "TVP", "Glyph", "Font"};
+    std::unordered_set<std::string> found;
+    std::string cur;
+    char buf[1 << 20];
+    size_t n;
+    int printed = 0;
+    while ((n = std::fread(buf, 1, sizeof(buf), f)) > 0) {
+        for (size_t i = 0; i < n; ++i) {
+            const unsigned char c = static_cast<unsigned char>(buf[i]);
+            if (c >= 0x20 && c < 0x7f) {
+                cur.push_back(static_cast<char>(c));
+                if (cur.size() > 512) cur.erase(0, cur.size() - 512);
+                continue;
+            }
+            if (cur.size() >= 4) {
+                bool hit = false;
+                for (const char* kw : kKeywords) {
+                    if (cur.find(kw) != std::string::npos) { hit = true; break; }
+                }
+                // 只收像符号的名字（含 _ZN/_ZTV 前缀的 mangled 名，或含 :: 的裸名）
+                if (hit && (cur.rfind("_Z", 0) == 0 || cur.find("::") != std::string::npos)) {
+                    if (found.insert(cur).second && printed < 80) {
+                        ++printed;
+                        LOGI("extract symbols[%s]: %s", tag, cur.c_str());
+                    }
+                }
+            }
+            cur.clear();
+        }
+    }
+    std::fclose(f);
+    LOGI("extract symbols[%s]: total=%zu (keyword-filtered, capped at 80)", tag, found.size());
+}
+
 static bool fileContainsTrait(const char* path, const char* needle, size_t limitBytes) {
     FILE* f = std::fopen(path, "rb");
     if (f == nullptr) return false;
@@ -864,6 +907,10 @@ static void logEngineIdentity(void* gameHandle) {
         }
         LOGI("extract identify: module=%s traits=[%s]", path.c_str(),
              traits.empty() ? "-" : traits.c_str());
+        // 有引擎特征串的就是游戏内核：列出它的文本相关导出符号（选靶依据）
+        if (!traits.empty()) {
+            dumpTextSymbols(path.c_str(), "engine");
+        }
     }
     std::fclose(maps);
 }
@@ -903,14 +950,18 @@ extern "C" bool krkr_install_extract_hook(void* gameHandle, JNIEnv* env) {
         }
     }
 
+    // ① 无条件打印引擎身份与候选目标命中情况（对齐 LunaHook 的"先识别引擎"）：
+    // 之前只在失败时打印 → "成功挂上却拿不到文本"时（Yosuga：armed 但 raw=0）无从判断内核版本。
+    logEngineIdentity(gameHandle);
+
     void* target = dlsym(gameHandle, kLabelSetString);
     if (target == nullptr) {
-        // 失败要吵：先打印引擎身份与候选命中情况，再给出结论（对齐 LunaHook 的识别流程）
-        LOGW("extract hook: Label::setString not found in game lib → identifying engine");
-        logEngineIdentity(gameHandle);
-        __android_log_print(ANDROID_LOG_ERROR, "KrkrExtract", "extract hook: no known dialogue target matched (build lacks Label::setString)");
+        // 失败要吵：身份已在上面打过，这里给结论
+        __android_log_print(ANDROID_LOG_ERROR, "KrkrExtract",
+                "extract hook: no known dialogue target matched (build lacks Label::setString)");
         return false;
     }
+    LOGI("extract hook: target resolved Label::setString @%p", target);
 
     // 首选 shadowhook inline hook（信号护栏内探测：部分 ROM 上 shadowhook_init
     // 直接 abort）；护栏返回 false（含崩溃）一律退虚表补丁兜底
