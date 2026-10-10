@@ -1373,9 +1373,6 @@ extern "C" bool krkr_install_extract_hook(void* gameHandle, JNIEnv* env) {
     //   A 引擎识别日志（同步读 maps/扫模块/转储符号，最可疑）
     //   B TVPConsoleLog inline hook（核心提取通道）
     //   C FT 字形链（GOT + 按-face 反查表 + 停顿直发）
-    static const bool kKrkrExtractEnabled = true;   // 总开关（延后安装版）
-    static const bool kEnableEngineIdentityLog = true;
-    static const bool kEnableConsoleInlineHook = true;    // 延后 20s 安装
     if (!kKrkrExtractEnabled) {
         LOGW("krkr extract hooks DISABLED (regression emergency switch)");
         return false;
