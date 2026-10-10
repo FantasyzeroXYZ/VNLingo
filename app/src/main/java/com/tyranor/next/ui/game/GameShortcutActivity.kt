@@ -60,6 +60,8 @@ class GameShortcutActivity : ComponentActivity() {
                 if (game == null) {
                     Log.w(TAG, "shortcut unresolved id=$shortcutId title=$shortcutTitle pinned=$pinnedLabel")
                     showUnavailable()
+                    // 不再静默退回桌面（用户会误判成"闪退"）：直接带用户进游戏库自行选择。
+                    openLibraryFallback()
                     return@launch
                 }
                 if (GameShortcutManager.shortcutId(game.uri) != shortcutId) {
@@ -119,6 +121,19 @@ class GameShortcutActivity : ComponentActivity() {
         }
     }
 
+    /** 打开游戏库（快捷方式失效时的兜底去向，替代"静默退回桌面"）。 */
+    private fun openLibraryFallback() {
+        runCatching {
+            startActivity(
+                android.content.Intent(this, com.tyranor.next.MainActivity::class.java)
+                    .addFlags(
+                        android.content.Intent.FLAG_ACTIVITY_NEW_TASK or
+                            android.content.Intent.FLAG_ACTIVITY_CLEAR_TOP
+                    )
+            )
+        }
+    }
+
     /** Shows the localized missing-game message without changing launcher state. */
     private fun showUnavailable() {
         Toast.makeText(localizedContext, R.string.game_desktop_shortcut_unavailable, Toast.LENGTH_LONG).show()
@@ -139,6 +154,17 @@ class GameShortcutActivity : ComponentActivity() {
     /** Shows the missing-game message and closes the transparent trampoline. */
     private fun showUnavailableAndFinish() {
         showUnavailable()
+        // 快捷方式失效（典型场景：游戏条目被扫描去重合并后 uri 变化，旧 shortcutId 不再解析）
+        // → 直接带用户进游戏库，而不是静默退回桌面（用户会误判为"闪退"）。
+        runCatching {
+            startActivity(
+                android.content.Intent(this, com.tyranor.next.MainActivity::class.java)
+                    .addFlags(
+                        android.content.Intent.FLAG_ACTIVITY_NEW_TASK or
+                            android.content.Intent.FLAG_ACTIVITY_CLEAR_TOP
+                    )
+            )
+        }
         finish()
     }
 
