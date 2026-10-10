@@ -3305,9 +3305,24 @@ public class OnsExtractPanel {
             return;
         }
         ensureTts();
-        if (!ttsReady) return;
+        if (!ttsReady) {
+            // 之前这里静默 return → 用户只看到"点了没声音"（真机：默认 TTS 引擎是
+            // MultiTTS，若它自身服务/发音人未就绪，系统 TTS 这句就永远不会出声）。
+            Log.w(TAG, "system tts not ready (engine=" + OnsTtsEngines.engine(activity)
+                    + ", default=" + defaultTtsEngineName() + ")");
+            toast(R.string.engine_ons_tts_engine_not_ready);
+            return;
+        }
         try {
-            tts.setLanguage(ttsLocale(sentence));
+            int langResult = tts.setLanguage(ttsLocale(sentence));
+            if (langResult == android.speech.tts.TextToSpeech.LANG_MISSING_DATA
+                    || langResult == android.speech.tts.TextToSpeech.LANG_NOT_SUPPORTED) {
+                // 语言/发音人缺失同样是"静默无声"的常见原因，必须让用户看见。
+                Log.w(TAG, "system tts language unsupported: result=" + langResult
+                        + " engine=" + defaultTtsEngineName());
+                toast(R.string.engine_ons_tts_lang_unsupported);
+                return;
+            }
             tts.setSpeechRate(ttsRate / 100f);
             // 音高/发音人来自 TTS 设置（pitch 0..100 → 系统引擎 0.5..2.0，50=1.0x）
             float pitchFactor = OnsTtsEngines.pitch(activity) / 50f;
@@ -3350,8 +3365,25 @@ public class OnsExtractPanel {
         }
     }
 
-    private void stopTts() {
-        // 作废所有在途的异步合成（见 ttsEpoch 注释）：否则它们回来后会播上一条的声音。
+    /** 系统默认 TTS 引擎包名（诊断"系统 TTS 无声"用；真机上常见默认就是 MultiTTS）。 */
+    private String defaultTtsEngineName() {
+        try {
+            if (tts != null) {
+                String name = tts.getDefaultEngine();
+                if (name != null && !name.isEmpty()) return name;
+            }
+        } catch (Throwable ignored) {
+        }
+        try {
+            String name = android.provider.Settings.Secure.getString(
+                    activity.getContentResolver(), "tts_default_synth");
+            if (name != null && !name.isEmpty()) return name;
+        } catch (Throwable ignored) {
+        }
+        return "?";
+    }
+
+    private void stopTts() {        // 作废所有在途的异步合成（见 ttsEpoch 注释）：否则它们回来后会播上一条的声音。
         ttsEpoch++;
         if (tts != null) {
             try { tts.stop(); } catch (Throwable ignored) {}
