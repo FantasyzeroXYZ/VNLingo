@@ -901,7 +901,7 @@ void krkrLateFtMaybe() {
         gKrkrFirstConsoleAt = now;
         return;
     }
-    if (now - gKrkrFirstConsoleAt < std::chrono::seconds(30)) return;
+    if (now - gKrkrFirstConsoleAt < std::chrono::seconds(5)) return;   // 5s：游戏早期活动即可触发
     if (gKrkrLateDone.exchange(true)) return;
     LOGI("ft probe: LATE install triggered (engine running, label/console active ≥30s)");
     krkr_install_ft_probe(gKrkrLateHandle,
@@ -1352,9 +1352,9 @@ extern "C" bool krkr_bridge_got_hook(const char* library, const char* symbol,
 extern "C" bool krkr_install_extract_hook(void* gameHandle, JNIEnv* env) {
     if (gameHandle == nullptr) return false;
     // 开关必须在最外层作用域声明（下面 env!=nullptr 分支与后续逻辑都要用）
-    static const bool kKrkrExtractEnabled = true;   // 总开关（延后安装版）
+    static const bool kKrkrExtractEnabled = false;  // 用户实测：开着就闪退/卡启动 → 全关（已验证可用基线）
     static const bool kEnableEngineIdentityLog = true;
-    static const bool kEnableConsoleInlineHook = true;
+    static const bool kEnableConsoleInlineHook = false;
     // 记录句柄：迟到安装 FT 链需要它（库名未知时由迟到安装自行回退/探测）
     if (gKrkrLateHandle == nullptr) gKrkrLateHandle = gameHandle;
     // 注：曾用"后台线程延后 20s 安装"来避开启动关键路径，但真机证实
@@ -1508,7 +1508,7 @@ extern "C" bool krkr_install_ft_probe(void* gameHandle, const char* library) {
     // 【入口即打】无条件的调用轨迹：确认是否被调用、参数、是否二次（延后）进入
     LOGI("ft probe: ENTER handle=%p library=%s", gameHandle,
          library != nullptr ? library : "(null)");
-    static const bool kEnableFtProbe = true;
+    static const bool kEnableFtProbe = false;
     // 【运行时安装】真机证实：FT 链若在引擎启动期安装会卡住启动（宿主等不到 UI 就绪）。
     // 因此这里**不在启动期装**，改为由控制台活动 + 时间触发的"迟到安装"（见 krkrLateFtMaybe）。
     static const bool kInstallAtStartup = false;
