@@ -137,8 +137,8 @@
     <string name="engine_ons_side_settings">Game settings</string>
     <string name="engine_ons_tts_engine_not_ready">TTS engine not ready (check the default TTS engine/voice)</string>
     <string name="engine_ons_tts_lang_unsupported">Language/voice unavailable (switch engine or voice)</string>
-    <string name="engine_ons_tts_sys_engine">System TTS engine</string>
-    <string name="engine_ons_tts_sys_engine_default">Follow system default</string>
+    <string name="engine_ons_tts_sys_engine">Engine under Android built-in service</string>
+    <string name="engine_ons_tts_sys_engine_default">Follow Android default engine</string>
     <string name="engine_ons_tts_sys_settings">Open system TTS settings</string>
     <string name="engine_ons_tts_streaming">Stream TTS playback (lower latency)</string>
     <string name="engine_ons_settings_game_volume">In-app game volume</string>
@@ -276,7 +276,7 @@
     <string name="engine_ons_anki_target_missing">Deck or model no longer exists in AnkiDroid (deck %1$s / model %2$s) — pick again</string>
     <string name="engine_ons_anki_card_model_unset">No model selected yet — pick an existing AnkiDroid note type above (nothing is preset or auto-created)</string>
     <string name="engine_ons_tts_title">TTS settings</string>
-    <string name="engine_ons_tts_engine">TTS engine</string>
+    <string name="engine_ons_tts_engine">TTS service</string>
     <string name="engine_ons_tts_engine_multi">MultiTTS</string>
     <string name="engine_ons_tts_engine_http">Custom HTTP API</string>
     <string name="engine_ons_tts_engine_system">Android system TTS</string>

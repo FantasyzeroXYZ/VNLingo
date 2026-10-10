@@ -137,8 +137,8 @@
     <string name="engine_ons_side_settings">ゲーム設定</string>
     <string name="engine_ons_tts_engine_not_ready">TTS エンジン未準備（既定の TTS エンジン/音声を確認）</string>
     <string name="engine_ons_tts_lang_unsupported">言語/音声が利用できません（エンジン/音声を変更）</string>
-    <string name="engine_ons_tts_sys_engine">システム TTS エンジン</string>
-    <string name="engine_ons_tts_sys_engine_default">システム既定に従う</string>
+    <string name="engine_ons_tts_sys_engine">Android 標準サービス内のエンジン</string>
+    <string name="engine_ons_tts_sys_engine_default">Android 既定エンジンに従う</string>
     <string name="engine_ons_tts_sys_settings">システム TTS 設定を開く</string>
     <string name="engine_ons_tts_streaming">TTS ストリーミング再生（低遅延）</string>
     <string name="engine_ons_settings_game_volume">ゲーム音量（アプリ内）</string>
@@ -278,10 +278,10 @@
     <string name="engine_ons_anki_target_missing">デッキまたはモデルが AnkiDroid に存在しません（デッキ %1$s / モデル %2$s）。選び直してください</string>
     <string name="engine_ons_anki_card_model_unset">モデル未選択：上の「モデル名」で AnkiDroid 既存のモデルを選んでください（本アプリはプリセット/自動生成しません）</string>
     <string name="engine_ons_tts_title">TTS 設定</string>
-    <string name="engine_ons_tts_engine">TTS エンジン</string>
+    <string name="engine_ons_tts_engine">TTS サービス</string>
     <string name="engine_ons_tts_engine_multi">MultiTTS</string>
     <string name="engine_ons_tts_engine_http">カスタム HTTP API</string>
-    <string name="engine_ons_tts_engine_system">Android 標準 TTS</string>
+    <string name="engine_ons_tts_engine_system">Android 標準サービス</string>
     <string name="engine_ons_tts_http_template">HTTP URL テンプレート（{text} を URL エンコードしたテキストに置換。TTS Server / LunaTranslator の /api/tts?text={text} など）</string>
     <string name="engine_ons_tts_http_template_invalid">テンプレートが無効です：http(s) で始まり {text} を含む必要があります</string>
     <string name="engine_ons_tts_test">テスト（現在のエンジンで読み上げ）</string>

@@ -137,8 +137,8 @@
     <string name="engine_ons_side_settings">游戏设置</string>
     <string name="engine_ons_tts_engine_not_ready">TTS 引擎未就绪（检查默认 TTS 引擎/发音人）</string>
     <string name="engine_ons_tts_lang_unsupported">该语言/发音人不可用（换引擎或发音人）</string>
-    <string name="engine_ons_tts_sys_engine">系统 TTS 引擎</string>
-    <string name="engine_ons_tts_sys_engine_default">跟随系统默认</string>
+    <string name="engine_ons_tts_sys_engine">安卓自带服务下的引擎</string>
+    <string name="engine_ons_tts_sys_engine_default">跟随安卓默认引擎</string>
     <string name="engine_ons_tts_sys_settings">打开系统 TTS 设置</string>
     <string name="engine_ons_tts_streaming">TTS 流式播放（降低延迟）</string>
     <string name="engine_ons_settings_game_volume">游戏音量（软件内）</string>
@@ -278,15 +278,15 @@
     <string name="engine_ons_anki_target_missing">牌组或模板在 AnkiDroid 中不存在（牌组 %1$s / 模板 %2$s），请重新选择</string>
     <string name="engine_ons_anki_card_model_unset">尚未选择模板：请在上方「模型名」中选择 AnkiDroid 已有模板（本应用不预设、不自动创建模板）</string>
     <string name="engine_ons_tts_title">TTS 设置</string>
-    <string name="engine_ons_tts_engine">TTS 引擎</string>
+    <string name="engine_ons_tts_engine">TTS 服务</string>
     <string name="engine_ons_tts_engine_multi">MultiTTS</string>
     <string name="engine_ons_tts_engine_http">自定义 HTTP API</string>
-    <string name="engine_ons_tts_engine_system">安卓自带 TTS</string>
+    <string name="engine_ons_tts_engine_system">安卓自带服务</string>
     <string name="engine_ons_tts_http_template">HTTP URL 模板（含 {text} 占位符，合成时替换为 URL 编码文本；如 TTS Server / LunaTranslator 的 /api/tts?text={text}）</string>
     <string name="engine_ons_tts_http_template_invalid">模板无效：需以 http(s) 开头且包含 {text}</string>
     <string name="engine_ons_tts_test">试听（用当前引擎朗读测试句）</string>
     <string name="engine_ons_tts_test_done">试听已请求</string>
-    <string name="engine_ons_tts_system_hint">安卓自带 TTS：使用系统 TextToSpeech 直呼（无音频产物，不用于制卡音频）；高级引擎关闭时朗读走此路径</string>
+    <string name="engine_ons_tts_system_hint">安卓自带服务：使用系统 TextToSpeech 直呼（无音频产物，不用于制卡音频）；选中后可在下面指定用哪个安卓已有引擎（跟随默认则用系统当前默认）</string>
     <string name="engine_ons_tts_rate">语速</string>
     <string name="engine_ons_tts_pitch">音高</string>
     <string name="engine_ons_tts_volume">音量</string>
