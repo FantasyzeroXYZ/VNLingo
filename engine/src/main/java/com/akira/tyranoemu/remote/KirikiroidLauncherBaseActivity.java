@@ -80,7 +80,9 @@ public abstract class KirikiroidLauncherBaseActivity extends KR2Activity {
     private volatile com.core.ons.OnsExtractPanel extractPanel;
     /** 统一虚拟鼠标（手柄移动光标 + A 键合成触摸点击）；点击模式键开关，默认关。 */
     private com.core.engine.EngineVirtualMouse virtualMouse;
-    private boolean virtualMouseMode;
+    // 控制模式统一走 EngineControlMode（开发准则：共通抽象 + 差异适配）——
+    // 此前本类手写「字段 + toggle + prefs」三件套，与 ONS/Artemis 各自漂移。
+    private com.core.engine.EngineControlMode controlMode;
     private static final String PREF_KRKR_MOUSE_MODE = "krkr_virtual_mouse";
     private volatile boolean firstFrameRendered;
     private volatile boolean launchDispatched;
@@ -768,8 +770,7 @@ public abstract class KirikiroidLauncherBaseActivity extends KR2Activity {
                 Log.i(TAG, "virtual mouse skipped: GL surface not found");
                 return;
             }
-            virtualMouseMode = getSharedPreferences(PREF_KRKR_MOUSE_MODE, MODE_PRIVATE)
-                    .getBoolean(PREF_KRKR_MOUSE_MODE, false);
+            controlMode = com.core.engine.EngineControlMode.load(this, PREF_KRKR_MOUSE_MODE, PREF_KRKR_MOUSE_MODE, false);
             virtualMouse = new com.core.engine.EngineVirtualMouse(overlay,
                     () -> surface,
                     (v, x, y) -> {
@@ -795,7 +796,12 @@ public abstract class KirikiroidLauncherBaseActivity extends KR2Activity {
                                 }, 60);
                     },
                     (x, y) -> extractPanel != null && extractPanel.dispatchCursorClick(x, y));
-            if (!virtualMouseMode) virtualMouse.hideCursor();
+            // 启动时按持久化的模式同步光标可见性（否则恢复为鼠标模式时右缘「点击模式」键
+            // 显示"鼠标"、实际却没有光标 → 用户反馈的"模式错乱、与右侧控制模式不一致"）
+            controlMode.applyTo(virtualMouse, null);
+            // 侧键创建早于上面的 prefs 读取，图标会定格在字段初值 → 补刷一次，
+            // 否则右缘「点击模式」键与实际模式不一致（同 Artemis）。
+            if (extractPanel != null) extractPanel.refreshClickModeButton();
             Log.i(TAG, "virtual mouse installed (krkr)");
         } catch (Throwable t) {
             Log.w(TAG, "install virtual mouse failed", t);
@@ -803,18 +809,11 @@ public abstract class KirikiroidLauncherBaseActivity extends KR2Activity {
     }
 
     private boolean isVirtualMouseMode() {
-        return virtualMouseMode;
+        return controlMode != null && controlMode.isMouseMode();
     }
 
     private void toggleVirtualMouseMode() {
-        virtualMouseMode = !virtualMouseMode;
-        getSharedPreferences(PREF_KRKR_MOUSE_MODE, MODE_PRIVATE).edit()
-                .putBoolean(PREF_KRKR_MOUSE_MODE, virtualMouseMode).apply();
-        if (virtualMouse != null) {
-            // 切进鼠标立即显示光标（触屏设备没有方向键可按）；切回触摸隐藏
-            if (virtualMouseMode) virtualMouse.showCursor();
-            else virtualMouse.hideCursor();
-        }
+        if (controlMode != null) controlMode.toggle();
     }
 
     /** 引擎键注入：经 KR2 的 nativeKeyAction 直达引擎（BACK 由内核映射为 ESC）。 */
@@ -887,7 +886,7 @@ public abstract class KirikiroidLauncherBaseActivity extends KR2Activity {
         }
         // 统一路由：虚拟鼠标（仅鼠标模式；D-pad/摇杆移动光标、A 键点击）
         if (com.core.engine.EngineOverlayRouting.routeKey(
-                extractPanel, virtualMouse, virtualMouseMode, mapped)) {
+                extractPanel, virtualMouse, isVirtualMouseMode(), mapped)) {
             return true;
         }
         // 决定/回车类按键透传给游戏 = 推进尝试（连续页累积的边界信号）；
@@ -902,9 +901,13 @@ public abstract class KirikiroidLauncherBaseActivity extends KR2Activity {
 
     @Override
     public boolean dispatchGenericMotionEvent(android.view.MotionEvent event) {
+        // 扳机轴边沿 → 合成 R2/L2 键事件（Xbox 等手柄扳机只报轴量、没有键事件，
+        // 见 com.core.engine.TriggerAxisKeys）；合成键走完整按键链路。
+        android.view.KeyEvent triggerKey = com.core.engine.TriggerAxisKeys.apply(event);
+        if (triggerKey != null) return dispatchKeyEvent(triggerKey);
         // 统一路由：面板展开时轴事件全吞，否则左摇杆连续移动虚拟光标
         if (com.core.engine.EngineOverlayRouting.routeMotion(
-                extractPanel, virtualMouse, virtualMouseMode, event)) {
+                extractPanel, virtualMouse, isVirtualMouseMode(), event)) {
             return true;
         }
         return super.dispatchGenericMotionEvent(event);

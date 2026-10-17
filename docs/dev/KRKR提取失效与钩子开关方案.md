@@ -245,7 +245,7 @@ I KrkrExtract: ft probe GOT hooked (FT_Get_Char_Index)
    （禁止 `ctx as Activity`，历史闪退根因）；i18n 三 locale 同步补键；
    改动后补 PROGRESS/MEMORY/待办三件套。
 
-**验收**：设置页开关切换后，`adb shell run-as com.tyranor.next cat shared_prefs/*.xml`
+**验收**：设置页开关切换后，`adb shell run-as com.vnlingo.app cat shared_prefs/*.xml`
 能看到对应 key 落盘；关闭后启动某 ONS/KRKR 游戏，日志出现
 `setExtractHookEnabled(false)` 语义（KRKR）或面板不出文本（ONS/Artemis）。
 

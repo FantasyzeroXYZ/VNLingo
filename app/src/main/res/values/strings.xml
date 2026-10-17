@@ -263,7 +263,7 @@
     <string name="settings_qq_group">企鹅群聊</string>
     <string name="settings_telegram_channel">飞机频道</string>
     <string name="update_found_title">发现新版本</string>
-    <string name="update_version_item">TyranorNext：%1$s</string>
+    <string name="update_version_item">VNLingo：%1$s</string>
     <string name="update_download_cancel">取消下载</string>
     <string name="update_downloading_status">正在下载：%1$s / %2$s（%3$d%%）</string>
     <string name="update_download_completed_title">下载完成</string>
@@ -541,7 +541,7 @@
     <string name="engine_settings_artemis_patch_failed">补丁失败：请确认游戏目录可写且包含 PFS 封包</string>
     <string name="engine_settings_artemis_patch_dir_unresolved">无法解析游戏目录路径，请确认已导入可访问的目录</string>
     <string name="engine_settings_artemis_patch_permission_required">需要「所有文件访问」权限，已尝试打开设置页</string>
-    <string name="engine_settings_artemis_clean_hint">自研内核直接从游戏包读取资源与配置，官方版本/补丁/显示注入项不适用。</string>
+    <string name="engine_settings_artemis_clean_hint">引擎版本与自动补丁是官方内核专属项。（舞台分辨率、裁切铺满、图像缓存、字体缓存、省电绘制对两种内核都生效。）</string>
     <string name="engine_settings_web_shell_port_title">Web 服务端口</string>
     <string name="engine_settings_web_shell_port_summary">固定端口（默认 23333）保证网页存档域稳定；Tyrano / WebOther / VN 共用，改动后旧存档可能不再可见，端口被占用时会自动改用临时端口</string>
     <string name="engine_settings_external_network_resources">允许加载外部网络资源</string>
@@ -559,6 +559,9 @@
     <string name="engine_settings_engine_version_mz">引擎版本 - MZ</string>
     <string name="engine_settings_renpy_module_description">Ren’Py 使用外置 APK 引擎模块，按指定版本打开对应的插件；以下设置默认跟随全局，可按游戏单独覆盖。</string>
     <string name="engine_settings_renpy_module_description_global">Ren’Py 使用外置 APK 引擎模块，按指定版本打开对应的插件。</string>
+    <string name="engine_settings_renpy_module_card">模块管理</string>
+    <string name="engine_settings_renpy_module_in_use">当前使用</string>
+    <string name="engine_settings_renpy_module_hint">点击未安装的模块打开下载页，安装完成后返回本页自动刷新状态。</string>
     <string name="engine_settings_rpgmaker_module_description">RPG Maker XP/VX/VX Ace/mkxp-z 通过外置 RPGM 模块启动，以下设置默认跟随全局，可按游戏单独覆盖。</string>
     <string name="engine_settings_follow_global">跟随全局</string>
     <string name="engine_settings_follow_global_with_value">跟随全局 · %1$s</string>

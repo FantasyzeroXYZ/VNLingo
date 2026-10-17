@@ -1,0 +1,513 @@
+package com.vnlingo.app.ui.gamepad
+
+import android.os.Bundle
+import android.view.KeyEvent
+import android.widget.Toast
+import androidx.compose.foundation.background
+import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color as ComposeColor
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.dp
+import com.core.engine.GamepadRemap
+import com.core.engine.PanelActionBindings
+import com.core.engine.VirtualMouseBindings
+import top.yukonga.miuix.kmp.preference.OverlayDropdownPreference
+import com.vnlingo.app.R
+import com.vnlingo.app.theme.AppComponentCornerRadius
+import com.vnlingo.app.theme.MiuixSettingsTheme
+import com.vnlingo.app.theme.glassBorder
+import com.vnlingo.app.theme.glassShadow
+import com.vnlingo.app.ui.common.AppScreenActivity
+import com.vnlingo.app.ui.common.AppTopBar
+import top.yukonga.miuix.kmp.basic.Card as MiuixCard
+import top.yukonga.miuix.kmp.basic.Scaffold as MiuixScaffold
+
+/**
+ * 手柄设置页（应用设置进入）：手柄按钮重映射 + 虚拟鼠标按键绑定。
+ *
+ * - 手柄重映射：把手柄按钮替换为键盘按键或其他手柄按键，由 engine 的
+ *   [GamepadRemap] 在各引擎宿主 dispatchKeyEvent 最前端消费。
+ * - 虚拟鼠标：为 [com.core.engine.EngineVirtualMouse] 的五个动作（上/下/左/右/
+ *   确认）绑定任意按键（手柄或键盘，统一 keyCode、不区分来源），由
+ *   [VirtualMouseBindings] 持久化；方向键长按连续移动，默认确认 = 手柄 A /
+ *   键盘回车 / DPAD_CENTER。
+ *
+ * 交互均为「按下捕获」：点击行进入捕获态，随后按下的第一个按键即生效，
+ * 返回键取消；捕获在本 Activity 的 dispatchKeyEvent 实现（Compose 无法
+ * 可靠收到手柄按键）。
+ */
+class GamepadSettingsActivity : AppScreenActivity() {
+
+    /** 捕获态：非空表示正在为该源按钮等待目标按键（手柄重映射）。 */
+    private var captureSource by mutableStateOf<Int?>(null)
+
+    /** 捕获态：非空表示正在为该虚拟鼠标动作等待绑定按键。 */
+    private var captureVmAction by mutableStateOf<Int?>(null)
+
+    /** 捕获态：非空表示正在为该「面板动作」等待绑定按键。 */
+    private var capturePanelAction by mutableStateOf<Int?>(null)
+
+    override fun onCreate(savedInstanceState: Bundle?) {
+        super.onCreate(savedInstanceState)
+        GamepadRemap.refresh(this)
+        PanelActionBindings.refresh(this)
+        setAppScreenContent {
+            GamepadSettingsScreen(
+                captureSource = captureSource,
+                onCaptureStart = { captureSource = it },
+                captureVmAction = captureVmAction,
+                onVmCaptureStart = { captureVmAction = it },
+                capturePanelAction = capturePanelAction,
+                onPanelCaptureStart = { capturePanelAction = it },
+                onCaptureCancel = {
+                    captureSource = null; captureVmAction = null; capturePanelAction = null
+                },
+                onClear = { src ->
+                    GamepadRemap.clear(this, src)
+                    Toast.makeText(this, R.string.gamepad_cleared, Toast.LENGTH_SHORT).show()
+                },
+                onVmBind = { action, keyCode ->
+                    VirtualMouseBindings.addBinding(this, action, keyCode)
+                    Toast.makeText(this, R.string.gamepad_mapped, Toast.LENGTH_SHORT).show()
+                },
+                onVmRemoveKey = { action, keyCode ->
+                    VirtualMouseBindings.removeBinding(this, action, keyCode)
+                    Toast.makeText(this, R.string.gamepad_cleared, Toast.LENGTH_SHORT).show()
+                },
+                onVmReset = { action ->
+                    VirtualMouseBindings.resetAction(this, action)
+                    Toast.makeText(this, R.string.gamepad_cleared, Toast.LENGTH_SHORT).show()
+                },
+                onPanelBind = { action, keyCode ->
+                    PanelActionBindings.addBinding(this, action, keyCode)
+                    Toast.makeText(this, R.string.gamepad_mapped, Toast.LENGTH_SHORT).show()
+                },
+                onPanelRemoveKey = { action, keyCode ->
+                    PanelActionBindings.removeBinding(this, action, keyCode)
+                    Toast.makeText(this, R.string.gamepad_cleared, Toast.LENGTH_SHORT).show()
+                },
+                onPanelReset = { action ->
+                    PanelActionBindings.resetAction(this, action)
+                    Toast.makeText(this, R.string.gamepad_cleared, Toast.LENGTH_SHORT).show()
+                },
+            )
+        }
+    }
+
+    override fun dispatchKeyEvent(event: KeyEvent): Boolean {
+        val src = captureSource
+        val vmAction = captureVmAction
+        val panelAction = capturePanelAction
+        if (event.action == KeyEvent.ACTION_DOWN && event.repeatCount == 0) {
+            if (event.keyCode == KeyEvent.KEYCODE_BACK
+                && (src != null || vmAction != null || panelAction != null)
+            ) {
+                captureSource = null
+                captureVmAction = null
+                capturePanelAction = null
+                return true
+            }
+            if (src != null) {
+                val isGamepad = (event.source and android.view.InputDevice.SOURCE_GAMEPAD) != 0 ||
+                    (event.source and android.view.InputDevice.SOURCE_JOYSTICK) != 0
+                GamepadRemap.setMapping(this, src, event.keyCode, isGamepad)
+                captureSource = null
+                Toast.makeText(this, R.string.gamepad_mapped, Toast.LENGTH_SHORT).show()
+                return true
+            }
+            if (vmAction != null) {
+                VirtualMouseBindings.addBinding(this, vmAction, event.keyCode)
+                captureVmAction = null
+                Toast.makeText(this, R.string.gamepad_mapped, Toast.LENGTH_SHORT).show()
+                return true
+            }
+            if (panelAction != null) {
+                PanelActionBindings.addBinding(this, panelAction, event.keyCode)
+                capturePanelAction = null
+                Toast.makeText(this, R.string.gamepad_mapped, Toast.LENGTH_SHORT).show()
+                return true
+            }
+        }
+        return super.dispatchKeyEvent(event)
+    }
+
+    override fun dispatchGenericMotionEvent(event: android.view.MotionEvent): Boolean {
+        // 扳机轴（L2/R2）在 Xbox 等手柄上只报轴量、永远没有键事件
+        // （见 com.core.engine.TriggerAxisKeys），捕获绑定时同样要合成才能绑到 R2/L2。
+        com.core.engine.TriggerAxisKeys.apply(event)?.let { return dispatchKeyEvent(it) }
+        return super.dispatchGenericMotionEvent(event)
+    }
+
+    companion object {
+        fun createIntent(context: android.content.Context): android.content.Intent =
+            android.content.Intent(context, GamepadSettingsActivity::class.java)
+    }
+}
+
+/**
+ * 单个动作的绑定行（虚拟鼠标动作与面板动作共用）：标题 + 「重新绑定」按钮 +
+ * 当前键列表（自定义可点 × 移除；默认只读展示 + 恢复默认）。
+ */
+@Composable
+private fun BindingActionRow(
+    name: String,
+    keys: List<Int>,
+    customized: Boolean,
+    keyName: (Int) -> String,
+    onCaptureStart: () -> Unit,
+    onRemoveKey: (Int) -> Unit,
+    onReset: () -> Unit,
+) {
+    MiuixCard(
+        modifier = Modifier.fillMaxWidth().glassShadow().glassBorder(),
+        cornerRadius = AppComponentCornerRadius,
+    ) {
+        Column(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp)) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Text(
+                    name,
+                    style = MaterialTheme.typography.titleMedium,
+                    modifier = Modifier.weight(1f),
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+                TextButton(onClick = onCaptureStart) {
+                    Text(stringResource(R.string.gamepad_remap_action))
+                }
+            }
+            if (keys.isEmpty()) {
+                Text(
+                    stringResource(R.string.gamepad_unmapped),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            } else {
+                Row(
+                    modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    keys.forEach { keyCode ->
+                        if (customized) {
+                            // 自定义绑定：点 × 移除该键（清空后回退默认）
+                            TextButton(onClick = { onRemoveKey(keyCode) }) {
+                                Text(
+                                    keyName(keyCode) + " ×",
+                                    style = MaterialTheme.typography.bodySmall,
+                                )
+                            }
+                        } else {
+                            // 默认绑定：只读展示（不可删；恢复默认按钮用于还原）
+                            Text(
+                                keyName(keyCode) + stringResource(R.string.vm_default_suffix),
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                modifier = Modifier.padding(horizontal = 8.dp),
+                            )
+                        }
+                    }
+                }
+            }
+            if (customized) {
+                TextButton(onClick = onReset) {
+                    Text(
+                        stringResource(R.string.vm_reset_default),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun GamepadSettingsScreen(
+    captureSource: Int?,
+    onCaptureStart: (Int) -> Unit,
+    captureVmAction: Int?,
+    onVmCaptureStart: (Int) -> Unit,
+    capturePanelAction: Int?,
+    onPanelCaptureStart: (Int) -> Unit,
+    onCaptureCancel: () -> Unit,
+    onClear: (Int) -> Unit,
+    onVmBind: (Int, Int) -> Unit,
+    onVmRemoveKey: (Int, Int) -> Unit,
+    onVmReset: (Int) -> Unit,
+    onPanelBind: (Int, Int) -> Unit,
+    onPanelRemoveKey: (Int, Int) -> Unit,
+    onPanelReset: (Int) -> Unit,
+) {
+    val context = LocalContext.current
+    // mappings 读取在重组期（低频设置页，数据量小），捕获态变化触发刷新
+    val refreshKey = Triple(captureSource, captureVmAction, capturePanelAction)
+    val mappings = remember(refreshKey) { GamepadRemap.mappings(context) }
+    val vmBindings = remember(refreshKey) { VirtualMouseBindings.bindings(context) }
+    val panelBindings = remember(refreshKey) { PanelActionBindings.bindings(context) }
+    val vmActions = remember(refreshKey) {
+        listOf(
+            VirtualMouseBindings.ACTION_UP to R.string.vm_action_up,
+            VirtualMouseBindings.ACTION_DOWN to R.string.vm_action_down,
+            VirtualMouseBindings.ACTION_LEFT to R.string.vm_action_left,
+            VirtualMouseBindings.ACTION_RIGHT to R.string.vm_action_right,
+            VirtualMouseBindings.ACTION_CONFIRM to R.string.vm_action_confirm,
+        )
+    }
+    var lookupMode by remember {
+        mutableStateOf(com.core.engine.PanelOptions.lookupMode(context))
+    }
+    // 面板动作（剧情文本框）：与虚拟鼠标同款捕获式绑定（复刻方案 §3.3）
+    val panelActions = remember(refreshKey) {
+        listOf(
+            PanelActionBindings.PANEL_TOGGLE to R.string.panel_action_toggle,
+            PanelActionBindings.PANEL_MOUSE_TOGGLE to R.string.panel_action_mouse_toggle,
+            PanelActionBindings.PANEL_TOKEN_PREV to R.string.panel_action_token_prev,
+            PanelActionBindings.PANEL_TOKEN_NEXT to R.string.panel_action_token_next,
+            PanelActionBindings.PANEL_NAV_UP to R.string.panel_action_nav_up,
+            PanelActionBindings.PANEL_NAV_DOWN to R.string.panel_action_nav_down,
+            PanelActionBindings.PANEL_CONFIRM to R.string.panel_action_confirm,
+            PanelActionBindings.PANEL_TRANSLATE to R.string.panel_action_translate,
+            PanelActionBindings.PANEL_CARD to R.string.panel_action_card,
+            PanelActionBindings.PANEL_SENTENCE_CARD to R.string.panel_action_sentence_card,
+            PanelActionBindings.PANEL_SCROLL_UP to R.string.panel_action_scroll_up,
+            PanelActionBindings.PANEL_SCROLL_DOWN to R.string.panel_action_scroll_down,
+            PanelActionBindings.PANEL_EXIT to R.string.panel_action_exit,
+            PanelActionBindings.PANEL_COPY to R.string.panel_action_copy,
+            PanelActionBindings.PANEL_PLAY to R.string.panel_action_play,
+            PanelActionBindings.PANEL_HISTORY to R.string.panel_action_history,
+        )
+    }
+
+    MiuixSettingsTheme {
+        MiuixScaffold(
+            modifier = Modifier.fillMaxSize(),
+            containerColor = ComposeColor.Transparent,
+            contentWindowInsets = WindowInsets(0.dp),
+            topBar = { AppTopBar(title = stringResource(R.string.gamepad_settings_title)) },
+        ) { innerPadding ->
+            LazyColumn(
+                modifier = Modifier.fillMaxSize()
+                    .padding(horizontal = 12.dp)
+                    .padding(top = innerPadding.calculateTopPadding()),
+                contentPadding = PaddingValues(top = 12.dp, bottom = 24.dp),
+                verticalArrangement = Arrangement.spacedBy(12.dp),
+            ) {
+                item {
+                    MiuixCard(
+                        modifier = Modifier.fillMaxWidth().glassShadow().glassBorder(),
+                        cornerRadius = AppComponentCornerRadius,
+                    ) {
+                        Text(
+                            stringResource(R.string.gamepad_settings_summary),
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 10.dp),
+                        )
+                    }
+                }
+                items(GamepadRemap.mappableButtons, key = { "gp_" + it.first }) { (srcCode, srcName) ->
+                    val mapping = mappings[srcCode]
+                    MiuixCard(
+                        modifier = Modifier.fillMaxWidth().glassShadow().glassBorder(),
+                        cornerRadius = AppComponentCornerRadius,
+                    ) {
+                        Row(
+                            modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 6.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                        ) {
+                            Column(Modifier.weight(1f)) {
+                                Text(
+                                    srcName,
+                                    style = MaterialTheme.typography.titleMedium,
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis,
+                                )
+                                val mappingText = if (mapping == null) {
+                                    stringResource(R.string.gamepad_unmapped)
+                                } else {
+                                    val target: Int = mapping.first
+                                    val isGamepad: Boolean = mapping.second
+                                    stringResource(
+                                        if (isGamepad) R.string.gamepad_target_gamepad else R.string.gamepad_target_keyboard,
+                                        GamepadRemap.targetName(target, isGamepad),
+                                    )
+                                }
+                                Text(
+                                    mappingText,
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    modifier = Modifier.padding(top = 2.dp),
+                                )
+                            }
+                            TextButton(onClick = { onCaptureStart(srcCode) }) {
+                                Text(stringResource(R.string.gamepad_remap_action))
+                            }
+                            if (mapping != null) {
+                                TextButton(onClick = { onClear(srcCode) }) {
+                                    Text(
+                                        stringResource(R.string.common_delete),
+                                        color = MaterialTheme.colorScheme.error,
+                                    )
+                                }
+                            }
+                        }
+                    }
+                }
+                item {
+                    MiuixCard(
+                        modifier = Modifier.fillMaxWidth().glassShadow().glassBorder(),
+                        cornerRadius = AppComponentCornerRadius,
+                    ) {
+                        Column(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 10.dp)) {
+                            Text(
+                                stringResource(R.string.vm_bindings_title),
+                                style = MaterialTheme.typography.titleMedium,
+                                fontWeight = FontWeight.Bold,
+                            )
+                            Text(
+                                stringResource(R.string.vm_bindings_summary),
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                modifier = Modifier.padding(top = 4.dp),
+                            )
+                        }
+                    }
+                }
+                items(vmActions, key = { "vm_" + it.first }) { (action, nameRes) ->
+                    val display = vmBindings[action]
+                    BindingActionRow(
+                        name = stringResource(nameRes),
+                        keys = display?.codes ?: emptyList(),
+                        customized = display?.customized == true,
+                        keyName = { VirtualMouseBindings.keyName(it) },
+                        onCaptureStart = { onVmCaptureStart(action) },
+                        onRemoveKey = { onVmRemoveKey(action, it) },
+                        onReset = { onVmReset(action) },
+                    )
+                }
+                item {
+                    MiuixCard(
+                        modifier = Modifier.fillMaxWidth().glassShadow().glassBorder(),
+                        cornerRadius = AppComponentCornerRadius,
+                    ) {
+                        Column(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 10.dp)) {
+                            Text(
+                                stringResource(R.string.panel_bindings_title),
+                                style = MaterialTheme.typography.titleMedium,
+                                fontWeight = FontWeight.Bold,
+                            )
+                            Text(
+                                stringResource(R.string.panel_bindings_summary),
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                modifier = Modifier.padding(top = 4.dp),
+                            )
+                        }
+                    }
+                }
+                item {
+                    // 剧情文本框查词方式：放在面板动作区最前面（用户要求：设置页手柄设置里）
+                    MiuixCard(
+                        modifier = Modifier.fillMaxWidth().glassShadow().glassBorder(),
+                        cornerRadius = AppComponentCornerRadius,
+                    ) {
+                        Column(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp)) {
+                            OverlayDropdownPreference(
+                                title = stringResource(R.string.panel_lookup_mode),
+                                items = listOf(
+                                    stringResource(R.string.panel_lookup_mode_confirm),
+                                    stringResource(R.string.panel_lookup_mode_auto),
+                                ),
+                                selectedIndex =
+                                    if (lookupMode == com.core.engine.PanelOptions.LOOKUP_AUTO) 1 else 0,
+                                onSelectedIndexChange = { i ->
+                                    lookupMode = if (i == 1) com.core.engine.PanelOptions.LOOKUP_AUTO
+                                    else com.core.engine.PanelOptions.LOOKUP_CONFIRM
+                                    com.core.engine.PanelOptions.setLookupMode(context, lookupMode)
+                                },
+                            )
+                            Text(
+                                stringResource(R.string.panel_lookup_summary),
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                modifier = Modifier.padding(start = 16.dp, top = 2.dp, bottom = 6.dp),
+                            )
+                        }
+                    }
+                }
+                items(panelActions, key = { "panel_" + it.first }) { (action, nameRes) ->
+                    val display = panelBindings[action]
+                    BindingActionRow(
+                        name = stringResource(nameRes),
+                        keys = display?.codes ?: emptyList(),
+                        customized = display?.customized == true,
+                        keyName = { PanelActionBindings.keyName(it) },
+                        onCaptureStart = { onPanelCaptureStart(action) },
+                        onRemoveKey = { onPanelRemoveKey(action, it) },
+                        onReset = { onPanelReset(action) },
+                    )
+                }
+            }
+        }
+    }
+
+    if (captureSource != null || captureVmAction != null || capturePanelAction != null) {
+        // 捕获遮罩：全屏半透明黑，按键由 Activity.dispatchKeyEvent 捕获（BACK 取消）
+        val captureName = when {
+            captureSource != null -> GamepadRemap.targetName(captureSource, true)
+            capturePanelAction != null -> stringResource(
+                panelActions.firstOrNull { it.first == capturePanelAction }?.second
+                    ?: R.string.panel_action_confirm,
+            )
+            else -> stringResource(
+                vmActions.firstOrNull { it.first == captureVmAction }?.second ?: R.string.vm_action_confirm,
+            )
+        }
+        Box(
+            modifier = Modifier.fillMaxSize().background(ComposeColor(0xCC000000)),
+            contentAlignment = Alignment.Center,
+        ) {
+            Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                Text(
+                    stringResource(R.string.gamepad_capture_title, captureName),
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.Bold,
+                    color = ComposeColor.White,
+                )
+                Text(
+                    stringResource(R.string.gamepad_capture_hint),
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = ComposeColor(0xFFCBD5E1),
+                    modifier = Modifier.padding(top = 8.dp),
+                )
+            }
+        }
+    }
+}

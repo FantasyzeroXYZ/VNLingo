@@ -55,6 +55,10 @@
     <string name="engine_artemis_click_unsupported">公式カーネルは仮想マウスのクリックに対応していません（injectHostTouch 未実装）。「エンジン設定 → カーネル」で自研カーネルに変更してください。</string>
     <string name="engine_ons_extract_mouse_off">仮想マウス：オフ（タッチモードに戻る）</string>
     <string name="engine_ons_extract_screenshot_saved">保存しました %1$s</string>
+    <string name="engine_screenshot_preview_title">スクリーンショットのプレビュー</string>
+    <string name="engine_screenshot_preview_hint">「保存」でギャラリーに追加、「破棄」で閉じます</string>
+    <string name="engine_screenshot_save">保存</string>
+    <string name="engine_screenshot_discard">破棄</string>
     <string name="engine_ons_extract_opacity">不透明度</string>
     <string name="engine_ons_extract_no_voice">（ペア音声なし）</string>
     <string name="engine_ons_extract_copied">コピーしました</string>
@@ -127,7 +131,7 @@
     <string name="engine_ons_extract_cloud_hint_repo">GitHub リポジトリ（owner/repo）</string>
     <string name="engine_ons_extract_cloud_hint_user">ユーザー名</string>
     <string name="engine_ons_extract_cloud_hint_token">パスワード/トークン（GitHub は PAT）</string>
-    <string name="engine_ons_extract_cloud_hint_dir">リモート DIR（既定 TyranorNext/saves）</string>
+    <string name="engine_ons_extract_cloud_hint_dir">リモート DIR（既定 VNLingo/saves）</string>
     <string name="engine_ons_extract_cloud_upload">アップロード</string>
     <string name="engine_ons_extract_cloud_download">ダウンロード</string>
     <string name="engine_ons_extract_chip">テキスト</string>

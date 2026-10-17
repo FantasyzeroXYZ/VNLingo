@@ -19,7 +19,7 @@ $ScriptDir = Split-Path -Parent $MyInvocation.MyCommand.Path
 $RepoRoot  = (Resolve-Path (Join-Path $ScriptDir '..')).Path
 
 $Apk     = Join-Path $RepoRoot 'app\build\outputs\apk\debug\app-debug.apk'
-$Package = 'com.tyranor.next'
+$Package = 'com.vnlingo.app'
 $Adb     = if ($env:ADB)       { $env:ADB }       else { 'D:/dev-cache/Android/Sdk/platform-tools/adb.exe' }
 $Jdk     = if ($env:JAVA_HOME) { $env:JAVA_HOME } else { 'D:/dev-cache/jdk-17.0.20.1+1' }
 

@@ -1,0 +1,306 @@
+package com.vnlingo.app.core.settings
+
+import android.content.Context
+import com.core.engine.EnginePrefs
+import com.vnlingo.app.core.game.storage.GameOverridePartitions
+import com.vnlingo.app.core.game.storage.GameOverridesRepository
+import org.json.JSONObject
+
+/**
+ * 单游戏（应用级）引擎设置覆盖层。参考 Rinne 的 Per-game 实现：
+ * 以每个游戏的稳定标识（本应用用游戏 uri）为键存一份 JSON 覆盖快照；
+ * 某字段缺失 = 跟随全局默认。启动时由启动器 覆盖 ?: 全局 逐字段合并。
+ *
+ * 存储已迁移到 game_overrides 表（迁移方案阶段 4）：本类保留原同步 API，
+ * 内部为 Repository 门面——DB 为 App 侧事实源；prefs 文件作为引擎子进程
+ * （TyranoActivity/TouchPadSaveBridge 整条读改写）的同步镜像，每次写入即刷。
+ * prefs 文件名契约锚点在 engine，改名只需改 EnginePrefs 一处。
+ */
+object PerGameSettingsStore {
+
+    private val PREF_NAME = EnginePrefs.GAME_OVERRIDES_PREFS
+
+    // KR 覆盖字段名
+    const val F_ENGINE_VERSION = "engine_version"
+    const val F_ENGINE_KERNEL = "engine_kernel"
+    const val F_SCOPED_SAVE_DIR = "scoped_save_dir"
+    const val F_DEFAULT_FONT = "default_font"
+    const val F_FORCE_DEFAULT_FONT = "force_default_font"
+    const val F_PATCH_OVERLAY_MODE = "patch_overlay_mode"
+    const val F_SKIP_STARTUP_DIALOGS = "skip_startup_dialogs"
+    const val F_RENDERER = "renderer"
+    const val F_SOFTWARE_DRAW_THREAD = "software_draw_thread"
+    const val F_SOFTWARE_COMPRESS_TEX = "software_compress_tex"
+    const val F_OGL_COMPRESS_TEX = "ogl_compress_tex"
+    const val F_MEM_USAGE = "mem_usage"
+    const val F_OGL_MAX_TEXSIZE = "ogl_max_texsize"
+    const val F_OGL_ACCURATE_RENDER = "ogl_accurate_render"
+    const val F_FPS_LIMIT = "fps_limit"
+    const val F_VCURSOR_SCALE = "vcursor_scale"
+    const val F_MENU_HANDLER_OPA = "menu_handler_opa"
+    const val F_ANIME4K_MODE = "anime4k_mode"
+    /** KR 渲染偏好覆盖字段清单（由 [KrRenderPrefs] 派生，与全局键一一对应）。 */
+    val KR_FIELDS: List<String> = KrRenderPrefs.ALL.map { it.overrideField }
+
+    // Artemis
+    const val F_ART_VERSION = "art_engine_version"
+    const val F_ART_KERNEL = "artemis_kernel"
+    const val F_ART_ROTATE = "art_rotate_screen"
+    const val F_ART_PATCH = "art_auto_patch"
+    const val F_ART_RESOLUTION = "art_resolution"
+    const val F_ART_SIDE_CUT = "art_side_cut"
+    const val F_ART_SURFACE_CACHE_SIZE = "art_surface_cache_size"
+    const val F_ART_FONT_CACHE_SIZE = "art_font_cache_size"
+    const val F_ART_POWER_SAVING = "art_power_saving"
+
+    // RPG Maker MV/MZ
+    const val F_RPG_MAKER_MOD_ENABLED = "rpg_maker_mod_enabled"
+    const val F_RPG_LEGACY_RENDERER = "rpg_legacy_renderer"
+    const val F_RPG_SAVE_INTEROP = "rpg_save_interop"
+    const val F_RPG_MV_VERSION = "rpg_mv_engine_version"
+    const val F_RPG_MZ_VERSION = "rpg_mz_engine_version"
+
+    // RPG Maker RGSS 外置模块（settings extra 的 rpg 节，null=跟随全局）
+    const val F_RPG_USE_RUBY18 = "rpg_use_ruby18"
+    const val F_RPG_DEBUG = "rpg_debug"
+    const val F_RPG_SMOOTH_SCALING = "rpg_smooth_scaling"
+    const val F_RPG_VSYNC = "rpg_vsync"
+    const val F_RPG_FRAME_SKIP = "rpg_frame_skip"
+    const val F_RPG_SOLID_FONTS = "rpg_solid_fonts"
+    const val F_RPG_PATH_CACHE = "rpg_path_cache"
+    const val F_RPG_PREBUILT_PATH_CACHE = "rpg_prebuilt_path_cache"
+    const val F_RPG_FAST_PATH_ENUM = "rpg_fast_path_enum"
+    const val F_RPG_COPY_TEXT = "rpg_copy_text"
+    const val F_RPG_CHEATS = "rpg_cheats"
+    const val F_RPG_USE_CJK_FONT = "rpg_use_cjk_font"
+    const val F_RPG_ENABLE_POSTLOAD_SCRIPTS = "rpg_enable_postload_scripts"
+    const val F_RPG_CUSTOM_FONT = "rpg_custom_font"
+    const val F_RPG_VERTICAL_SCREEN_ALIGN = "rpg_vertical_screen_align"
+    const val F_RPG_WINDOW_SIZE = "rpg_window_size"
+    const val F_RPG_SPEED_UP = "rpg_speed_up"
+    const val F_RPG_FONT_SCALE = "rpg_font_scale"
+
+    // Tyrano 与 RPG Maker Web 共用的存档目录开关（GameSaveManager 按此键读取）
+    const val F_TY_SCOPED = "ty_scoped"
+
+    // Ren'Py（外置模块版本选择）
+    const val F_RENPY_VERSION = "renpy_engine_version"
+
+    // Web 壳本地端口覆盖（Tyrano / WebOther / VN；null=跟随全局）
+    const val F_WEB_SHELL_PORT = "web_shell_port"
+
+    // PPSSPP 外置模拟器版本覆盖（standard/gold；null=跟随全局）
+    const val F_PPSSPP_VERSION = "ppsspp_version"
+
+    // Siglus（游戏语言覆盖；null=跟随全局）
+    const val F_SIGLUS_LANGUAGE = "siglus_language"
+
+    // framebuffer 引擎（RealLive / AVG32 / UK2）（文本编码覆盖；null=跟随全局）
+    const val F_FB_NLS = "fb_nls"
+
+    // FVP（文本编码/系统字体回退/HiDPI/自定义字体覆盖；null=跟随全局）
+    const val F_FVP_NLS = "fvp_nls"
+    const val F_FVP_SYSTEM_FONT = "fvp_system_font"
+    const val F_FVP_TEXT_HIDPI = "fvp_text_hidpi"
+    const val F_FVP_FONT = "fvp_font"
+
+    // Winlator 外置启动（null=跟随全局；字符串 "" = 显式不下发该参数）
+    const val F_WINLATOR_CONTAINER_ID = "winlator_container_id"
+    const val F_WINLATOR_CONTAINER_NAME = "winlator_container_name"
+    const val F_WINLATOR_GRAPHICS_DRIVER = "winlator_graphics_driver"
+    const val F_WINLATOR_DXWRAPPER = "winlator_dxwrapper"
+    const val F_WINLATOR_SCREEN_SIZE = "winlator_screen_size"
+    const val F_WINLATOR_LC_ALL = "winlator_lc_all"
+    const val F_WINLATOR_TZ = "winlator_tz"
+    const val F_WINLATOR_BOX64_PRESET = "winlator_box64_preset"
+    const val F_WINLATOR_SAVE = "winlator_save"
+
+    // Ren'Py 外置模块配置（settings extra 的 renpy 节 + app.cheats，null=跟随全局）
+    const val F_RENPY_CHEATS = "renpy_cheats"
+    const val F_RENPY_HW_VIDEO = "renpy_hw_video"
+    const val F_RENPY_AUTOSAVE = "renpy_autosave"
+    const val F_RENPY_PHONE_SMALL_VARIANT = "renpy_phonesmallvariant"
+    const val F_RENPY_VSYNC = "renpy_vsync"
+    const val F_RENPY_LESS_MEMORY = "renpy_less_memory"
+    const val F_RENPY_LESS_UPDATES = "renpy_less_updates"
+    const val F_RENPY_DONT_USE_GL2 = "renpy_dont_use_gl2"
+    const val F_RENPY_RECOMPILE = "renpy_recompile"
+
+    // ONS 子对象键
+    const val ONS_KEY = "ons"
+
+    // 文本提取（ONS/KRKR/Artemis；null=跟随全局）
+    const val F_EXTRACT_HOOK = "extract_hook"
+    // KRKR 文本输出源（"hook"=运行时文本流 / "engine_tjs"=引擎自身输出；null=跟随全局）
+    const val F_KR_TEXT_SOURCE = "kr_text_source"
+
+    // 词典查询（M4 查询语言设置）：每游戏覆盖全局默认；null=跟随全局
+    const val F_DICT_QUERY_LANG = "dict_query_lang"
+    const val F_DICT_READING = "dict_reading"
+
+    private fun prefs(context: Context) =
+        context.applicationContext.getSharedPreferences(PREF_NAME, Context.MODE_PRIVATE)
+
+    /** 该游戏是否存在覆盖。 */
+    fun hasOverride(context: Context, gameId: String): Boolean {
+        if (gameId.isBlank()) return false
+        return GameOverridesRepository.loadRowBlocking(context, gameId) != null
+    }
+
+    /** 读取该游戏覆盖 JSON；无则返回空对象。 */
+    fun load(context: Context, gameId: String): JSONObject {
+        if (gameId.isBlank()) return JSONObject()
+        val row = GameOverridesRepository.loadRowBlocking(context, gameId) ?: return JSONObject()
+        return runCatching { GameOverridePartitions.assemble(row) }.getOrDefault(JSONObject())
+    }
+
+    /** 字符串字段覆盖值；null=未覆盖（跟随全局），""=覆盖为空串（如内置字体）。 */
+    fun getStr(context: Context, gameId: String, key: String): String? {
+        val j = load(context, gameId)
+        return if (j.has(key)) j.optString(key) else null
+    }
+
+    /** 布尔字段覆盖值；null=未覆盖（跟随全局）。 */
+    fun getBool(context: Context, gameId: String, key: String): Boolean? {
+        val j = load(context, gameId)
+        return if (j.has(key)) j.optBoolean(key) else null
+    }
+
+    /** 设置字符串覆盖；value=null 表示移除该覆盖（跟随全局）。 */
+    fun setStr(context: Context, gameId: String, key: String, value: String?) {
+        if (gameId.isBlank()) return
+        val j = load(context, gameId)
+        if (value == null) j.remove(key) else j.put(key, value.trim())
+        persist(context, gameId, j)
+    }
+
+    /** 设置布尔覆盖；value=null 表示移除该覆盖（跟随全局）。 */
+    fun setBool(context: Context, gameId: String, key: String, value: Boolean?) {
+        if (gameId.isBlank()) return
+        val j = load(context, gameId)
+        if (value == null) j.remove(key) else j.put(key, value)
+        persist(context, gameId, j)
+    }
+
+    /** 读取 ONS 覆盖子对象（缺失字段=跟随全局）。 */
+    fun loadOnsOverride(context: Context, gameId: String): JSONObject? {
+        val j = load(context, gameId)
+        return if (j.has(ONS_KEY)) j.optJSONObject(ONS_KEY) else null
+    }
+
+    /** ONS 覆盖 JSON → 类型化模型（缺失字段=跟随全局，供 [EffectiveEngineSettings.mergeOns] 使用）。 */
+    fun toOnsOverride(json: JSONObject?): OnsOverride? {
+        if (json == null) return null
+        return OnsOverride(
+            scopedSaveDir = if (json.has("scopedsavedir")) json.optBoolean("scopedsavedir") else null,
+            stretchFull = if (json.has("strechfull")) json.optBoolean("strechfull") else null,
+            ignoreCutout = if (json.has("ignorecutout")) json.optBoolean("ignorecutout") else null,
+            disableVideo = if (json.has("disablevideo")) json.optBoolean("disablevideo") else null,
+            sharpness = if (json.has("sharpness")) json.optBoolean("sharpness") else null,
+            sharpnessValue = if (json.has("sharpness_value")) json.optString("sharpness_value") else null,
+            encoding = if (json.has("encoding")) json.optString("encoding") else null,
+        )
+    }
+
+    /** 保存 ONS 覆盖子对象。 */
+    fun setOnsOverride(context: Context, gameId: String, ons: JSONObject) {
+        if (gameId.isBlank()) return
+        val j = load(context, gameId)
+        j.put(ONS_KEY, ons)
+        persist(context, gameId, j)
+    }
+
+    /**
+     * RPG Maker RGSS 外置模块覆盖快照 → 类型化模型（缺失字段=跟随全局，
+     * 供 [EffectiveEngineSettings.mergeRpgMaker] 使用）。
+     */
+    fun toRpgMakerOverride(json: JSONObject?): RpgMakerOverride? {
+        if (json == null) return null
+        fun boolOrNull(key: String): Boolean? = if (json.has(key)) json.optBoolean(key) else null
+        fun strOrNull(key: String): String? = if (json.has(key)) json.optString(key) else null
+        val override = RpgMakerOverride(
+            useRuby18 = boolOrNull(F_RPG_USE_RUBY18),
+            debug = boolOrNull(F_RPG_DEBUG),
+            smoothScaling = boolOrNull(F_RPG_SMOOTH_SCALING),
+            vsync = boolOrNull(F_RPG_VSYNC),
+            frameSkip = boolOrNull(F_RPG_FRAME_SKIP),
+            solidFonts = boolOrNull(F_RPG_SOLID_FONTS),
+            pathCache = boolOrNull(F_RPG_PATH_CACHE),
+            prebuiltPathCache = boolOrNull(F_RPG_PREBUILT_PATH_CACHE),
+            fastPathEnum = boolOrNull(F_RPG_FAST_PATH_ENUM),
+            copyText = boolOrNull(F_RPG_COPY_TEXT),
+            cheats = boolOrNull(F_RPG_CHEATS),
+            useCJKFont = boolOrNull(F_RPG_USE_CJK_FONT),
+            enablePostloadScripts = boolOrNull(F_RPG_ENABLE_POSTLOAD_SCRIPTS),
+            customFont = strOrNull(F_RPG_CUSTOM_FONT),
+            verticalScreenAlign = strOrNull(F_RPG_VERTICAL_SCREEN_ALIGN),
+            windowSize = strOrNull(F_RPG_WINDOW_SIZE),
+            speedUp = strOrNull(F_RPG_SPEED_UP),
+            fontScale = strOrNull(F_RPG_FONT_SCALE),
+        )
+        return override.takeIf { it != RpgMakerOverride() }
+    }
+
+    /**
+     * Ren'Py 外置模块覆盖快照 → 类型化模型（缺失字段=跟随全局，
+     * 供 [EffectiveEngineSettings.mergeRenPy] 使用）。版本键不在此列。
+     */
+    fun toRenPyOverride(json: JSONObject?): RenPyOverride? {
+        if (json == null) return null
+        fun boolOrNull(key: String): Boolean? = if (json.has(key)) json.optBoolean(key) else null
+        val override = RenPyOverride(
+            cheats = boolOrNull(F_RENPY_CHEATS),
+            hwVideo = boolOrNull(F_RENPY_HW_VIDEO),
+            autosave = boolOrNull(F_RENPY_AUTOSAVE),
+            phoneSmallVariant = boolOrNull(F_RENPY_PHONE_SMALL_VARIANT),
+            vsync = boolOrNull(F_RENPY_VSYNC),
+            lessMemory = boolOrNull(F_RENPY_LESS_MEMORY),
+            lessUpdates = boolOrNull(F_RENPY_LESS_UPDATES),
+            dontUseGl2 = boolOrNull(F_RENPY_DONT_USE_GL2),
+            recompile = boolOrNull(F_RENPY_RECOMPILE),
+        )
+        return override.takeIf { it != RenPyOverride() }
+    }
+
+    /**
+     * Winlator 外置启动覆盖快照 → 类型化模型（缺失字段=跟随全局；存在但为空串=显式不下发该参数，
+     * 供 [EffectiveEngineSettings.mergeWinlator] 使用）。
+     */
+    fun toWinlatorOverride(json: JSONObject?): WinlatorOverride? {
+        if (json == null) return null
+        fun boolOrNull(key: String): Boolean? = if (json.has(key)) json.optBoolean(key) else null
+        fun strOrNull(key: String): String? = if (json.has(key)) json.optString(key) else null
+        val override = WinlatorOverride(
+            containerId = strOrNull(F_WINLATOR_CONTAINER_ID),
+            containerName = strOrNull(F_WINLATOR_CONTAINER_NAME),
+            graphicsDriver = strOrNull(F_WINLATOR_GRAPHICS_DRIVER),
+            dxwrapper = strOrNull(F_WINLATOR_DXWRAPPER),
+            screenSize = strOrNull(F_WINLATOR_SCREEN_SIZE),
+            lcAll = strOrNull(F_WINLATOR_LC_ALL),
+            tz = strOrNull(F_WINLATOR_TZ),
+            box64Preset = strOrNull(F_WINLATOR_BOX64_PRESET),
+            save = boolOrNull(F_WINLATOR_SAVE),
+        )
+        return override.takeIf { it != WinlatorOverride() }
+    }
+
+    /** 清除某游戏全部覆盖，回退到全局默认。 */
+    fun clear(context: Context, gameId: String) {
+        if (gameId.isBlank()) return
+        GameOverridesRepository.clearRow(context, gameId)
+        prefs(context).edit().remove(gameId).apply()
+    }
+
+    /**
+     * 双写持久化：DB 异步落库（失败仅记日志），prefs 同步镜像立即刷盘——
+     * 引擎子进程启动游戏时按旧契约整条读取镜像（方案阶段 4 过渡策略）。
+     * 已知限制（与迁移前行为等价，见引擎 TouchPadSaveBridge 注释）：App 进程的 prefs
+     * 缓存不跨进程刷新，引擎本次进程存活期间写回的 touchpad 字段对 App 不可见，
+     * 此处整条镜像写会覆盖之；跨会话数据由启动时 syncFromPrefs 回灌保证不丢。
+     * 彻底收口（引擎侧独立 prefs 文件）为方案后续项。
+     */
+    private fun persist(context: Context, gameId: String, record: JSONObject) {
+        GameOverridesRepository.updateRecord(context, gameId, record)
+        prefs(context).edit().putString(gameId, record.toString()).apply()
+    }
+}

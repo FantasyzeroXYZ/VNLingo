@@ -12,7 +12,7 @@ class OnsSettings {
     @JvmField var sharpness = false
     @JvmField var sharpnessValue = "2"
     @JvmField var disableVideo = false
-    @JvmField var encoding = "gbk"
+    @JvmField var encoding = "sjis"
     @JvmField var scopedSaveDir = true
     @JvmField var allowEditArgs = true
 
@@ -22,7 +22,6 @@ class OnsSettings {
         /** 共享偏好中的 ONS 配置 JSON 键（与 Intent extra gameargs 同名字段的历史沿用）。 */
         const val EXTRA_GAME_ARGS = "gameargs"
         private const val TAG = "OnsSettings"
-        private const val KEY_ENCODING_MIGRATED_GBK = "encoding_migrated_gbk_v2"
 
         @JvmStatic
         fun load(context: Context): OnsSettings {
@@ -31,15 +30,6 @@ class OnsSettings {
                 val sp = context.getSharedPreferences(PREF_NAME, Context.MODE_PRIVATE)
                 val json = sp.getString(EXTRA_GAME_ARGS, null)
                 if (json != null && json.trim().isNotEmpty()) settings.readJson(JSONObject(json))
-                if (!sp.getBoolean(KEY_ENCODING_MIGRATED_GBK, false)) {
-                    val isUpgradeFromLegacy = sp.contains(EXTRA_GAME_ARGS)
-                    val editor = sp.edit().putBoolean(KEY_ENCODING_MIGRATED_GBK, true)
-                    if (isUpgradeFromLegacy && "sjis" == settings.encoding) {
-                        settings.encoding = "gbk"
-                        editor.putString(EXTRA_GAME_ARGS, settings.toJson().toString())
-                    }
-                    editor.apply()
-                }
             } catch (t: Throwable) {
                 Log.w(TAG, "load failed", t)
             }
@@ -72,11 +62,11 @@ class OnsSettings {
 
         @JvmStatic
         fun normalizeEncoding(value: String?): String {
-            val v = if (value == null) "gbk" else value.trim().lowercase(Locale.ROOT)
+            val v = if (value == null) "sjis" else value.trim().lowercase(Locale.ROOT)
             if ("gbk" == v || "utf8" == v || "sjis" == v) return v
             if ("utf-8" == v) return "utf8"
             if ("shift-jis" == v || "shift_jis" == v) return "sjis"
-            return "gbk"
+            return "sjis"
         }
 
         private fun guessName(path: String?): String {

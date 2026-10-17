@@ -159,44 +159,59 @@ open class ArtemisActivity : NativeActivity() {
         }
     }
 
+    /**
+     * 注入一次"点按"（按下 + 抬起）。
+     *
+     * **不要用 `EmulateKeyEvent(id, 2)`**：clean 内核的 InjectHostKey 把 status 只当
+     * 「0 = down、非 0 = up」（见 artemis-compat src/jni/native_activity.cpp），传 2 等于
+     * 只发了一个 UP、永远没有 DOWN —— 引擎看不到按下，按键全部失效。实测：左缘 NEXT 用
+     * 0/1 两次调用能推进游戏，而走 status=2 的转发（鼠标模式下未消费的键）毫无反应。
+     */
+    private fun tapEngineKey(engineKey: Int, holdMs: Long = 60) {
+        runCatching { EmulateKeyEvent(engineKey, 0) }
+        handler.postDelayed({ runCatching { EmulateKeyEvent(engineKey, 1) } }, holdMs)
+    }
+
+    private val handler = android.os.Handler(android.os.Looper.getMainLooper())
+
     override fun dispatchKeyEvent(event: KeyEvent): Boolean {
         // 手柄按键重映射（手柄→键盘/其他手柄键），先于内核按键映射链路
         val mapped = com.core.engine.GamepadRemap.apply(event)
         val keyCode = mapped.keyCode
         if (mapped.action == 0) {
             when (keyCode) {
-                66 -> EmulateKeyEvent(13, 2)
-                59, 60 -> EmulateKeyEvent(115, 2)
-                113, 114 -> EmulateKeyEvent(140, 2)
-                62 -> EmulateKeyEvent(32, 2)
-                21 -> EmulateKeyEvent(37, 2)
-                19 -> EmulateKeyEvent(38, 2)
-                22 -> EmulateKeyEvent(39, 2)
-                20 -> EmulateKeyEvent(40, 2)
-                29 -> EmulateKeyEvent(143, 2)
-                47 -> EmulateKeyEvent(83, 2)
-                40 -> EmulateKeyEvent(76, 2)
-                50 -> EmulateKeyEvent(86, 2)
-                8 -> EmulateKeyEvent(112, 2)
-                9 -> EmulateKeyEvent(113, 2)
-                10 -> EmulateKeyEvent(114, 2)
-                11 -> EmulateKeyEvent(115, 2)
-                12 -> EmulateKeyEvent(116, 2)
-                13 -> EmulateKeyEvent(117, 2)
-                14 -> EmulateKeyEvent(118, 2)
-                15 -> EmulateKeyEvent(119, 2)
-                23 -> EmulateKeyEvent(13, 2)
-                17 -> EmulateKeyEvent(122, 2)
-                18 -> EmulateKeyEvent(140, 2)
-                98, 100 -> EmulateKeyEvent(1, 2)
-                96 -> EmulateKeyEvent(139, 2)
-                97 -> EmulateKeyEvent(32, 2)
-                99 -> EmulateKeyEvent(123, 2)
+                66 -> tapEngineKey(13)
+                59, 60 -> tapEngineKey(115)
+                113, 114 -> tapEngineKey(140)
+                62 -> tapEngineKey(32)
+                21 -> tapEngineKey(37)
+                19 -> tapEngineKey(38)
+                22 -> tapEngineKey(39)
+                20 -> tapEngineKey(40)
+                29 -> tapEngineKey(143)
+                47 -> tapEngineKey(83)
+                40 -> tapEngineKey(76)
+                50 -> tapEngineKey(86)
+                8 -> tapEngineKey(112)
+                9 -> tapEngineKey(113)
+                10 -> tapEngineKey(114)
+                11 -> tapEngineKey(115)
+                12 -> tapEngineKey(116)
+                13 -> tapEngineKey(117)
+                14 -> tapEngineKey(118)
+                15 -> tapEngineKey(119)
+                23 -> tapEngineKey(13)
+                17 -> tapEngineKey(122)
+                18 -> tapEngineKey(140)
+                98, 100 -> tapEngineKey(1)
+                96 -> tapEngineKey(139)
+                97 -> tapEngineKey(32)
+                99 -> tapEngineKey(123)
                 101 -> EmulateKeyEvent(140, 1)
-                102 -> EmulateKeyEvent(83, 2)
-                103 -> EmulateKeyEvent(76, 2)
-                105 -> EmulateKeyEvent(124, 2)
-                106 -> EmulateKeyEvent(143, 2)
+                102 -> tapEngineKey(83)
+                103 -> tapEngineKey(76)
+                105 -> tapEngineKey(124)
+                106 -> tapEngineKey(143)
             }
         } else if (mapped.action == 1 && keyCode == 101) {
             EmulateKeyEvent(140, 0)

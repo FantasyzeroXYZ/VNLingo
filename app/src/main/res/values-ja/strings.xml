@@ -264,7 +264,7 @@
     <string name="settings_qq_group">QQ グループ</string>
     <string name="settings_telegram_channel">Telegram チャンネル</string>
     <string name="update_found_title">新しいバージョンがあります</string>
-    <string name="update_version_item">TyranorNext：%1$s</string>
+    <string name="update_version_item">VNLingo：%1$s</string>
     <string name="update_download_cancel">ダウンロードをキャンセル</string>
     <string name="update_downloading_status">ダウンロード中：%1$s / %2$s（%3$d%%）</string>
     <string name="update_download_completed_title">ダウンロード完了</string>
@@ -542,7 +542,7 @@
     <string name="engine_settings_artemis_patch_failed">パッチに失敗：ゲームフォルダーが書き込み可能で PFS を含むか確認してください</string>
     <string name="engine_settings_artemis_patch_dir_unresolved">ゲームフォルダーのパスを解決できません</string>
     <string name="engine_settings_artemis_patch_permission_required">「すべてのファイルへのアクセス」権限が必要です。設定画面を開きました</string>
-    <string name="engine_settings_artemis_clean_hint">自研カーネルはゲームパックから直接読み込むため、公式のバージョン/パッチ/表示設定は適用されません。</string>
+    <string name="engine_settings_artemis_clean_hint">エンジンバージョンと自動パッチは公式カーネル専用です。（解像度・サイドカット・画像キャッシュ・フォントキャッシュ・省電力は両カーネルで有効です。）</string>
     <string name="engine_settings_web_shell_port_title">Web サーバーポート</string>
     <string name="engine_settings_web_shell_port_summary">固定ポート（既定 23333）で Web セーブのオリジンを安定させます。Tyrano / WebOther / VN 共用。変更すると既存セーブが見えなくなる場合があり、ポート使用中は一時ポートに自動切替します</string>
     <string name="engine_settings_external_network_resources">外部ネットワークリソースを許可</string>
@@ -560,6 +560,9 @@
     <string name="engine_settings_engine_version_mz">エンジンバージョン - MZ</string>
     <string name="engine_settings_renpy_module_description">Ren’Py は外部 APK エンジンモジュールを使用し、指定バージョンに対応するプラグインで開きます。以下の設定は既定で全体設定に従い、ゲームごとに個別に上書きできます。</string>
     <string name="engine_settings_renpy_module_description_global">Ren’Py は外部 APK エンジンモジュールを使用し、指定バージョンに対応するプラグインで開きます。</string>
+    <string name="engine_settings_renpy_module_card">モジュール管理</string>
+    <string name="engine_settings_renpy_module_in_use">使用中</string>
+    <string name="engine_settings_renpy_module_hint">未インストールのモジュールをタップするとダウンロードページを開きます。戻ると状態が自動的に更新されます。</string>
     <string name="engine_settings_rpgmaker_module_description">RPG Maker XP/VX/VX Ace/mkxp-z は外部 RPGM モジュールで起動します。以下の設定は既定で全体設定に従い、ゲームごとに個別に上書きできます。</string>
     <string name="engine_settings_follow_global">全体設定に従う</string>
     <string name="engine_settings_follow_global_with_value">全体設定に従う · %1$s</string>

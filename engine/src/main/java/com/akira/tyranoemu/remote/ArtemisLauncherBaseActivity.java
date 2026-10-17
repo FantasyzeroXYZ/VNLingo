@@ -24,7 +24,9 @@ public abstract class ArtemisLauncherBaseActivity extends com.ies_net.artemis.Ar
     private android.view.View extractPanelView;
     /** 统一虚拟鼠标（手柄移动光标 + A 键经内核 InjectHostTouch 合成点击）。 */
     private com.core.engine.EngineVirtualMouse virtualMouse;
-    private boolean virtualMouseMode;
+    // 控制模式统一走 EngineControlMode（开发准则：共通抽象 + 差异适配）——
+    // 本宿主的差异（捕获窗焦点旗标 + setKeepNativeFocused）经 Differ 回调接入。
+    private com.core.engine.EngineControlMode controlMode;
     private static final String PREF_ARTEMIS_MOUSE_MODE = "artemis_virtual_mouse";
     /** 加载 revision-specific 的 Artemis native 库（如 libartemis.so），onCreate 一次性调用。 */
     public abstract void loadEngineLibrary();
@@ -154,6 +156,13 @@ public abstract class ArtemisLauncherBaseActivity extends com.ies_net.artemis.Ar
                     public boolean dispatchKeyEvent(android.view.KeyEvent event) {
                         return routePanelKey(event);
                     }
+
+                    @Override
+                    public boolean dispatchGenericMotionEvent(android.view.MotionEvent event) {
+                        // 面板窗持焦时轴事件进本窗（不到 Activity）：面板展开吞轴 +
+                        // 扳机轴合成 R2/L2 键（与 routeMotionFromCatcher 同一套）。
+                        return routeMotionFromCatcher(event);
+                    }
                 };
                 panelKeyCatcher.addView(panelView, new android.widget.FrameLayout.LayoutParams(
                         android.view.ViewGroup.LayoutParams.MATCH_PARENT,
@@ -211,14 +220,22 @@ public abstract class ArtemisLauncherBaseActivity extends com.ies_net.artemis.Ar
      */
     private void installVirtualMouseWindow() {
         try {
-            virtualMouseMode = getSharedPreferences(PREF_ARTEMIS_MOUSE_MODE, MODE_PRIVATE)
-                    .getBoolean(PREF_ARTEMIS_MOUSE_MODE, false);
-            // 鼠标模式开启时保持 native 失焦渲染（游戏不因捕获窗持焦而暂停）
-            com.ies_net.artemis.ArtemisActivity.setKeepNativeFocused(virtualMouseMode);
+            controlMode = com.core.engine.EngineControlMode.load(this, PREF_ARTEMIS_MOUSE_MODE, PREF_ARTEMIS_MOUSE_MODE, false);
+            // 按键窗两种模式都持焦（见 applyMouseWindowFocusFlags）→ native 恒为
+            // 「失焦但需继续渲染」，否则游戏会因失焦而暂停。
+            com.ies_net.artemis.ArtemisActivity.setKeepNativeFocused(true);
             mouseKeyCatcher = new android.widget.FrameLayout(this) {
                 @Override
                 public boolean dispatchKeyEvent(android.view.KeyEvent event) {
                     return routeMouseKey(event);
+                }
+
+                @Override
+                public boolean dispatchGenericMotionEvent(android.view.MotionEvent event) {
+                    // 本窗两种模式都持焦 → 手柄轴事件（摇杆/扳机）进本窗而非 Activity。
+                    // 不在这里接住的话，摇杆与扳机轴会被 View 树默认丢弃——
+                    // 「R2 切换虚拟鼠标失灵」的另一半根因（Activity 层合成器收不到事件）。
+                    return routeMotionFromCatcher(event);
                 }
             };
             android.widget.FrameLayout overlay = mouseKeyCatcher;
@@ -237,7 +254,13 @@ public abstract class ArtemisLauncherBaseActivity extends com.ies_net.artemis.Ar
                     this::virtualMouseSurface,
                     (v, x, y) -> artTouchTap(x, y),
                     this::virtualMouseOverlayClick);
-            if (!virtualMouseMode) virtualMouse.hideCursor();
+            // 启动时按持久化的模式同步光标与窗口旗标：只把模式读回字段、不同步的话，
+            // 恢复为鼠标模式时右缘「点击模式」键显示"鼠标"、实际却没有光标（用户反馈的
+            // "刚进游戏模式错乱、与右侧控制模式状态不一致"）。
+            controlMode.applyTo(virtualMouse, artemisModeDiffer());
+            // 侧键是在上面读 prefs **之前**创建的，图标会定格在字段初值（false → "手指"）。
+            // 现在模式已确定，补刷一次，否则右缘图标与实际模式仍然不一致。
+            if (extractPanel != null) extractPanel.refreshClickModeButton();
             Log.i("YukiArtemis", "virtual mouse installed (artemis)");
         } catch (Throwable t) {
             Log.w("YukiArtemis", "install virtual mouse failed", t);
@@ -278,7 +301,11 @@ public abstract class ArtemisLauncherBaseActivity extends com.ies_net.artemis.Ar
         if (extractPanel != null && mapped != null && extractPanel.handleKey(mapped)) return true;
         // 面板没消费的动作落到虚拟鼠标：面板展开时也能用光标点侧键/面板控件
         // （真机现象：面板展开→面板窗持焦→A 键不再进光标窗→侧键点不掉）。
-        if (virtualMouse != null && mapped != null && virtualMouse.handleKey(mapped)) return true;
+        // **仅鼠标模式**才交虚拟鼠标：触摸模式下虚拟鼠标必须完全让路，否则它会
+        // ensureCursor() 强行点亮光标并吞掉方向键/A —— 用户反馈的"触摸模式用手柄
+        // 没反应、光标凭空出现（模式与右缘按钮显示不一致）"就是漏了这个门控。
+        if (isVirtualMouseMode() && virtualMouse != null && mapped != null
+                && virtualMouse.handleKey(mapped)) return true;
         try {
             super.dispatchKeyEvent(mapped == null ? event : mapped);
         } catch (Throwable t) {
@@ -318,7 +345,9 @@ public abstract class ArtemisLauncherBaseActivity extends com.ies_net.artemis.Ar
         // 面板窗同样是独立窗口，可聚焦时也会把系统栏带出来，一并补沉浸式 flag。
         applyImmersiveToCatcherWindow(panelKeyCatcher);
         try {
-            com.ies_net.artemis.ArtemisActivity.setKeepNativeFocused(panelTakesFocus || virtualMouseMode);
+            // 按键窗现在**两种模式都持焦**（见 applyMouseWindowFocusFlags），native 恒处于
+            // 「失焦但必须继续渲染」状态；面板展开时同理。
+            com.ies_net.artemis.ArtemisActivity.setKeepNativeFocused(true);
         } catch (Throwable t) {
             Log.w("YukiArtemis", "setKeepNativeFocused failed", t);
         }
@@ -340,7 +369,8 @@ public abstract class ArtemisLauncherBaseActivity extends com.ies_net.artemis.Ar
         // 面板动作表**优先**（用户要求：文本框展开时手柄焦点就在文本框上）；
         // 未消费的键才交虚拟鼠标，避免面板收起瞬间吞掉光标按键。
         if (extractPanel != null && mapped != null && extractPanel.handleKey(mapped)) return true;
-        if (virtualMouse != null && mapped != null && virtualMouse.handleKey(mapped)) return true;
+        if (isVirtualMouseMode() && virtualMouse != null && mapped != null
+                && virtualMouse.handleKey(mapped)) return true;
         try {
             super.dispatchKeyEvent(mapped);
         } catch (Throwable t) {
@@ -349,36 +379,49 @@ public abstract class ArtemisLauncherBaseActivity extends com.ies_net.artemis.Ar
         return true; // 鼠标模式下按键不外溢
     }
 
-    /** 鼠标模式 = 光标窗口可聚焦（接管按键）；触摸模式 = NOT_FOCUSABLE 还给游戏。
-     *  面板展开时面板窗优先持焦（输入独占），光标窗让出。 */
+    /**
+     * 按键窗焦点与触摸接收：**两种模式都持焦**（面板展开时让给面板窗）。
+     *
+     * 为什么触摸模式也要持焦：Artemis 是 NativeActivity 直读输入，而本宿主添加的所有
+     * 覆盖窗（面板窗 / 光标窗 / 左右缘按键窗）都是 FLAG_NOT_FOCUSABLE —— 触摸模式下
+     * "没有任何窗口持有焦点"时，按键（手柄与键盘都一样）会**整体丢失**：Java 收不到
+     * （无 dispatchKeyEvent 日志），游戏也收不到（实测画面对任何按键零响应，而同一画面
+     * 触摸点 START 正常）。持焦后按键进 Java → 面板/虚拟鼠标先处理 → 未消费的再经
+     * ArtemisActivity.dispatchKeyEvent 的 EmulateKeyEvent 注入内核，游戏照常可用。
+     *
+     * 触摸与按键分开控制：触摸模式下保留 FLAG_NOT_TOUCHABLE（触摸零干扰直达游戏），
+     * 只有光标可见时才打开触摸接收（当触控板用）。
+     */
     private void applyMouseWindowFocusFlags() {
         if (mouseKeyCatcher == null || cursorWindowLp == null) return;
         boolean panelExpanded = extractPanel != null && extractPanel.isExpanded();
         try {
-            // 鼠标模式且面板未展开时光标窗持焦（面板展开时焦点按用户要求给面板：
-            // 手柄键走面板动作表；触摸按坐标命中，不依赖焦点 → 右侧按键由
-            // OnsExtractPanel.raiseSideButtons() 提到最前保证可点）。
-            if (virtualMouseMode && !panelExpanded) {
+            if (!panelExpanded) {
                 cursorWindowLp.flags &= ~android.view.WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE;
-                // 虚拟鼠标模式下**打开触摸接收**：触摸当触控板用
-                // （拖动移动光标、点按在光标处点击，见 EngineVirtualMouse.onTouchEvent）。
-                // 触摸模式下保持 NOT_TOUCHABLE，触摸零干扰地透传给游戏。
-                cursorWindowLp.flags &= ~android.view.WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE;
+                if (isVirtualMouseMode()) {
+                    // 鼠标模式：打开触摸接收 —— 触摸当触控板用
+                    // （拖动移动光标、点按在光标处点击，见 EngineVirtualMouse.onTouchEvent）
+                    cursorWindowLp.flags &= ~android.view.WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE;
+                } else {
+                    // 触摸模式：触摸仍零干扰直达游戏（只是按键由本窗收下再转发）
+                    cursorWindowLp.flags |= android.view.WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE;
+                }
                 mouseKeyCatcher.setFocusable(true);
                 mouseKeyCatcher.setFocusableInTouchMode(true);
                 mouseKeyCatcher.requestFocus();
                 // 该窗口取得焦点后系统栏会重新出现（沉浸式 flag 按窗口生效，之前没给这个
                 // 额外窗口设）——用户反馈「切到虚拟鼠标模式后状态栏/底部栏藏不住」就是它。
-                // 取得焦点时补一次，并延时再补两次压住 ROM 的焦点变化重放。
                 applyImmersiveToCatcherWindow(mouseKeyCatcher);
-                // **光标窗是可触摸的全屏窗**（鼠标模式下的"触控板"）：它在按键窗之后创建，
-                // 会盖住左缘/右缘按键与面板 → 必须把这三个窗口提到它之上，否则
-                // "进入游戏完全无法触摸、左右两侧按键都点不动"（本回归的真因）。
-                new android.os.Handler(android.os.Looper.getMainLooper())
-                        .postDelayed(this::raiseOverlaysAboveCursor, 50);
+                if (isVirtualMouseMode()) {
+                    // 鼠标模式下光标窗是可触摸的全屏窗（"触控板"）：它在按键窗之后创建，
+                    // 会盖住左缘/右缘按键与面板 → 必须把这三个窗口提到它之上，否则
+                    // "进入游戏完全无法触摸、左右两侧按键都点不动"（本回归的真因）。
+                    new android.os.Handler(android.os.Looper.getMainLooper())
+                            .postDelayed(this::raiseOverlaysAboveCursor, 50);
+                }
             } else {
                 cursorWindowLp.flags |= android.view.WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE;
-                // 非鼠标模式：光标窗不接收触摸，触摸零干扰透传给游戏
+                // 面板展开：焦点给面板窗，触摸也交回（面板按坐标命中）
                 cursorWindowLp.flags |= android.view.WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE;
             }
             getWindowManager().updateViewLayout(mouseKeyCatcher, cursorWindowLp);
@@ -558,22 +601,21 @@ public abstract class ArtemisLauncherBaseActivity extends com.ies_net.artemis.Ar
     }
 
     private boolean isVirtualMouseMode() {
-        return virtualMouseMode;
+        return controlMode != null && controlMode.isMouseMode();
     }
 
     private void toggleVirtualMouseMode() {
-        virtualMouseMode = !virtualMouseMode;
-        getSharedPreferences(PREF_ARTEMIS_MOUSE_MODE, MODE_PRIVATE).edit()
-                .putBoolean(PREF_ARTEMIS_MOUSE_MODE, virtualMouseMode).apply();
-        if (virtualMouse != null) {
-            // 切进鼠标立即显示光标（触屏设备没有方向键可按）；切回触摸隐藏
-            if (virtualMouseMode) virtualMouse.showCursor();
-            else virtualMouse.hideCursor();
-        }
-        // 全屏按键捕获窗持焦后游戏窗失焦——同步 keepNativeFocused 让 native
-        // 循环忽略失焦（持续绘制），否则游戏看起来暂停死住
-        com.ies_net.artemis.ArtemisActivity.setKeepNativeFocused(virtualMouseMode);
-        applyMouseWindowFocusFlags();
+        if (controlMode != null) controlMode.toggle();
+    }
+
+    /** 本宿主的模式差异适配：捕获窗焦点旗标 + native 失焦渲染开关。 */
+    private com.core.engine.EngineControlMode.Differ artemisModeDiffer() {
+        return mouseMode -> {
+            // 全屏按键捕获窗持焦后游戏窗失焦——同步 keepNativeFocused 让 native
+            // 循环忽略失焦（持续绘制），否则游戏看起来暂停死住
+            com.ies_net.artemis.ArtemisActivity.setKeepNativeFocused(mouseMode);
+            applyMouseWindowFocusFlags();
+        };
     }
 
     /**
@@ -643,21 +685,48 @@ public abstract class ArtemisLauncherBaseActivity extends com.ies_net.artemis.Ar
         // **面板优先**（展开时按键只进面板、不透传游戏，也不驱动虚拟鼠标光标）→
         // 虚拟鼠标（鼠标模式时才接管）。
         KeyEvent mapped = com.core.engine.GamepadRemap.apply(event);
+        // 诊断（首按一条）：确认按键到底有没有进 Java。Artemis 的 NativeActivity 直读输入，
+        // "触摸模式 + 面板收起"时没有任何可聚焦窗口 → 按键往往**完全不经这里**，
+        // 这正是"触摸模式下手柄切换虚拟鼠标无效"的原因（需内核转发输入才能根治）。
+        if (event != null && event.getAction() == KeyEvent.ACTION_DOWN
+                && event.getRepeatCount() == 0) {
+            Log.i("YukiArtemis", "activity key code=" + event.getKeyCode()
+                    + " source=0x" + Integer.toHexString(event.getSource())
+                    + " mouseMode=" + isVirtualMouseMode());
+        }
         if (com.core.engine.EngineOverlayRouting.routeKey(
-                extractPanel, virtualMouse, virtualMouseMode, mapped)) {
+                extractPanel, virtualMouse, isVirtualMouseMode(), mapped)) {
             return true;
         }
         return super.dispatchKeyEvent(event);
     }
 
-    @Override
-    public boolean dispatchGenericMotionEvent(android.view.MotionEvent event) {
-        // 面板展开：摇杆/轴事件全吞；否则左摇杆移动虚拟光标（统一入口）
+    /**
+     * 持焦覆盖窗（光标窗/面板窗）与 Activity 共用的轴事件路由：
+     * ① 扳机轴边沿 → 合成 R2/L2 键事件（Xbox 等手柄扳机只报轴量、永远没有
+     * KEYCODE_BUTTON_R2/L2 键事件，默认绑 R2 的「切换虚拟鼠标」因此失灵），
+     * 合成键走完整 dispatchKeyEvent 链路（重映射→面板→鼠标→游戏），与真按键同权；
+     * ② 面板展开吞全部轴；③ 否则交给虚拟鼠标（摇杆移动光标）。
+     * 返回 true（覆盖窗持焦时轴事件不外溢）。
+     */
+    private boolean routeMotionFromCatcher(android.view.MotionEvent event) {
+        android.view.KeyEvent triggerKey = com.core.engine.TriggerAxisKeys.apply(event);
+        if (triggerKey != null) {
+            Log.i("YukiArtemis", "trigger axis → synthetic key code=" + triggerKey.getKeyCode()
+                    + " action=" + triggerKey.getAction());
+            return dispatchKeyEvent(triggerKey);
+        }
         if (com.core.engine.EngineOverlayRouting.routeMotion(
-                extractPanel, virtualMouse, virtualMouseMode, event)) {
+                extractPanel, virtualMouse, isVirtualMouseMode(), event)) {
             return true;
         }
-        return super.dispatchGenericMotionEvent(event);
+        return true;
+    }
+
+    @Override
+    public boolean dispatchGenericMotionEvent(android.view.MotionEvent event) {
+        // Activity 主窗（游戏窗）路径：与覆盖窗共用同一套路由（见 routeMotionFromCatcher）。
+        return routeMotionFromCatcher(event);
     }
 
     @Override

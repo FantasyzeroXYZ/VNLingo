@@ -60,6 +60,8 @@ class EngineVirtualMouse(
         private set
 
     private var cursorVisible = false
+    /** 显示光标时窗口尚未 layout（宽高为 0）→ 待在 onSizeChanged 里补居中。 */
+    private var needsRecenter = false
 
     init {
         layoutParams = ViewGroup.LayoutParams(
@@ -99,19 +101,38 @@ class EngineVirtualMouse(
 
     override fun ensureCursor() {
         if (cursorVisible) return
+        cursorVisible = true
+        // 启动时（宿主按持久化模式补 showCursor）本窗可能还没 layout：宽高为 0 时居中
+        // 会算成 (0,0)，光标停在左上角看起来像"又错乱了"。记下来，等 onSizeChanged 再居中。
+        needsRecenter = width <= 0 || height <= 0
+        if (!needsRecenter) recenterCursor()
+        clampCursor()
+        invalidate()
+    }
+
+    /** 光标居中到游戏画面；surface 未就绪时退回本窗中心。 */
+    private fun recenterCursor() {
         val surface = surfaceProvider()
-        cursorX = if (surface != null) surface.width / 2f else width / 2f
-        cursorY = if (surface != null) surface.height / 2f else height / 2f
+        cursorX = if (surface != null && surface.width > 0) surface.width / 2f else width / 2f
+        cursorY = if (surface != null && surface.height > 0) surface.height / 2f else height / 2f
         // 光标状态以覆盖层（窗口）坐标系为准；surface 居中时两者中心一致
-        val ol = IntArray(2)
-        getLocationOnScreen(ol)
-        val sl = IntArray(2)
-        surface?.getLocationOnScreen(sl)
         if (surface != null) {
+            val ol = IntArray(2)
+            getLocationOnScreen(ol)
+            val sl = IntArray(2)
+            surface.getLocationOnScreen(sl)
             cursorX += (sl[0] - ol[0]).toFloat()
             cursorY += (sl[1] - ol[1]).toFloat()
         }
-        cursorVisible = true
+    }
+
+    override fun onSizeChanged(w: Int, h: Int, oldw: Int, oldh: Int) {
+        super.onSizeChanged(w, h, oldw, oldh)
+        if (!cursorVisible) return
+        if (needsRecenter) {
+            needsRecenter = false
+            recenterCursor()
+        }
         clampCursor()
         invalidate()
     }

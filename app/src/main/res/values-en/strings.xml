@@ -264,7 +264,7 @@
     <string name="settings_qq_group">QQ group</string>
     <string name="settings_telegram_channel">Telegram channel</string>
     <string name="update_found_title">New version available</string>
-    <string name="update_version_item">TyranorNext: %1$s</string>
+    <string name="update_version_item">VNLingo: %1$s</string>
     <string name="update_download_cancel">Cancel download</string>
     <string name="update_downloading_status">Downloading: %1$s / %2$s (%3$d%%)</string>
     <string name="update_download_completed_title">Download complete</string>
@@ -542,7 +542,7 @@
     <string name="engine_settings_artemis_patch_failed">Patch failed: make sure the game folder is writable and contains PFS archives</string>
     <string name="engine_settings_artemis_patch_dir_unresolved">Cannot resolve the game folder path</string>
     <string name="engine_settings_artemis_patch_permission_required">All-files access is required; the settings page was opened</string>
-    <string name="engine_settings_artemis_clean_hint">The clean-room kernel reads resources and config directly from the game pack; official version/patch/display options do not apply.</string>
+    <string name="engine_settings_artemis_clean_hint">Engine version and auto patch are official-only options. (Stage resolution, side cut, image cache, font cache and power saving apply to both kernels.)</string>
     <string name="engine_settings_web_shell_port_title">Web server port</string>
     <string name="engine_settings_web_shell_port_summary">A fixed port (default 23333) keeps the web save origin stable; shared by Tyrano / WebOther / VN. Changing it may hide existing saves; a temporary port is used automatically when the port is in use</string>
     <string name="engine_settings_external_network_resources">Allow external network resources</string>
@@ -560,6 +560,9 @@
     <string name="engine_settings_engine_version_mz">Engine version - MZ</string>
     <string name="engine_settings_renpy_module_description">Ren’Py uses an external APK engine module and opens the plugin matching the selected version. The options below follow the global values by default and can be overridden per game.</string>
     <string name="engine_settings_renpy_module_description_global">Ren’Py uses an external APK engine module and opens the plugin matching the selected version.</string>
+    <string name="engine_settings_renpy_module_card">Module management</string>
+    <string name="engine_settings_renpy_module_in_use">in use</string>
+    <string name="engine_settings_renpy_module_hint">Tap an uninstalled module to open its download page; the status refreshes automatically when you return.</string>
     <string name="engine_settings_rpgmaker_module_description">RPG Maker XP/VX/VX Ace/mkxp-z runs through the external RPGM module. The options below follow the global values by default and can be overridden per game.</string>
     <string name="engine_settings_follow_global">Follow global</string>
     <string name="engine_settings_follow_global_with_value">Follow global · %1$s</string>

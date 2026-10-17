@@ -1,7 +1,7 @@
 package com.core.engine
 
 /**
- * App（`com.tyranor.next`）→ engine 内置引擎宿主的启动 Intent 契约常量（P1-7）。
+ * App（`com.vnlingo.app`）→ engine 内置引擎宿主的启动 Intent 契约常量（P1-7）。
  *
  * 内置启动链路的 extras 键与 [LAUNCH_MODE] 固定取值只在**本文件**定义；app 侧
  * `EngineLauncher` 与 engine 侧各宿主 Activity 均引用这里，禁止再写裸字符串字面量。

@@ -17,7 +17,7 @@ set -euo pipefail
 
 REPO_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 APK="$REPO_ROOT/app/build/outputs/apk/debug/app-debug.apk"
-PACKAGE="com.tyranor.next"
+PACKAGE="com.vnlingo.app"
 ADB="${ADB:-D:/dev-cache/Android/Sdk/platform-tools/adb.exe}"
 JDK="${JAVA_HOME:-D:/dev-cache/jdk-17.0.20.1+1}"
 

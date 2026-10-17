@@ -206,7 +206,7 @@ jobs:
           else
             gh release create "${TAG_NAME}" "${APK_PATH}" \
               --target "${GITHUB_SHA}" \
-              --title "Tyranor Next ${VERSION_NAME}" \
+              --title "VNLingo ${VERSION_NAME}" \
               --notes "Automated beta build from versionCode ${VERSION_CODE}, commit ${GITHUB_SHA}." \
               --prerelease
           fi

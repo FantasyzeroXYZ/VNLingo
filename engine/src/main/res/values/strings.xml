@@ -55,6 +55,10 @@
     <string name="engine_artemis_click_unsupported">当前「官方内核」不支持虚拟鼠标点击（缺 injectHostTouch）；请在「引擎设置 → 引擎内核」改用「自研内核」</string>
     <string name="engine_ons_extract_mouse_off">虚拟鼠标：已关闭（回到触摸模式）</string>
     <string name="engine_ons_extract_screenshot_saved">已截图 %1$s</string>
+    <string name="engine_screenshot_preview_title">截图预览</string>
+    <string name="engine_screenshot_preview_hint">选择「保存」存入截图库，或「不保存」直接关闭</string>
+    <string name="engine_screenshot_save">保存</string>
+    <string name="engine_screenshot_discard">不保存</string>
     <string name="engine_ons_extract_opacity">透明度</string>
     <string name="engine_ons_extract_no_voice">（无配对语音）</string>
     <string name="engine_ons_extract_copied">已复制</string>
@@ -127,7 +131,7 @@
     <string name="engine_ons_extract_cloud_hint_repo">GitHub 仓库（owner/repo）</string>
     <string name="engine_ons_extract_cloud_hint_user">用户名</string>
     <string name="engine_ons_extract_cloud_hint_token">密码/令牌（GitHub 用 Personal Access Token）</string>
-    <string name="engine_ons_extract_cloud_hint_dir">远程目录（默认 TyranorNext/saves）</string>
+    <string name="engine_ons_extract_cloud_hint_dir">远程目录（默认 VNLingo/saves）</string>
     <string name="engine_ons_extract_cloud_upload">上传</string>
     <string name="engine_ons_extract_cloud_download">下载</string>
     <string name="engine_ons_extract_chip">文</string>

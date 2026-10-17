@@ -362,6 +362,17 @@ public class OnsExtractPanel {
     private Runnable mouseModeToggle;
     private java.util.function.Supplier<Boolean> mouseModeSupplier;
 
+    /**
+     * 刷新右缘「点击模式」键的图标。宿主在**非点击**路径切换/确定模式后调用：
+     * - 启动时：侧键按钮是在宿主把模式从 prefs 读回字段**之前**创建的，图标会定格在
+     *   字段初始值（Artemis/KRKR 的 false → 显示"手指"），而实际模式可能是鼠标模式
+     *   —— 用户看到的「与右侧控制模式的状态不一致」；
+     * - 手柄快捷键（PANEL_MOUSE_TOGGLE）切换后：见 {@link #toggleMouseModeFromKey()}。
+     */
+    public void refreshClickModeButton() {
+        OnsSideButtons.refreshClickMode(sideButtons);
+    }
+
     public void release() {
         facade.setListener(null);
         stopTts();
@@ -2903,6 +2914,9 @@ public class OnsExtractPanel {
         }
         boolean on = mouseModeSupplier != null && Boolean.TRUE.equals(mouseModeSupplier.get());
         Log.i(TAG, "panel action mouse_toggle → " + (on ? "virtual mouse ON" : "virtual mouse OFF"));
+        // 手柄快捷键这条路径不经过右缘「点击模式」按钮的 onClick，必须主动刷它的图标，
+        // 否则会出现"模式已经切换、右缘图标还停在旧状态"（用户反馈的状态不一致）。
+        refreshClickModeButton();
         toast(on ? R.string.engine_ons_extract_mouse_on : R.string.engine_ons_extract_mouse_off);
     }
 
@@ -3753,10 +3767,22 @@ public class OnsExtractPanel {
     }
 
     /**
-     * 截图（右缘截图键与面板相机键共用）：PixelCopy 抓整窗 → 存
-     * screenshots/<游戏名>/ 供主页「截图管理」查看，同时作为制卡配图缓存。
+     * 截图（右缘截图键与面板相机键共用）：PixelCopy 抓整窗 → **先弹悬浮预览**
+     * （用户要求：截图后由用户选「保存」/「不保存」，不再自动落盘）。
      */
     public void captureScreenshot() {
+        captureScreenshot(true);
+    }
+
+    /**
+     * 自动路径（AI 代理 take_screenshot 工具等）：不弹预览，直接落盘——
+     * 代理调用没有人在屏幕前确认，弹预览只会阻塞。
+     */
+    public void captureScreenshotDirect() {
+        captureScreenshot(false);
+    }
+
+    private void captureScreenshot(boolean preview) {
         try {
             // 只截游戏画面：优先 PixelCopy 游戏 SurfaceView（不含覆盖层/面板/按键），
             // 找不到（Web 宿主等）再回退整窗截取
@@ -3767,13 +3793,13 @@ public class OnsExtractPanel {
                 PixelCopy.request(surface, bmp, result -> {
                     if (result != PixelCopy.SUCCESS) {
                         bmp.recycle();
-                        captureWindowScreenshot();
+                        captureWindowScreenshot(preview);
                         return;
                     }
-                    saveScreenshot(bmp);
+                    deliverScreenshot(bmp, preview);
                 }, main);
             } else {
-                captureWindowScreenshot();
+                captureWindowScreenshot(preview);
             }
         } catch (Throwable t) {
             Log.w(TAG, "takeScreenshot failed", t);
@@ -3782,21 +3808,31 @@ public class OnsExtractPanel {
     }
 
     /** 整窗截取（Surface 不可用时的回退）。 */
-    private void captureWindowScreenshot() {
+    private void captureWindowScreenshot(boolean preview) {
         try {
             Bitmap bmp = Bitmap.createBitmap(activity.getWindow().getDecorView().getWidth(),
                     activity.getWindow().getDecorView().getHeight(), Bitmap.Config.ARGB_8888);
             Window window = activity.getWindow();
             PixelCopy.request(window, bmp, result -> {
                 if (result != PixelCopy.SUCCESS) {
+                    bmp.recycle();
                     toast(R.string.engine_ons_extract_action_failed);
                     return;
                 }
-                saveScreenshot(bmp);
+                deliverScreenshot(bmp, preview);
             }, main);
         } catch (Throwable t) {
             Log.w(TAG, "window screenshot failed", t);
             toast(R.string.engine_ons_extract_action_failed);
+        }
+    }
+
+    /** 截图出口：手动路径弹预览（保存/不保存由用户决定），自动路径直接落盘。 */
+    private void deliverScreenshot(Bitmap bmp, boolean preview) {
+        if (preview) {
+            com.core.engine.EngineScreenshotPreview.show(activity, bmp, () -> saveScreenshot(bmp));
+        } else {
+            saveScreenshot(bmp);
         }
     }
 

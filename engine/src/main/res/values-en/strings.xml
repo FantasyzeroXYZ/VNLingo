@@ -55,6 +55,10 @@
     <string name="engine_artemis_click_unsupported">The official kernel cannot click with the virtual mouse (injectHostTouch missing). Switch to the clean-room kernel in Engine settings → Kernel.</string>
     <string name="engine_ons_extract_mouse_off">Virtual mouse: OFF (back to touch mode)</string>
     <string name="engine_ons_extract_screenshot_saved">Saved %1$s</string>
+    <string name="engine_screenshot_preview_title">Screenshot preview</string>
+    <string name="engine_screenshot_preview_hint">Choose "Save" to keep it in the gallery, or "Discard" to close</string>
+    <string name="engine_screenshot_save">Save</string>
+    <string name="engine_screenshot_discard">Discard</string>
     <string name="engine_ons_extract_opacity">Opacity</string>
     <string name="engine_ons_extract_no_voice">(no paired voice)</string>
     <string name="engine_ons_extract_copied">Copied</string>
@@ -127,7 +131,7 @@
     <string name="engine_ons_extract_cloud_hint_repo">GitHub repo (owner/repo)</string>
     <string name="engine_ons_extract_cloud_hint_user">Username</string>
     <string name="engine_ons_extract_cloud_hint_token">Password/token (GitHub PAT)</string>
-    <string name="engine_ons_extract_cloud_hint_dir">Remote dir (default TyranorNext/saves)</string>
+    <string name="engine_ons_extract_cloud_hint_dir">Remote dir (default VNLingo/saves)</string>
     <string name="engine_ons_extract_cloud_upload">Upload</string>
     <string name="engine_ons_extract_cloud_download">Download</string>
     <string name="engine_ons_extract_chip">T</string>

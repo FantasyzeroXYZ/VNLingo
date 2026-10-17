@@ -52,3 +52,21 @@
      单一按键的差值即可直接判定；配合人工看 1~2 张关键截图。
 - 手柄**摇杆/扳机轴**（`AXIS_X/Y/RX/RY/HAT_X/HAT_Y/LTRIGGER/RTRIGGER`）无法用 adb 注入，
   只能在**真实手柄**上测：`adb logcat | grep "vmouse motion"` 会打出 source 与各轴数值。
+
+---
+
+## 补充实测（2026-10-12）：扳机轴-only 连接模式
+
+游戏《流星ワールドアクター》/ 自研 clean 内核下实测：
+
+- **本连接模式下扳机不产生键码**：`adb shell getevent -l` 按 R2 只有
+  `EV_ABS ABS_GAS 000003ff→00000000`（轴量 0→1023→0），**没有任何 BTN 按键事件**；
+  L2 同理（`ABS_BRAKE`）。键位布局 `/system/usr/keylayout/Vendor_045e_Product_02fd.kl`
+  把扳机只映射为 `axis 0x09 RTRIGGER / axis 0x0a LTRIGGER`。
+- 与上表（2026-10-09 实测 L2=104 / R2=105 有变化）**并不矛盾**：那份是 `input gamepad keyevent`
+  注入的合成事件；物理按键是否产生键码与**手柄连接模式**有关（同一手柄早前连接时
+  应用侧收到过 code=105）。
+- 结论：物理扳机**不能指望系统给键码**，应用必须自己做轴→键合成——已落地
+  `com.core.engine.TriggerAxisKeys`（详见 `MEMORY.md` 2026-10-12 段、登记册 G-010）。
+- 另发现：Artemis 按键焦点在独立悬浮窗（mouseKeyCatcher）时，手柄**轴事件进 View 树
+  默认丢弃**、到不了 Activity —— 覆盖窗持焦的宿主必须在 **View 层**接轴事件。

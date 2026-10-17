@@ -60,6 +60,21 @@ public final class EngineOverlayRouting {
         return panel != null && panel.dispatchCursorClick(x, y);
     }
 
+    /**
+     * 光标可见性与宿主的「鼠标模式」开关对齐（**启动时与每次 toggle 后都必须调用**）。
+     *
+     * 宿主把鼠标模式持久化在 prefs，启动时只把它读回自己的**布尔字段**；光标本身的
+     * 可见性在 {@code EngineVirtualMouse.cursorVisible} 里，初始恒为 false。不同步就会出现
+     * 「右缘『点击模式』键显示鼠标模式，但光标不出现、方向键也不驱动光标」——
+     * 用户反馈的「刚进游戏时虚拟鼠标/触摸模式错乱、与右侧控制模式状态不一致」即此。
+     * 统一收口在这里，避免以后又有宿主漏写（ONS 此前完全没有这一步）。
+     */
+    public static void syncCursor(VirtualMouseController mouse, boolean mouseEnabled) {
+        if (mouse == null) return;
+        if (mouseEnabled) mouse.showCursor();
+        else mouse.hideCursor();
+    }
+
     /** 沉浸式全屏（统一入口，杜绝"某个引擎漏做"）。 */
     public static void applyImmersive(Activity activity) {
         ImmersiveMode.applyAndReapply(activity);

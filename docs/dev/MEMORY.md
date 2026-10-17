@@ -1,7 +1,9 @@
 # VNLingo MEMORY — AI 会话记忆（环境、踩坑、决策、续作指南）
 
 > 供后续 AI 会话快速接手。配合 `PROGRESS.md`（进度，同目录）与 `docs/guide/游戏内提取制卡功能方案.md`（提取功能线方案）阅读。
-> 更新时间：2026-10-08
+> 按**引擎 / 内核维度**索引的问题登记册见同目录 `游戏问题记录.md`（"哪个游戏、什么引擎/内核、
+> 什么问题、怎么修"）——找"这个游戏又出问题了"先查那里；本文件继续按时间线记录过程与细节。
+> 更新时间：2026-10-12
 
 ## 本机环境事实
 
@@ -11,8 +13,9 @@
   x86_64 镜像跑 arm64 引擎需 `adb install -r --abi arm64-v8a`；`adb root` 可用
 - **网络**：GitHub 直连极慢 → `https://gh-proxy.com/https://github.com/...` 镜像（clone/fetch 均可）；
   Google Maven（dl.google.com）直连可用（ML Kit 依赖拉取正常）
-- **同包名警告**：VNLingo 与 Tyranor-Next 的 applicationId 同为 `com.tyranor.next`，安装互覆；
-  模拟器回归前先确认装的是哪个
+- **同包名警告**：VNLingo 自 2026-10-17 起 applicationId 为 `com.vnlingo.app`，
+  与模拟器宿主脚本拉起的同名悬浮字幕应用同包名，安装会互覆；旧 `com.tyranor.next`
+  安装是另一个独立应用。模拟器回归前先确认装的是哪个
 
 ## 移植方法决策（2026-10-05，可复用）
 
@@ -78,9 +81,9 @@
   （Label vtable 槽扫描匹配 dlsym 地址后改槽，slotIndex=173）。
 - **TJS 发射器（patch.tjs 包装 KAGParser）在 KAG3.32（kazurauta）引导期 SIGSEGV 复现**——
   `global.KAGParser = 子类` 赋值即崩；设置 kr_extract_tjs 默认关、标注实验性。
-- **模拟器宿主侧 root 脚本干扰升级**：周期拉起 com.vnlingo.app（用户自己的 VNLingo 悬浮字幕
-  Android 应用！与本项目同名）与 ScummVM，还会 `pm disable` com.tyranor.next——表现为
-  「Activity class does not exist」；用 `pm default-state com.tyranor.next` 恢复，
+- **模拟器宿主侧 root 脚本干扰升级**：周期拉起 com.vnlingo.app（与本项目新包名相同，
+  会抢前台/覆盖安装）与 ScummVM，还会 `pm disable` 本包——表现为
+  「Activity class does not exist」；用 `pm default-state com.vnlingo.app` 恢复，
   干扰应用可 `pm disable-user`（会被脚本还原）或 `pm uninstall -k --user 0`（会破坏 PMS
   活动索引 → 同类「does not exist」，重启模拟器无效，需 `cmd package install-existing` 还原）。
 - **进程活着时勿用 run-as 改 SharedPreferences XML**——进程内存态会在下次写回时覆盖外部修改；
@@ -92,9 +95,9 @@
   每字形钩子共用一把锁 → ARM 转译下游戏主线程被饿死（ANR 5s）。
   修复：锁内只拷 512 字节尾部快照、推导在锁外、400ms 轮询、raw 4096 截尾。
   通用教训：**推导/扫描类重活必须在锁外对快照做**。
-- **模拟器新实例的组件禁用干扰**：模拟器重启后宿主脚本可能把
-  com.tyranor.next 组件置 disabled（am start 报 does not exist）——
-  `pm default-state com.tyranor.next` 恢复后再测。
+- **模拟器新实例的组件禁用干扰**：模拟器重启后宿主脚本可能把本包
+  `com.vnlingo.app` 的组件置 disabled（am start 报 does not exist）——
+  `pm default-state com.vnlingo.app` 恢复后再测。
 - **KRKR 对白完整还原的两个备选（已评估，暂缓实施）**：
   A=字符串层 native 钩子——锚点：TVPCreateAndAddWindow(tTJSNI_Window*) 已导出
   （libgame.so 可见核心符号不止 GDI 桩），krkr2-main 源码对齐消息层文本函数偏移，
@@ -107,7 +110,8 @@
   码点流呈前缀链，还原需重绘状态机；说话人行（名字层+正文层双层重绘）有重复段
   待精化。kirikiri 核心层文本处理符号仍隐藏（18559 个导出多为 cocos2d/STL）。
 - **品牌已更名 VNLingo（2026-10-05 会话五）**：app_name 与用户可见文案全部
-  VNLingo；applicationId 保持 com.tyranor.next（包名兼容上游，勿改）。图标为
+  VNLingo。2026-10-17 起 applicationId / namespace / 源码包统一为
+  `com.vnlingo.app`（不再兼容上游包名，旧包数据不迁移）。图标为
   PIL 程序生成（深靛蓝底白 V + 青条），源 PNG 可随时用同脚本重生成。
 - **模拟器抽屉里的 "Tyranor Next" 条目不是本项目**：是宿主脚本装的
   `org.scummvm.scummvm.debug`（ScummVM debug，标签被改成 Tyranor Next），
@@ -140,7 +144,7 @@
 ## 关键设计决策
 
 - **云同步（2026-10-06 会话二十七重实现，参考 RinneMobile）**：app 模块
-  `com.tyranor.next.core.sync` 三件套（WebDavClient/SyncSnapshotCodec/
+  `com.vnlingo.app.core.sync` 三件套（WebDavClient/SyncSnapshotCodec/
   SyncManager）+ `ui.sync.SyncCenterActivity`。同步语义 = 快照哈希比对
   （本地/云端各 SHA-256 vs 上次同步哈希）分流：首传/首装下载/无变化/单侧/
   冲突（用户选）。快照 = 游戏库文本元数据 + 单游戏覆盖 prefs 镜像 + 策展
@@ -165,7 +169,7 @@
   未改动。
 - 存档管理：条目管理页（应用层）承担导入导出；游戏内不再放存档 UI；
   facade 的存档数据通道（SaveZipUtil/WebSaveArchive）保留作数据能力。
-- ONS 编码：保持 gbk/sjis/utf8 手选（默认 gbk），不做 auto 探测。
+- ONS 编码：保持 gbk/sjis/utf8 手选（默认 sjis），不做 auto 探测。
 - AnkiDroid API 走 vendored 源码（Apache-2.0 头保留）而非 JitPack；ML Kit 是唯一新增依赖。
 - 截图走 PixelCopy 游戏 SurfaceView（纯画面），Surface 不可用再回退整窗。
 - **引擎支持裁剪（2026-10-05，用户决定）**：只保留 krkr/ons/rpgmaker 系列/tyrano/renpy/web/
@@ -212,7 +216,7 @@
 
 1. **engine 模块不能引用 app 类**：Gradle 依赖方向是 app → engine，跨模块
    搬运代码时容易把新类落到 app 包却在 engine 里引用（MCP 三类最初落在
-   `com.tyranor.next.core.agent`，OnsAgentDialog 引用时直接编译失败）。
+   `com.vnlingo.app.core.agent`，OnsAgentDialog 引用时直接编译失败）。
    规则：被 engine（游戏内 UI/引擎面板）使用的核心逻辑一律放
    `engine/src/main/java/com/core/**`；app 包只放纯 UI 入口层。engine 已配
    Kotlin（stdlib 在依赖里，大量 .kt 文件），移 Kotlin 文件过去零成本。
@@ -371,11 +375,11 @@
    authority `content://com.ichi2.anki.flashcards`）仍被支持；权限
    `com.ichi2.anki.permission.READ_WRITE_DATABASE` prot=dangerous，但
    requestPermissions 的系统弹窗在模拟器上不出现 → 自动化用
-   `adb shell pm grant com.tyranor.next com.ichi2.anki.permission.READ_WRITE_DATABASE`。
+   `adb shell pm grant com.vnlingo.app com.ichi2.anki.permission.READ_WRITE_DATABASE`。
    首次制卡前 AnkiDroid 必须完成过首启（intro + All files access），否则 collection
    未建。AnkiDroid 非 debuggable（run-as 拒绝），验证走 UI（deck 列表/Card browser）
    或 logcat。
-4. **模拟器快速种词典**：设备端自带 sqlite3 且 `run-as com.tyranor.next` 可用
+4. **模拟器快速种词典**：设备端自带 sqlite3 且 `run-as com.vnlingo.app` 可用
    （debug 包），SQL push 到 /data/local/tmp（MSYS 下记得 `MSYS_NO_PATHCONV=1`）
    后 `run-as ... sh -c 'sqlite3 databases/ons_dict.db < ...'`；schema =
    dicts/entries/kv 三表，需写 kv 的 current_dict 与 dict_name，改完重启应用生效
@@ -480,7 +484,7 @@
    UTF-16LE（文件头 `ff fe`），`adb exec-out ... > file` 拉下来的数据库必然
    "file is not a database"。改用 `cmd /c "adb exec-out ... > file"` 或
    [System.IO.FileStream] 直写。
-4. **真机拉应用私有数据库**：`cmd /c "adb exec-out ""run-as com.tyranor.next cat
+4. **真机拉应用私有数据库**：`cmd /c "adb exec-out ""run-as com.vnlingo.app cat
    databases/ons_dict.db"" > x.db"`。应用 shell 用户不能执行 /data/local/tmp 里的
    原生二进制，但 `shell` 用户可读写执行该目录——所以测库要用**副本**
    （`cp` 到 /data/local/tmp），不要试图原地改应用私有库。
@@ -530,7 +534,7 @@
    查询，暂未做。
 2. **engine 引不到 app 的注入模式可复用**：`OnsSaveCloud.setWebDavCredentials`
    之后，AI 助手统计走同一招 `OnsAgentDialog.setPlayStatsProvider`（静态
-   provider + 接口，`TyranorNextApplication.onCreate` 注入）。引擎子进程也会跑
+   provider + 接口，`VnLingoApplication.onCreate` 注入）。引擎子进程也会跑
    Application.onCreate，因此注入在游戏进程同样生效；provider 调用要 try/catch，
    引擎线程不能因数据源异常死掉。
 3. **LLM 工具「有定义没接线」是隐蔽桩**：`get_play_stats` 之前既没有工具条目、
@@ -931,7 +935,7 @@
    且 SAF 选择器的「保存」按钮**不接受注入点击**；游戏启动也常因焦点问题失手。凡涉及
    「选择器保存 / 长按 / 手柄实体键」的验收，要么如实标注未完成，要么请人工确认，不要反复重试烧时间。
 8. **起游戏做真机验证不要靠点击**：用导出的快捷方式蹦床直接起——
-   `adb shell am start -n com.tyranor.next/com.tyranor.next.ui.game.GameShortcutActivity --es extra_shortcut_id game_<sha256(游戏uri)>`
+   `adb shell am start -n com.vnlingo.app/com.vnlingo.app.ui.game.GameShortcutActivity --es extra_shortcut_id game_<sha256(游戏uri)>`
    （`GameShortcutManager.shortcutId` = `"game_" + sha256(uri)`；uri 用 `adb exec-out run-as … cat databases/game_library.db` 拉库后查）。
    这条路径稳、可复现，是后续所有游戏内验收的首选入口。
 9. **Artemis 的输入是 NativeActivity 直读**（2026-10-09 修正后的准确结论）：
@@ -1076,6 +1080,107 @@
    只有让内核挂载到补丁卷才行。**这条也解释了为什么 App 侧所有尝试都"没反应"。**
    （`system/extend/**` 不覆盖的修复仍保留：那是防止破坏用户/补丁覆盖文件的健壮性修复，
    不是本问题的原因——之前提交信息里把它写成"真因"是错的，以本条为准。）
+   **【2026-10-11 修正】这条里的「包内优先」结论是错的**：内核（artemis-compat）
+   已改为**松散文件（磁盘层）优先**——见下方条目 24。TheShell 的补丁卷上限修复仍然
+   有效且必要（补丁卷仍按 later-pack-wins 生效），但「App 往游戏目录放什么都不生效」
+   不再成立。
+24. **【2026-10-11 修正】artemis-compat 包/松散文件优先级翻转（真机闭环）**。
+   问题：《流星ワールドアクター》（PC rip，`artemis_kernel=clean`）只有声音没画面。
+   取证链路：官方内核（`libartemis.so`）能正常出标题 → 说明是自研内核的问题 →
+   包内日志 `3+ 条 lyc: image not found: hd/image/bg/black`、`pa/ui/ja/mw/*`
+   （共 71 条）→ 解析 4 个 pfs 卷索引发现包内 `system/table/list_android.tbl`
+   写的是 `ui_path="pa/"`、`image_path="hd/image/"`（安卓专用资源排版，本 rip 没有），
+   而包内 `list_windows.tbl` 才是 `pc/`+`image/`（= rip 实际资源）；游戏目录里
+   有一份**松散**的 `list_android.tbl`（`ArtemisPfsUnpacker` 把 `list_windows` 改名而来，
+   指向 PC 资源）——**官方内核读松散文件，自研内核读包内**，这就是差异。
+   **修复**：`artemis-compat` 的 `src/pack/pack_manager.cpp` 把 `Read`/`Exists` 改成
+   **先查松散文件（磁盘层，`.pfs` 同级）再走包链**（原版行为；官方 Android 壳整套
+   「解出启动文件 + 改名 list_windows→list_android + 改 system.ini」机制都依赖它）。
+   配套：`pack_manager.h` 行为说明、`AGENT.md §5`、新增回归
+   `tests/pf8_regressions.cpp::TestLooseOverridesPack`。
+   **验证**：arm64 回归全套 ok；部署新 `libartemis-clean.so` 后《流星》`image not found`
+   71→0、`draw[] drawn=47`（消息窗/ADV/存档 UI 全出）；Girl's Blossom（clean 内核）
+   回归正常（`drawn=43`，樱花 CG + 对话框 + 提取面板）。
+   **风险与注意**：松散优先对「没有松散文件」的游戏是零变化（Asset 查一次磁盘未命中
+   再走包）；Android 宿主不用 SAF provider（`Open(dir,"android")` 传真实路径），
+   所以不会引发 IPC 风暴。内核 .so **未改 pluginVersion**（避免被插件安装器重装覆盖），
+   换内核需手动替换 `files/engine_plugins/artemis/current/arm64-v8a/libartemis-clean.so`
+   （设备上留了 `.orig` 备份可回滚）。
+25. **【2026-10-11】Artemis「画面超出屏幕 / 不自适应」= 舞台分辨率取错档**（与内核无关，官方内核同样溢出）。
+   现象：《流星ワールドアクター》能出画面但整体被裁切（标题 logo 上下切、进游戏后 HUD 顶/底切）。
+   取证：`wm size` = 1080x2400（横屏 2400x1080）；App 窗口 `GLES2 ready 2320x1080`；
+   引擎 `engine: ... stage=1280x720` + `viewport: 1920x1080 at 200,0`
+   （= 1280x720 舞台按 1.5 倍放大填满高度）。而游戏自己的画布是 **1920x1080**
+   ——`system/table/list_android.tbl` 里 `game_width=1920, game_height=1080, game_scale={1920,1080}`，
+   美术（`image/`、`pc/`）也按 1920 出图。舞台只有 1280x720 ⇒ 1920 的画布被塞进 1280 →
+   放大 1.5 倍溢出、四周被裁。
+   根因（App 侧）：`ArtemisPfsUnpacker` 那条链本意是「`[ANDROID]` 的
+   WIDTH/HEIGHT 继承 `[WINDOWS]`（= 游戏原生分辨率）」，`patchSystemIni` 确实写入了 1920x1080；
+   但每次启动的 `applyAndroidSettings(无覆盖)` → `restoreAndroidSectionDefaults`
+   → `removeLegacyManagedAndroidLines` 把 1920x1080/1280x720/960x540 一律当"旧版注入的遗留值"删掉
+   → `ensureAndroidCompatibilityDefaults` 再补回缺省 **1280x720**。即**继承来的原生分辨率被回退覆盖**。
+   修复（已验证的官方路径）：把 Artemis **分辨率**设为 `1920x1080`
+   （App 里是全局「设置 → 引擎管理 → Artemis 分辨率」或每游戏覆盖键 `art_resolution`；
+   写入后松散 `system.ini` 出现 `; TYRANOR_NEXT_ARTEMIS_SETTINGS_BEGIN WIDTH=1920 HEIGHT=1080 ... END` 块）。
+   真机验证：舞台变 `stage=1920x1080` → 画面完整显示（夜景背景 + 上下 HUD 全可见，无裁切），
+   侧栏黑边内正常排布（1920x1080 居中于 2320x1080，媒体 2400x1080）。
+   待办（App 侧可选改造）：让「无覆盖」时的默认真正继承游戏 `[WINDOWS]` 分辨率
+   （例如重写 system.ini 时保留 `[WINDOWS]` 段，或不再把继承值当遗留值删除），
+   这样 HD Artemis 游戏开箱即正确、不必逐游戏手选分辨率。
+26. **【2026-10-11】Artemis 设置页：切内核导致公共项消失（已修）**。现象：把「引擎内核」从官方切到
+   自研，**舞台分辨率 / 裁切铺满** 两行会跟着消失（它们被写进了
+   `if (artKernel == ART_KERNEL_OFFICIAL)` 分支里）。根因：这两项对两种内核都生效
+   ——引擎读游戏目录松散 `system.ini` 的 `[ANDROID]`（`[WINDOWS]` 兜底）`WIDTH/HEIGHT` 与
+   `SIDECUT`，与内核无关（条目 24/25 已实证：clean 内核下 `art_resolution` 改舞台、
+   `art_side_cut` 改视口）。修复：`SettingsScreen.kt`（全局）与
+   `PerGameSettingsScreen.kt`（每游戏）把 **分辨率 + 侧边裁切提到 if 之外**恒显；
+   官方专属仍留分支内：**引擎版本 / 自动补丁 / 图像(表面)缓存 / 字体缓存 / 省电绘制**
+   （clean 内核确实不读这几个 ini 键：`SURFACE_CACHE_SIZE`/`FONT_CACHE_SIZE`/
+   `POWER_SAVING` 在 artemis-compat 源码里 0 命中）；`engine_settings_artemis_clean_hint`
+   三语言文案同步改为「自研内核不读取以下官方专属项…（分辨率与侧边裁切对两种内核都生效。）」。
+   附带内核修复：clean 内核的 `SIDECUT` 原先只读 `[COMMON]` 段（`native_activity.cpp`
+   的 `renderer.SetStage(...)`），而 App 写进 `[ANDROID]` → 侧边裁切对 clean **永远无效**；
+   改为 **`[ANDROID]` → `[WINDOWS]` → `[COMMON]`**（与 `StageInt` 同序，COMMON 仅作兜底）。
+   真机验证（装新 APK 后）：自研内核下设置页仍有「舞台分辨率/裁切铺满」+ 说明文案
+   （`settings_clean_kernel.png`）；clean + `art_side_cut=1` → `viewport: 2320x1305 at 0,-112`
+   （裁切填满；修复前恒 `1920x1080 at 200,0` 即便开了裁切）。
+   注意：安装 APK 时**不要**让插件版本号变化，否则插件重装会覆盖手动替换的内核 .so
+   （本次 manifest pluginVersion=45 == 已装 45，装后校验 sha256 一致）。
+   官方内核是否真读那三项（实证：把 6 个官方 .so 拉下来扫字符串，精确匹配
+   `SURFACE_CACHE_SIZE`/`FONT_CACHE_SIZE`/`POWER_SAVING`/`SIDECUT`/`CHARSET`/`BOOT` 全部命中的
+   是 `libartemis.so`(v1) / v4 / v5 / v6 / compatible / compatible-v2 —— 即**官方内核确实支持**
+   这三项，且 `ANDROID` 段名也在 .so 里（与 App 写入 `[ANDROID]` 一致）；自研内核则 0 命中。
+   注意：`WIDTH`/`HEIGHT` 在 v1/v4/compatible 系里没有精确字符串却显然生效（分辨率正常），
+   所以「字符串缺失」不能反推不支持，只有「命中」才有正向证明力。
+27. **【2026-10-11】自研内核补齐「图像缓存 / 字体缓存 / 省电绘制」三项（至此五项全为公共项）**。
+   既然是同一个 ini 键，官方读、自研也该读，所以在 artemis-compat 里落地：
+   - **FONT_CACHE_SIZE（字体缓存）** → `GlyphAtlas` 的页预算（原来硬编码 `kMaxPages=6`）。
+     新增 `GlyphAtlas::SetMaxPages()/MaxPages()/PageBytes()`；合成器
+     `SetFontCacheBudget(bytes)` 按 `bytes / 4MB(1024×1024 RGBA/页)` 换算页数，1..64 夹紧；
+     ini 缺省/0 → 保留编译缺省 6 页。
+   - **SURFACE_CACHE_SIZE（图像缓存）** → **新增解码像素缓存**（此前完全没有跨层缓存：
+     每次 `lyc` 都重新读包 + stb 解码 + 上传）。设计要点：**只缓存 CPU 像素，GL 纹理仍归各层**，
+     所以淘汰**不可能**让图层悬空（最坏只是多解码一次）——避免改纹理所有权的高风险重构。
+     合成器 `SetSurfaceCacheBudget(bytes)` + LRU（`last_use` tick）淘汰；单张图超预算则不缓存；
+     缺省 32MB。命中打日志 `surface cache hit[n]:`（前 20 次）。
+   - **POWER_SAVING（省电绘制）** → 帧循环**限流到约 30fps**（`now - last_present_ms < 30`
+     则跳过 clear+composite+swap；循环本身仍全速跑，输入轮询/补间推进/EndFrame 不受影响）。
+   - 读取统一走新增的 `EngineContext::PlatformInt(key, fallback)`（`[ANDROID]`→`[WINDOWS]`→`[COMMON]`），
+     `SIDECUT` 也改用它（见条目 26）；预算在 `EngineContext::Start` 套用（GL 重建可重复套用）。
+   - 取证日志：`cache budgets: font_cache=N surface_cache=N (0 = compiled default)` 与
+     `display: stage=WxH sidecut=D power_saving=D`。
+   回归：`tests/glyph_atlas_regressions.cpp` 新增「页预算」用例（`PageBytes()==4MB`、
+   `SetMaxPages(1)` 后填满必须触发淘汰且页数不超预算、`SetMaxPages(0)` 回到缺省 6）；
+   arm64 真机跑 `glyph_atlas_regressions: ok`。
+   真机验证（《流星》，clean 内核，托管块写 `SURFACE_CACHE_SIZE=67108864 / FONT_CACHE_SIZE=33554432 / POWER_SAVING=1`）：
+   `cache budgets: font_cache=33554432 surface_cache=67108864`、
+   `display: stage=1920x1080 sidecut=0 power_saving=1`、`surface cache hit[1..17]`（重复加载
+   `pc/ui/ja/mw/mw.png` 全部命中）；省电实测 300 帧耗时 **6s → 12.5s**（≈50fps → ≈24fps，约减半）。
+   App 侧：`SettingsScreen.kt` / `PerGameSettingsScreen.kt` 把这三项也提到 if 之外，
+   现在**官方专属只剩「引擎版本 + 自动补丁」**；`engine_settings_artemis_clean_hint`
+   三语言再次改写为新文案。
+   注意：`PerGameSettingsStore` 的键名带 `_size`（`art_surface_cache_size` / `art_font_cache_size`），
+   写成 `art_surface_cache` 会被解析器白名单静默忽略（本轮踩过）。
 23. **右侧按键/面板/虚拟鼠标的"统一调用层"现状（2026-10-10 审计）**：
    统一入口（各引擎都应只用这几个，不要再在宿主里另写一份）：
    - 右侧按键列（剧情文本框/截图/放大镜/设置/音量/点击模式/主页）：由
@@ -1134,7 +1239,7 @@
 26. **云同步凭据的本地加密存储（2026-10-10）**：
    此前 `vnlingo_sync.xml` 里 `webdav_password` / `webdav_accounts` 是**明文**。
    现按 Android 平台标准做法加密：
-   - 新增 `com.tyranor.next.core.sync.SyncSecretStore`：密钥在 **AndroidKeyStore** 中生成
+   - 新增 `com.vnlingo.app.core.sync.SyncSecretStore`：密钥在 **AndroidKeyStore** 中生成
      （别名 `vnlingo_webdav_credentials_v1`，AES-256-GCM，`setRandomizedEncryptionRequired`），
      密钥不可导出；每次加密随机 12B IV，存 `Base64(IV||ciphertext||tag)`；GCM 自带完整性校验；
      解密失败（换机/还原导致密钥丢失）返回 null，调用方降级为"需重新登录"。
@@ -1333,3 +1438,134 @@
    去重合并重复条目后保留的 uri 与被合并掉的不同 → 旧快捷方式解析失败；
    原逻辑在该分支只 toast + finish → 用户看到"点一下回桌面"，误判为闪退。
    → 已改为 toast 后**打开游戏库**兜底；今后任何"改写游戏条目身份"的改动都要检查快捷方式影响。
+
+## 实测踩坑（2026-10-11 新增：自研内核字号把 em 当字号，文本大 1.45 倍）
+
+**现象**：Japanese Version（Girl's Blossom Project）用自研内核运行时，正文明显比官方内核更大、
+发虚，字溢出对话框、两行挤在一起；说话人标签也同步变大。官方内核正常。
+
+**先排除的**：不是舞台分辨率错配（该游戏 `game_scale={1280,720}` 与 stage 一致），
+也不是别的缩放 —— 实测两个内核的对话框底板几何**完全一致**（y=990 白底连续段都是 len=306），
+说明 viewport 缩放相同，差异纯粹在字号。
+
+**量化**：同一句「友達と一緒に登校するはずだったのに〜っ！」（size=46, kerning=-1）的墨迹宽度
+——官方 878px / 自研 1317px，比值 **1.50**（另一行「寝坊した〜っ！」293 vs 438 同比值）。
+
+**根因（两处，都在 `Compositor::SetText`）**
+
+1. **字号语义用错**：自研用 `stbtt_ScaleForMappingEmToPixels(size)`（让 **em 方框** = size），
+   官方等价于 `stbtt_ScaleForPixelHeight(size)`（让 **hhea ascent−descent** = size）。
+   思源黑体 `unitsPerEm=1000`、`hhea asc/desc = 1160/-288` → asc−desc = 1448，
+   于是自研字形比官方大 **1448/1000 = 1.448 倍**。
+   注意 OS/2 的 `sTypo asc/desc = 880/-120`（和为 1000）也在字体里，容易误以为"两个分母都试过了"。
+2. **advance 取整方式不同**：官方是**截断**（C 的 int cast），自研用 `lround`。
+   对 size 46/1448 的 1000 单位全角字：截断给 30px、lround 给 31px。
+   实测三点定标（L2 行墨迹宽）：`1448+trunc = 589`、`1448+lround = 608`、`1000+任意 = 881`；
+   截图实测官方 587.3 / 自研 881 → **官方 = 1448 + 截断**。
+   （早先算出的"分母 ≈1500"是取整量化造成的**假象**：1448 在 lround 下进到 31，看起来像更小的 scale。）
+3. **行距基准也要换**：行推进不能用 `(ascent−descent)`。用 asc−desc（1.0 em）算出来只有
+   17.8 stage px → 两行直接粘成一块（band 840..951 高 112）。官方实测行距 60 screen px
+   ≈ 40.5 stage px，等于 **typographic ascender × em 比例**（880/1000 = 0.88 × size）。
+   另外首行基线也取这个 ascender（否则字形上沿被纹理顶边裁掉）。
+
+**修复后实测（真机，天空场景逐像素比对）**
+
+| 指标 | 官方 | 修复后 | 修复前 |
+|---|---|---|---|
+| 行1 | y865–907 高43 宽294 x[530,823] | y859–901 高43 宽294 x[530,823] | 与行2 粘连 |
+| 行2 | y925–967 高43 宽879 x[530,1408] | y920–962 高43 宽879 x[530,1408] | 高112 宽1318 x[531,1848] |
+| 行距 | 60 | 61 | — |
+
+行高、行宽、x 范围全部一致，仅行距差 1px、整块文本高 6px（≈4 stage px，baseline 的细微差）。
+
+**可复用的反推方法**（闭源官方内核怎么定标）：
+① 从游戏 `root.pfs` 按 XOR（key = sha1(索引段)）解出正在用的字体；
+② 用仓库自带的 `src/render/stb_truetype.h` 写个小排版探针（不改引擎），对候选
+   `scale = size/DEN` × 候选推进方式（lround / 截断 / 浮点累加）算出同一句话的墨迹宽；
+③ 与真机截图里该行的墨迹宽（用像素扫描量）对齐，即可唯一确定官方语义。
+本次靠这招把"1448 + 截断"钉死。
+
+**注意**：改的是全局字号语义，会影响所有 Artemis 游戏的文本大小 —— 这正是目的
+（此前所有游戏的文本都偏大 1.45 倍，只是这个游戏里最明显）。
+
+## 实测踩坑（2026-10-11 新增：换字体会销毁字形图集 → 说话人名字层渲染成对白字形）
+
+**现象**（流星ワールドアクター，自研内核）：说话人名字标签里显示的是**对白开头**，
+而且笔画残缺（例如对白「はぁ、はぁっ。糞が、へへ撒いてやったぜ」时，名字标签显示
+「はぁ、はぁっ。」+ 一排虚线）。
+
+**先排除的**：不是文本来源问题。`tag[trace]: print` 与内核自打的 `print[name]` 都显示
+名字层拿到的是正确内容（`無線`、`フィバナ`），`SetText[name] ... glyphs=4 'フィバナ'`
+也证明排版用的是名字本身。
+
+**根因**：`Compositor::LoadFont` 里调了 `DropGlyphGl()`，它会
+`glDeleteTextures` 掉**所有**图集页纹理并清空 atlas；但**其它层**的
+`TextGlyph::tex`（存在 `Layer::glyphs` 里）仍然保存着这些 GL 纹理名。
+随后对白层重建页面时 GL **复用了同一个纹理名**，名字层便拿自己的旧 UV 去采样
+对白层的字形 —— 于是显示成对白开头、且因 UV 位置错而残缺。
+
+**为什么只有在流星这种游戏暴露**：该游戏说话人名字用
+`GenJyuuGothic-Monospace-Bold`、正文用 `...-Medium`，`font` 标签**每句切换一次 face**
+（日志：`font loaded: ...Bold` → 设名字 → `font loaded: ...Medium` → 设正文），
+于是每句都触发一次图集销毁重建。单一字体的游戏不会走到这条路径。
+
+**修复**
+
+1. `GlyphAtlas::Key` 增加 `uint32_t face`（compositor 按字体路径分配自增 serial），
+   不同 face 的字形绝不共用 cache 槽位。
+2. `Compositor::LoadFont` **不再** `DropGlyphGl()`：旧 face 的字形保留并可复用
+   （换回去也能命中）。图集清空只剩两处：**页水位淘汰**与 **`ReleaseGl`**，
+   这两处都会同步清掉各层的 glyph 引用。
+3. 顺带加了两条诊断日志：`print[name]`（脚本侧累积文本）、`SetText[name]`（渲染侧），
+   以及淘汰时的 `glyph atlas watermark eviction ...` 警告。
+
+**验证（真机）**
+
+- 修复前：名字标签「はぁ、はぁっ。」（对白）；修复后：名字标签「**無線**」（正确说话人）。
+- 该游戏全程 `glyph atlas watermark` 淘汰次数 = **0**。
+- 回归：Girl's Blossom 行高 43/43、行宽 294/879、x 范围 [530,823]/[530,1408]、
+  行距 61 —— 与官方基线完全一致，无回归。
+- `tests/glyph_atlas_regressions.cpp` arm64 真机 `ok`（Key 加字段不破坏既有断言）。
+
+**遗留（未修，风险已记录）**：图集**页水位淘汰**时仍会清空所有层的 glyph，
+即名字层会**空白**直到该层下次被 SetText。本次没触发（淘汰计数 0），
+但如果某个游戏的字号/文本量把预算撑爆，就会表现为"名字有时不显示"。
+彻底解法需要"按引用重映射各层 glyph"或调整 `FONT_CACHE_SIZE → 页数` 的换算
+（当前是 `字节 / 4MB`，对 RGBA 图集偏保守）。
+
+---
+
+## 手柄扳机键（R2/L2）失灵：轴→键合成两层根因（2026-10-12，G-010 已修）
+
+**现象**：手柄按 R2 切换触摸/虚拟鼠标无反应。用户强调"很早之前可以"——查 git（`be3aed2`）
+老实现同为 keyCode 匹配且当时真机验证通过 → 不是代码回归。
+
+**两层根因（都有真机证据）**
+
+1. **系统层**：Xbox 无线控制器（Model 1708 蓝牙，product 02fd）在本次连接模式下，
+   `/system/usr/keylayout/Vendor_045e_Product_02fd.kl` 把扳机**只映射为模拟轴**
+   （`axis 0x09 RTRIGGER` / `axis 0x0a LTRIGGER`），系统永不合成 KEYCODE_BUTTON_R2/L2。
+   取证：`adb shell getevent -l` 按 R2 只有 `EV_ABS ABS_GAS 000003ff→0`，无 BTN 事件；
+   应用侧 `mouse catcher key` 从未出现 code=105。**该行为与连接模式相关**
+   （同一手柄早前连接时产生过 keycode 105），"以前能用"≠现在能收到。
+2. **应用层（Artemis 特有，首轮修复遗漏）**：Artemis 按键焦点在独立悬浮窗
+   `mouseKeyCatcher`/`panelKeyCatcher`，手柄**轴事件**进的是这两个 View 树
+   （默认丢弃），到不了 `Activity.dispatchGenericMotionEvent`——Activity 层接了合成器也收不到。
+   同理 Artemis 的左摇杆此前在 View 层就被丢弃（隐患一并修掉）。
+
+**修复**
+
+- 新建 `engine/src/main/java/com/core/engine/TriggerAxisKeys.java`：
+  `AXIS_GAS/AXIS_RTRIGGER→R2`、`AXIS_BRAKE/AXIS_LTRIGGER→L2`，0.5 阈值
+  **按下/松开边沿检测**（按 deviceId 记状态），边沿处合成标准 KeyEvent。
+- 五宿主（Artemis/Kirikiroid/ONS/Tyrano/RPGM）`dispatchGenericMotionEvent` 前置接入；
+  **Artemis 两个 catcher View 各加 `dispatchGenericMotionEvent` override**，
+  与 Activity 共用 `routeMotionFromCatcher`（合成→面板吞轴→摇杆驱动光标）。
+- 手柄设置页捕获绑定同样接入（否则绑不上 R2/L2）。
+
+**验证**：真机按 R2 → `trigger axis → synthetic key code=105` →
+`panel action mouse_toggle → virtual mouse ON/OFF` 连续切换正常。
+登记册：`游戏问题记录.md` G-010。
+
+**规则**：覆盖窗持焦的宿主，**轴事件必须在 View 层接住**；排查"手柄某键没反应"
+第一步永远是 `adb shell getevent -l` 看它产生按键还是轴量。

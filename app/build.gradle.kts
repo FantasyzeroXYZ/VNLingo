@@ -89,7 +89,9 @@ val sharedEngineAssetNames = listOf(
     "__rpg__.js",
 )
 val hikarinagiClientId = configValue("HIKARINAGI_CLIENT_ID")
-val tyranorApplicationId = configValue("TYRANOR_APPLICATION_ID").ifBlank { "com.tyranor.next" }
+val vnlingoApplicationId = configValue("VNLINGO_APPLICATION_ID")
+    .ifBlank { configValue("TYRANOR_APPLICATION_ID") }
+    .ifBlank { "com.vnlingo.app" }
 val ciKeystoreFile = System.getenv("ANDROID_KEYSTORE_FILE")?.takeIf { it.isNotBlank() }
 val ciKeystorePassword = System.getenv("ANDROID_KEYSTORE_PASSWORD")?.takeIf { it.isNotBlank() }
 val ciKeyAlias = System.getenv("ANDROID_KEY_ALIAS")?.takeIf { it.isNotBlank() }
@@ -176,7 +178,7 @@ val checkHardcodedUiStrings by tasks.registering(Exec::class) {
 }
 
 android {
-    namespace = "com.tyranor.next"
+    namespace = "com.vnlingo.app"
     // miuix 0.9.2 传递依赖要求 compileSdk 37（本地平台为 android-37.0）
     compileSdk {
         version = release(37) {
@@ -184,7 +186,7 @@ android {
         }
     }
     defaultConfig {
-        applicationId = tyranorApplicationId
+        applicationId = vnlingoApplicationId
         minSdk = 26
         targetSdk = 36
         versionCode = appVersionCode

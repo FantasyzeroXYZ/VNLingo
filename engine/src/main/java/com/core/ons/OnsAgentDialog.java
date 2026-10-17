@@ -42,7 +42,7 @@ public final class OnsAgentDialog {
 
     private static volatile PlayStatsProvider playStatsProvider;
 
-    /** app 启动时注入（TyranorNextApplication）。 */
+    /** app 启动时注入（VnLingoApplication）。 */
     public static void setPlayStatsProvider(PlayStatsProvider provider) {
         playStatsProvider = provider;
     }
@@ -242,7 +242,8 @@ public final class OnsAgentDialog {
 
             @Override
             public String takeScreenshot() {
-                panel.captureScreenshot();
+                // 代理自动路径：不弹预览，直接落盘（没有人在屏幕前确认）
+                panel.captureScreenshotDirect();
                 return "截图已保存到 screenshots 目录";
             }
 

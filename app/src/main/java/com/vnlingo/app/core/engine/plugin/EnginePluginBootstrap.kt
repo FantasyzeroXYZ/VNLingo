@@ -1,0 +1,289 @@
+package com.vnlingo.app.core.engine.plugin
+
+import android.content.Context
+import android.content.SharedPreferences
+import com.core.engine.EnginePrefs
+import com.core.engine.runtime.GameRuntime
+import com.core.nativeplugin.NativePluginConstants
+import com.core.nativeplugin.NativePluginInstallState
+import com.core.nativeplugin.NativePluginManager
+import com.vnlingo.app.core.engine.EngineType
+import org.json.JSONObject
+import java.io.File
+import java.util.zip.ZipInputStream
+
+/**
+ * 直接集成（非模块化）：把随 APK 打包在 assets 的引擎原生插件 zip，
+ * 首次启动时自动安装到 app 私有插件目录，并标记为已安装+已启用。
+ *
+ * 引擎加载器（NativeLibraryLoader/OnsLibLoader/Artemis 相关）从
+ * filesDir/engine_plugins/<engine>/current/arm64-v8a/ 读取 .so；
+ * 此处解压 assets/nativeplugins/<engine>.zip 到该目录，无需用户手动导入 zip。
+ *
+ * 更新策略：仅按「必备 so 是否齐全」校验无法发现同名 .so 内容变化
+ * （如自研内核与宿主 Java 桥成对更新），因此额外比对已装 `pluginVersion`
+ * 与 assets 内 manifest 的 `pluginVersion`，不一致即重新解压。
+ */
+object EnginePluginBootstrap {
+
+    private const val TAG = "EnginePluginBootstrap"
+    private const val ASSET_PLUGIN_DIR = "nativeplugins"
+    /** 一次性迁移标记：旧版本引导安装默认写「已停用」，升级后纠正为默认开启。 */
+    private const val MIGRATION_DEFAULT_ENABLED = "migration.default_enabled_v2"
+
+    private class EngineSpec(
+        val engineId: String,
+        val installedKey: String,
+        val enabledKey: String,
+        val versionKey: String,
+    )
+
+    private val engines = listOf(
+        EngineSpec(
+            NativePluginConstants.ENGINE_KIRIKIROID2,
+            EnginePrefs.KEY_NATIVE_PLUGIN_KIRIKIROID2_INSTALLED,
+            EnginePrefs.KEY_NATIVE_PLUGIN_KIRIKIROID2_ENABLED,
+            EnginePrefs.KEY_NATIVE_PLUGIN_KIRIKIROID2_VERSION,
+        ),
+        EngineSpec(
+            NativePluginConstants.ENGINE_ONS,
+            EnginePrefs.KEY_NATIVE_PLUGIN_ONS_INSTALLED,
+            EnginePrefs.KEY_NATIVE_PLUGIN_ONS_ENABLED,
+            EnginePrefs.KEY_NATIVE_PLUGIN_ONS_VERSION,
+        ),
+        EngineSpec(
+            NativePluginConstants.ENGINE_ARTEMIS,
+            EnginePrefs.KEY_NATIVE_PLUGIN_ARTEMIS_INSTALLED,
+            EnginePrefs.KEY_NATIVE_PLUGIN_ARTEMIS_ENABLED,
+            EnginePrefs.KEY_NATIVE_PLUGIN_ARTEMIS_VERSION,
+        ),
+    )
+
+    /** 启动前插件保障失败原因（P0-6）：核心层只给类型，UI 层映射本地化文案。 */
+    sealed interface Failure {
+        data class UnknownEngine(val engineId: String) : Failure
+
+        data object InstallFailed : Failure
+
+        /** 用户已卸载该运行时且未重新安装：引导 UI 去下载/恢复，而非静默重装。 */
+        data object NotInstalled : Failure
+
+        /** 用户已停用该运行时：引导 UI 去引擎页重新启用，而非静默重启用。 */
+        data object Disabled : Failure
+    }
+
+    /** 幂等：仅对尚未安装的引擎执行一次复制。每次应用启动调用开销极低。
+     *  用户显式卸载（removed）的运行时不再自动还原，见 GameRuntimeCatalog。 */
+    @JvmStatic
+    fun provisionIfNeeded(context: Context) {
+        val app = context.applicationContext
+        migrateLegacyDefaultEnabled(app)
+        for (spec in engines) {
+            val runtime = runtimeForEngineId(spec.engineId) ?: continue
+            if (GameRuntime.Store.isRemoved(app, runtime)) continue
+            provisionEngineIfNeeded(app, spec, requireEnabled = false)
+        }
+    }
+
+    /**
+     * 一次性迁移：旧版本引导安装把三个原生运行时默认写成「已停用」，升级后统一
+     * 纠正为默认开启（用户此后显式停用会稳定保留，见 provisionEngineIfNeeded）。
+     */
+    private fun migrateLegacyDefaultEnabled(app: Context) {
+        val prefs = app.getSharedPreferences(EnginePrefs.APP_PREFS, Context.MODE_PRIVATE)
+        if (prefs.getBoolean(MIGRATION_DEFAULT_ENABLED, false)) return
+        for (spec in engines) {
+            if (installState(app, spec.engineId) == NativePluginInstallState.NOT_INSTALLED) continue
+            when (spec.engineId) {
+                NativePluginConstants.ENGINE_KIRIKIROID2 -> NativePluginManager.setKirikiroid2Enabled(app, true)
+                NativePluginConstants.ENGINE_ONS -> NativePluginManager.setOnsEnabled(app, true)
+                NativePluginConstants.ENGINE_ARTEMIS -> NativePluginManager.setArtemisEnabled(app, true)
+            }
+        }
+        prefs.edit().putBoolean(MIGRATION_DEFAULT_ENABLED, true).apply()
+    }
+
+    /** 卸载运行时（删除实体 + 标记 removed）；恢复需重新下载/导入。 */
+    @JvmStatic
+    fun uninstall(context: Context, engineId: String): Boolean {
+        val runtime = runtimeForEngineId(engineId) ?: return false
+        runtime.uninstall(context)
+        return true
+    }
+
+    /** 清除 removed 标记（下载/导入完成后调用，恢复自动保障）。 */
+    @JvmStatic
+    fun markRestored(context: Context, engineId: String) {
+        runtimeForEngineId(engineId)?.let { GameRuntime.Store.setRemoved(context, it, false) }
+    }
+
+    private fun runtimeForEngineId(engineId: String) =
+        GameRuntime.byNativeEngineId(engineId)
+
+    /** 启动前同步保障：对应引擎插件必须已安装、已启用且文件完整。 */
+    @JvmStatic
+    fun ensureForLaunch(context: Context, engine: EngineType): Failure? {
+        val engineId = when (engine) {
+            EngineType.KIRIKIRI -> NativePluginConstants.ENGINE_KIRIKIROID2
+            EngineType.ONS -> NativePluginConstants.ENGINE_ONS
+            EngineType.ARTEMIS -> NativePluginConstants.ENGINE_ARTEMIS
+            EngineType.TYRANO,
+            EngineType.RPG_MV,
+            EngineType.RPG_MZ,
+            EngineType.VN,
+            EngineType.WEB_OTHER,
+            EngineType.SIGLUS,
+            EngineType.REALLIVE,
+            EngineType.AVG32,
+            EngineType.UK2,
+            EngineType.FVP,
+            EngineType.YURIS,
+            EngineType.CATSYSTEM2,
+            EngineType.PC,
+            EngineType.RPGMAKER,
+            EngineType.RENPY,
+            EngineType.PSP,
+            EngineType.NINTENDO_SWITCH,
+            EngineType.UNKNOWN -> return null
+        }
+        val app = context.applicationContext
+        val spec = engines.firstOrNull { it.engineId == engineId }
+            ?: return Failure.UnknownEngine(engineId)
+        val runtime = runtimeForEngineId(engineId)
+        if (runtime != null && GameRuntime.Store.isRemoved(app, runtime)) {
+            return Failure.NotInstalled
+        }
+        if (runtime != null && runtime.installState(app) == NativePluginInstallState.INSTALLED_DISABLED) {
+            return Failure.Disabled
+        }
+        return if (provisionEngineIfNeeded(app, spec, requireEnabled = true)) {
+            null
+        } else {
+            Failure.InstallFailed
+        }
+    }
+
+    @Synchronized
+    private fun provisionEngineIfNeeded(app: Context, spec: EngineSpec, requireEnabled: Boolean): Boolean {
+        val prefs = app.getSharedPreferences(EnginePrefs.APP_PREFS, Context.MODE_PRIVATE)
+        val state = installState(app, spec.engineId)
+        val bundledVersion = bundledPluginVersion(app, spec.engineId)
+        val installedVersion = prefs.getInt(spec.versionKey, 0)
+        // 已装插件内容过期（同名 .so 已更新但校验看不出来）时也必须重新解压
+        val outdated = state != NativePluginInstallState.NOT_INSTALLED &&
+            bundledVersion != null && bundledVersion != installedVersion
+        if (state == NativePluginInstallState.INSTALLED_ENABLED && !outdated) {
+            markInstalled(prefs, spec, enabled = true, version = bundledVersion)
+            return true
+        }
+        if (state == NativePluginInstallState.INSTALLED_DISABLED && !outdated) {
+            // 用户显式停用：维持停用，不随引导期/启动预检悄悄重启（启动预检已返回 Disabled）
+            markInstalled(prefs, spec, enabled = false, version = bundledVersion)
+            return false
+        }
+        if (outdated) {
+            android.util.Log.i(TAG, "re-provision ${spec.engineId}: version $installedVersion -> $bundledVersion")
+        }
+        return try {
+            val target = currentDirFor(app, spec.engineId)
+            if (target.exists()) target.deleteRecursively()
+            extractPluginZip(app, spec.engineId, target)
+            // 默认开启：除用户显式停用（DISABLED，含过期重解压场景）外均装为已启用，
+            // 首次引导安装即「已安装+已启用」，无需用户再手动开启
+            val enabledAfter = requireEnabled || state != NativePluginInstallState.INSTALLED_DISABLED
+            markInstalled(prefs, spec, enabled = enabledAfter, version = bundledVersion)
+            val ready = isReady(app, spec.engineId)
+            if (ready) {
+                android.util.Log.i(TAG, "provisioned native plugin: ${spec.engineId}")
+            } else {
+                android.util.Log.w(TAG, "provision ${spec.engineId} finished but validation failed")
+            }
+            ready
+        } catch (t: Throwable) {
+            android.util.Log.w(TAG, "provision ${spec.engineId} failed", t)
+            false
+        }
+    }
+
+    /** assets 内插件 zip 的 manifest.pluginVersion；缺失/读取失败返回 null（按不判定过期处理）。 */
+    private fun bundledPluginVersion(app: Context, engineId: String): Int? =
+        runCatching {
+            var version: Int? = null
+            app.assets.open("$ASSET_PLUGIN_DIR/$engineId.zip").use { asset ->
+                ZipInputStream(asset.buffered()).use { zip ->
+                    var entry = zip.nextEntry
+                    while (entry != null) {
+                        if (entry.name == "manifest.json") {
+                            val text = zip.readBytes().toString(Charsets.UTF_8)
+                            version = JSONObject(text).optInt("pluginVersion", 0)
+                            break
+                        }
+                        zip.closeEntry()
+                        entry = zip.nextEntry
+                    }
+                }
+            }
+            version
+        }.getOrNull()
+
+    private fun isReady(app: Context, engineId: String): Boolean {
+        return installState(app, engineId) == NativePluginInstallState.INSTALLED_ENABLED
+    }
+
+    private fun installState(app: Context, engineId: String): NativePluginInstallState {
+        val state = when (engineId) {
+            NativePluginConstants.ENGINE_KIRIKIROID2 -> NativePluginManager.kirikiroid2InstallState(app)
+            NativePluginConstants.ENGINE_ONS -> NativePluginManager.onsInstallState(app)
+            NativePluginConstants.ENGINE_ARTEMIS -> NativePluginManager.artemisInstallState(app)
+            else -> NativePluginInstallState.INVALID
+        }
+        return state
+    }
+
+    private fun markInstalled(prefs: SharedPreferences, spec: EngineSpec, enabled: Boolean, version: Int?) {
+        prefs.edit()
+            .putBoolean(spec.installedKey, true)
+            .putBoolean(spec.enabledKey, enabled)
+            .apply {
+                if (version != null) putInt(spec.versionKey, version)
+            }
+            .apply()
+    }
+
+    private fun currentDirFor(app: Context, engineId: String): File = when (engineId) {
+        NativePluginConstants.ENGINE_KIRIKIROID2 -> NativePluginManager.kirikiroid2CurrentDir(app)
+        NativePluginConstants.ENGINE_ONS -> NativePluginManager.onsCurrentDir(app)
+        NativePluginConstants.ENGINE_ARTEMIS -> NativePluginManager.artemisCurrentDir(app)
+        else -> error("unknown engine: $engineId")
+    }
+
+    private fun extractPluginZip(context: Context, engineId: String, destDir: File) {
+        val canonicalDest = destDir.canonicalFile
+        val canonicalDestPath = canonicalDest.path + File.separator
+        destDir.mkdirs()
+        context.assets.open("$ASSET_PLUGIN_DIR/$engineId.zip").use { asset ->
+            ZipInputStream(asset.buffered()).use { zip ->
+                while (true) {
+                    val entry = zip.nextEntry ?: break
+                    val out = File(destDir, entry.name)
+                    val canonicalOut = out.canonicalFile
+                    if (canonicalOut.path != canonicalDest.path &&
+                        !canonicalOut.path.startsWith(canonicalDestPath)
+                    ) {
+                        throw SecurityException("Invalid native plugin zip entry: ${entry.name}")
+                    }
+                    if (entry.isDirectory) {
+                        canonicalOut.mkdirs()
+                    } else {
+                        canonicalOut.parentFile?.mkdirs()
+                        canonicalOut.outputStream().use { output -> zip.copyTo(output) }
+                    }
+                    zip.closeEntry()
+                }
+            }
+        }
+        require(destDir.isDirectory) {
+            "native plugin extraction produced no directory: $engineId"
+        }
+    }
+}

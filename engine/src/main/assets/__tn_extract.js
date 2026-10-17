@@ -1,5 +1,5 @@
 /**
- * TyranorNext 提取钩子（Web 引擎通用：Tyrano / RPG MV / MZ / VN / WebOther）。
+ * VNLingo 提取钩子（Web 引擎通用：Tyrano / RPG MV / MZ / VN / WebOther）。
  * 由宿主 onPageFinished evaluateJavascript 注入（幂等），事件经
  * window.tnExtractBridge.post(JSON) 上行到 WebExtractBridge。
  *

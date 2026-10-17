@@ -19,7 +19,7 @@
         <!-- YU-RIS 经外置 Winlator（winlator-cn 外置启动协议；应用 id 为 com.winlator） -->
         <package android:name="com.winlator" />
         <!-- 系统 TTS：Android 11+ 包可见性必须声明，否则绑定默认 TTS 引擎会被系统拦掉。
-             真机日志：AppsFilter: com.tyranor.next -> org.nobody.multitts BLOCKED
+             真机日志：AppsFilter: com.vnlingo.app -> org.nobody.multitts BLOCKED
              → 系统 TTS 从未出声（与"引擎是谁"无关，是我们没声明可见性）。 -->
         <intent>
             <action android:name="android.intent.action.TTS_SERVICE" />
@@ -29,7 +29,7 @@
     </queries>
 
     <application
-        android:name=".TyranorNextApplication"
+        android:name=".VnLingoApplication"
         android:allowBackup="true"
         android:dataExtractionRules="@xml/data_extraction_rules"
         android:enableOnBackInvokedCallback="false"
@@ -42,7 +42,7 @@
         android:supportsRtl="true"
         android:usesCleartextTraffic="true"
         android:windowSoftInputMode="adjustResize"
-        android:theme="@style/Theme.TyranorNext">
+        android:theme="@style/Theme.VnLingo">
         <!-- WorkManager 首次切入后台时再按需初始化，避免进入前台时占用冷启动关键路径。 -->
         <provider
             android:name="androidx.startup.InitializationProvider"
@@ -95,7 +95,7 @@
             android:excludeFromRecents="true"
             android:exported="true"
             android:noHistory="true"
-            android:theme="@style/Theme.TyranorNext.Translucent" />
+            android:theme="@style/Theme.VnLingo.Translucent" />
         <activity
             android:name=".ui.patch.KrkrOnlinePatchActivity"
             android:exported="false" />
@@ -125,7 +125,7 @@
         <activity
             android:name=".ui.auth.HikarinagiOAuthCallbackActivity"
             android:exported="false"
-            android:theme="@style/Theme.TyranorNext.Translucent" />
+            android:theme="@style/Theme.VnLingo.Translucent" />
         <activity
             android:name="net.openid.appauth.RedirectUriReceiverActivity"
             android:exported="true"
@@ -139,7 +139,7 @@
                 <data
                     android:host="oauth"
                     android:path="/hikarinagi"
-                    android:scheme="tyranornext" />
+                    android:scheme="vnlingo" />
             </intent-filter>
         </activity>
         <activity

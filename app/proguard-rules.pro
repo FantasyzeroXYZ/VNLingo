@@ -7,11 +7,11 @@
 -keepclasseswithmembers class kotlinx.serialization.json.** {
     kotlinx.serialization.KSerializer serializer(...);
 }
--keep,includedescriptorclasses class com.tyranor.next.**$$serializer { *; }
--keepclassmembers class com.tyranor.next.** {
+-keep,includedescriptorclasses class com.vnlingo.app.**$$serializer { *; }
+-keepclassmembers class com.vnlingo.app.** {
     *** Companion;
 }
--keepclasseswithmembers class com.tyranor.next.** {
+-keepclasseswithmembers class com.vnlingo.app.** {
     kotlinx.serialization.KSerializer serializer(...);
 }
 

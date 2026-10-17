@@ -1,6 +1,7 @@
 package com.yuri.onscripter;
 
 import android.annotation.SuppressLint;
+import android.app.AlertDialog;
 import android.content.Intent;
 import android.graphics.Color;
 import android.graphics.Typeface;
@@ -10,6 +11,8 @@ import android.os.Build;
 import android.os.Bundle;
 import android.os.Environment;
 import android.os.ParcelFileDescriptor;
+import android.text.InputFilter;
+import android.text.InputType;
 import android.util.Log;
 import android.view.Gravity;
 import android.view.InputDevice;
@@ -20,6 +23,9 @@ import android.view.Window;
 import android.view.WindowInsets;
 import android.view.WindowInsetsController;
 import android.view.WindowManager;
+import android.view.inputmethod.EditorInfo;
+import android.view.inputmethod.InputMethodManager;
+import android.widget.EditText;
 import android.widget.FrameLayout;
 import android.widget.ImageButton;
 import android.widget.ImageView;
@@ -85,10 +91,137 @@ public class ONScripter extends SDLActivity {
     public native byte[] nativeOnsWaveBytes();
     public native void nativeOnsWaveDrop();
     public native byte[] nativeOnsReadFile(byte[] name);
+    /** [ONS-INPUT] Java 输入框结果回传（UI 线程 -> native 条件变量）。 */
+    private native void nativeOnInputResult(String text);
 
     /** [ONS-BRIDGE] libonsyuri 提取事件上行入口（SDL 线程）。 */
     public void onBridgeEvent(byte[] payload) {
         OnsExtractBridge.get().onEvent(payload);
+    }
+
+    /**
+     * [ONS-INPUT] NScripter `input` 命令的 Android UI 实现。
+     *
+     * 由 libonsyuri 的 ons_host_request_input() 在 SDL 线程通过 JNI 调用；
+     * 本方法只负责 post 到 UI 线程弹框，结果经 nativeOnInputResult() 回传，
+     * native 侧用条件变量等待，脚本因此不会提前用默认值继续。
+     */
+    public void showInputDialog(final String prompt, final String initial, final int maxLen) {
+        Log.i(TAG, "showInputDialog promptLen=" + (prompt == null ? -1 : prompt.length())
+                + " initialLen=" + (initial == null ? -1 : initial.length())
+                + " maxLen=" + maxLen);
+        runOnUiThread(() -> {
+            final boolean wasExpanded = extractPanel != null && extractPanel.isExpanded();
+            if (wasExpanded) {
+                try {
+                    extractPanel.togglePanel();
+                } catch (Throwable t) {
+                    Log.w(TAG, "collapse extract panel before input failed", t);
+                }
+            }
+
+            final EditText edit = new EditText(this);
+            edit.setText(initial == null ? "" : initial);
+            edit.setSelection(edit.getText().length());
+            edit.setSingleLine(true);
+            // 默认不自动拉起输入法，避免横屏输入法一打开就盖住“确定/取消”；
+            // 用户点输入框时再显示键盘。
+            edit.setShowSoftInputOnFocus(false);
+            edit.setOnClickListener(v -> {
+                edit.setShowSoftInputOnFocus(true);
+                InputMethodManager imm =
+                        (InputMethodManager) getSystemService(INPUT_METHOD_SERVICE);
+                if (imm != null) imm.showSoftInput(edit, InputMethodManager.SHOW_IMPLICIT);
+            });
+            edit.setInputType(InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_VARIATION_PERSON_NAME);
+            // 横屏下部分输入法会进入全屏提取模式，盖住对话框按钮；禁用提取 UI。
+            edit.setImeOptions(EditorInfo.IME_ACTION_DONE | EditorInfo.IME_FLAG_NO_EXTRACT_UI);
+            if (maxLen > 0) {
+                edit.setFilters(new InputFilter[]{ new InputFilter.LengthFilter(maxLen) });
+            }
+
+            final Runnable restorePanel = () -> {
+                if (wasExpanded && extractPanel != null) {
+                    try {
+                        extractPanel.togglePanel();
+                    } catch (Throwable t) {
+                        Log.w(TAG, "restore extract panel after input failed", t);
+                    }
+                }
+            };
+
+            // 提示文本必须放在对话框内容区，不能用 window title：横屏贴顶时
+            // title 会被状态栏/窗口边距裁掉，表现为“输入框什么提示也没有”。
+            LinearLayout content = new LinearLayout(this);
+            content.setOrientation(LinearLayout.VERTICAL);
+            content.setPadding(dp(24), dp(16), dp(24), dp(4));
+            if (prompt != null && !prompt.isEmpty()) {
+                TextView promptView = new TextView(this);
+                promptView.setText(prompt);
+                promptView.setTextSize(16);
+                promptView.setPadding(0, 0, 0, dp(12));
+                content.addView(promptView, new LinearLayout.LayoutParams(
+                        ViewGroup.LayoutParams.MATCH_PARENT,
+                        ViewGroup.LayoutParams.WRAP_CONTENT));
+            }
+            content.addView(edit, new LinearLayout.LayoutParams(
+                    ViewGroup.LayoutParams.MATCH_PARENT,
+                    ViewGroup.LayoutParams.WRAP_CONTENT));
+
+            AlertDialog.Builder builder = new AlertDialog.Builder(this);
+            builder.setView(content)
+                    .setCancelable(false)
+                    .setPositiveButton(android.R.string.ok, (dialog, which) -> {
+                        restorePanel.run();
+                        nativeOnInputResult(edit.getText().toString());
+                    })
+                    .setNegativeButton(android.R.string.cancel, (dialog, which) -> {
+                        restorePanel.run();
+                        nativeOnInputResult(null);
+                    });
+
+            AlertDialog dialog = builder.create();
+            Window dialogWindow = dialog.getWindow();
+            if (dialogWindow != null) {
+                // 键盘会盖住默认居中的按钮：把对话框贴到顶部，并让窗口随 IME 调整。
+                dialogWindow.setGravity(Gravity.TOP | Gravity.CENTER_HORIZONTAL);
+                dialogWindow.setSoftInputMode(
+                        WindowManager.LayoutParams.SOFT_INPUT_ADJUST_RESIZE);
+            }
+            dialog.show();
+            edit.requestFocus();
+            edit.setOnEditorActionListener((v, actionId, event) -> {
+                if (actionId == EditorInfo.IME_ACTION_DONE) {
+                    restorePanel.run();
+                    nativeOnInputResult(edit.getText().toString());
+                    dialog.dismiss();
+                    return true;
+                }
+                return false;
+            });
+            // 硬件回车（外接键盘/部分输入法）也直接确认。
+            edit.setOnKeyListener((v, keyCode, event) -> {
+                if (event.getAction() == KeyEvent.ACTION_DOWN
+                        && (keyCode == KeyEvent.KEYCODE_ENTER
+                        || keyCode == KeyEvent.KEYCODE_NUMPAD_ENTER)) {
+                    restorePanel.run();
+                    nativeOnInputResult(edit.getText().toString());
+                    dialog.dismiss();
+                    return true;
+                }
+                return false;
+            });
+            // 不自动弹出输入法：部分机型横屏输入法会全屏盖住对话框按钮。
+            // 用户点输入框时系统会正常拉起键盘；也可直接点“确定/取消”。
+            // 若上一个界面残留了输入法，这里主动收起一次。
+            edit.post(() -> {
+                InputMethodManager imm =
+                        (InputMethodManager) getSystemService(INPUT_METHOD_SERVICE);
+                if (imm != null) {
+                    imm.hideSoftInputFromWindow(edit.getWindowToken(), 0);
+                }
+            });
+        });
     }
 
     @Override public void loadLibraries() {
@@ -204,17 +337,17 @@ public class ONScripter extends SDLActivity {
         boolean firstDown = event != null
                 && event.getAction() == android.view.KeyEvent.ACTION_DOWN
                 && event.getRepeatCount() == 0;
-        if (firstDown && virtualMouseMode && virtualMouse != null) {
+        if (firstDown && isVirtualMouseMode() && virtualMouse != null) {
             android.view.InputDevice dev = android.view.InputDevice.getDevice(event.getDeviceId());
             Log.i(TAG, "vmouse key code=" + event.getKeyCode()
                     + " source=" + event.getSource()
                     + " device=" + (dev == null ? "?" : dev.getName()));
         }
         if (com.core.engine.EngineOverlayRouting.routeKey(
-                extractPanel, virtualMouse, virtualMouseMode, event)) {
+                extractPanel, virtualMouse, isVirtualMouseMode(), event)) {
             return true;
         }
-        if (firstDown && virtualMouseMode && virtualMouse != null
+        if (firstDown && isVirtualMouseMode() && virtualMouse != null
                 && (extractPanel == null || !extractPanel.isExpanded())) {
             Log.i(TAG, "vmouse key NOT consumed: code=" + event.getKeyCode());
         }
@@ -379,7 +512,7 @@ public class ONScripter extends SDLActivity {
     private void setupVirtualControls() {
         try {
             controlsVisible = getSharedPreferences(PREF_OVERLAY, MODE_PRIVATE).getBoolean(KEY_OVERLAY_VISIBLE, true);
-            virtualMouseMode = getSharedPreferences(PREF_OVERLAY, MODE_PRIVATE).getBoolean(KEY_MOUSE_MODE, true);
+            controlMode = com.core.engine.EngineControlMode.load(this, PREF_OVERLAY, KEY_MOUSE_MODE, true);
             onsOverlay = new FrameLayout(this);
             onsOverlay.setLayoutParams(new FrameLayout.LayoutParams(FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.MATCH_PARENT));
             onsOverlay.setClickable(false);
@@ -432,6 +565,12 @@ public class ONScripter extends SDLActivity {
             // 手柄方向键/左摇杆虚拟鼠标（覆盖层纯绘制 + 按键前置拦截 + 光标命中面板优先）
             virtualMouse = new EngineVirtualMouse(onsOverlay, () -> mSurface, this::injectTapAtCursor,
                     (x, y) -> extractPanel != null && extractPanel.dispatchCursorClick(x, y));
+            // 启动同步收口到 EngineControlMode.applyTo（此前 ONS 完全没有这一步：
+            // 模式从 prefs 恢复成鼠标、光标却停在不可见 —— 「模式错乱」的用户反馈即此）。
+            controlMode.applyTo(virtualMouse, null);
+            // 侧键创建早于这里的 prefs 读取，图标会定格在字段初值 → 补刷一次，
+            // 保证右缘「点击模式」键与实际模式一致。
+            if (extractPanel != null) extractPanel.refreshClickModeButton();
         } catch (Throwable t) {
             Log.w(TAG, "setupVirtualControls failed", t);
         }
@@ -620,9 +759,13 @@ public class ONScripter extends SDLActivity {
 
     @Override
     public boolean dispatchGenericMotionEvent(MotionEvent event) {
+        // 扳机轴边沿 → 合成 R2/L2 键事件（Xbox 等手柄扳机只报轴量、没有键事件，
+        // 见 com.core.engine.TriggerAxisKeys）；合成键走完整按键链路。
+        android.view.KeyEvent triggerKey = com.core.engine.TriggerAxisKeys.apply(event);
+        if (triggerKey != null) return dispatchKeyEvent(triggerKey);
         // 统一路由：面板展开时摇杆/轴事件全吞，否则交给虚拟鼠标移动光标
         if (com.core.engine.EngineOverlayRouting.routeMotion(
-                extractPanel, virtualMouse, virtualMouseMode, event)) {
+                extractPanel, virtualMouse, isVirtualMouseMode(), event)) {
             return true;
         }
         return super.dispatchGenericMotionEvent(event);
@@ -701,22 +844,17 @@ public class ONScripter extends SDLActivity {
     // ------------------------------------------------------------------
 
     /** 虚拟鼠标模式开/关（触摸直传游戏）；持久化在 PREF_OVERLAY。 */
-    private boolean virtualMouseMode = true;
+    // 控制模式统一走 EngineControlMode（开发准则：共通抽象 + 差异适配）——
+    // 此前本类手写「字段 + toggle + prefs」三件套，漏掉了启动光标同步（模式错乱）。
+    private com.core.engine.EngineControlMode controlMode;
 
     private boolean isVirtualMouseMode() {
-        return virtualMouseMode;
+        // setupVirtualControls 之前的极早期触摸事件沿用旧字段语义（默认鼠标模式）
+        return controlMode == null || controlMode.isMouseMode();
     }
 
     private void toggleVirtualMouseMode() {
-        virtualMouseMode = !virtualMouseMode;
-        getSharedPreferences(PREF_OVERLAY, MODE_PRIVATE)
-                .edit().putBoolean(KEY_MOUSE_MODE, virtualMouseMode).apply();
-        if (virtualMouse != null) {
-            // 切回触摸：隐藏光标，D-pad/A 不再被消费；切进鼠标：立即显示光标
-            //（触屏设备没有方向键可按，不主动显示会看起来「没调出虚拟鼠标」）
-            if (virtualMouseMode) virtualMouse.showCursor();
-            else virtualMouse.hideCursor();
-        }
+        if (controlMode != null) controlMode.toggle();
     }
 
     /** 左缘贴边边距 = 2dp + 左侧系统栏 inset。 */

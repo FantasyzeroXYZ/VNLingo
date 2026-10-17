@@ -7,7 +7,7 @@
 
 set -euo pipefail
 
-PACKAGE="com.tyranor.next"
+PACKAGE="com.vnlingo.app"
 ADB="${ADB:-D:/dev-cache/Android/Sdk/platform-tools/adb.exe}"
 
 if [[ -z "${SERIAL:-}" ]]; then

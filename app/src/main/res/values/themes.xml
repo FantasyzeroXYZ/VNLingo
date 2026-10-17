@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
 
-    <style name="Theme.TyranorNext" parent="android:Theme.Material.Light.NoActionBar" />
-    <style name="Theme.TyranorNext.Translucent" parent="android:style/Theme.Translucent.NoTitleBar" />
+    <style name="Theme.VnLingo" parent="android:Theme.Material.Light.NoActionBar" />
+    <style name="Theme.VnLingo.Translucent" parent="android:style/Theme.Translucent.NoTitleBar" />
 </resources>

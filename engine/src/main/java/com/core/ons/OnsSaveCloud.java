@@ -601,7 +601,7 @@ public final class OnsSaveCloud {
             head.disconnect();
         }
         JSONObject body = new JSONObject();
-        body.put("message", "TyranorNext save sync: " + remotePath);
+        body.put("message", "VNLingo save sync: " + remotePath);
         body.put("content", Base64.encodeToString(readFile(file), Base64.NO_WRAP));
         if (sha != null) body.put("sha", sha);
         HttpURLConnection conn = open(url, p.getString(KEY_USER, ""), p.getString(KEY_TOKEN, ""));

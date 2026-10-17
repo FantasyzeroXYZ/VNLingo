@@ -242,7 +242,7 @@ kazurauta 回归正常（既有 `ft line` 输出不变）。
 | 材料 | 路径 | 说明 |
 |---|---|---|
 | 设备全量日志（含 ft raw / ft state / krkr text） | `.tmp/perf/logcat_t5.txt` | 23761 行，13:18 - 13:31 |
-| 应用调试日志（查词命中与耗时） | 设备 `files/diag/diag.log` | `run-as com.tyranor.next cat files/diag/diag.log` |
+| 应用调试日志（查词命中与耗时） | 设备 `files/diag/diag.log` | `run-as com.vnlingo.app cat files/diag/diag.log` |
 | XP3 读取器（本轮尝试，未成功解开该游戏包） | `.tmp/perf/xp3.py`、`.tmp/perf/fix_magic.py` | 该游戏 `data.xp3` 魔数第 6 字节与标准 XP3 不同（疑似魔改），未解出原文 |
 | 探针日志（**已失效**） | `.tmp/perf/tsukikage_probe*.log` | 现为 0 行，内容已被清空，不可作为证据 |
 

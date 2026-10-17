@@ -98,10 +98,13 @@ class TyranoActivity : Activity() {
 
     /** 右缘按键「点击模式」按钮与手柄快捷键（PANEL_MOUSE_TOGGLE）共用。 */
     private fun toggleVirtualMouseForPanel() {
-        virtualMouseLayer?.toggleActiveByHost()
+        controlMode?.toggle()
     }
 
-    private fun isVirtualMouseForPanel(): Boolean = virtualMouseLayer?.isActive() == true
+    private fun isVirtualMouseForPanel(): Boolean = controlMode?.isMouseMode() == true
+
+    /** 控制模式统一状态（触摸 / 虚拟鼠标），见 [com.core.engine.EngineControlMode]。 */
+    private var controlMode: com.core.engine.EngineControlMode? = null
 
     /** 影响引擎行为的 Intent extras 摘要，用于判断单游戏重启是否需要重建。 */
     private fun behaviorSignature(intent: Intent): String = listOf(
@@ -285,6 +288,11 @@ class TyranoActivity : Activity() {
             virtualMouseLayer = layer
             root.addView(layer, FrameLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT))
+            // 控制模式统一走 EngineControlMode（开发准则：共通抽象 + 差异适配）：
+            // 此前 Web 宿主（Tyrano/RPGM）的模式完全不持久化——每次进游戏都回到触摸模式，
+            // 与 ONS/KRKR/Artemis 的行为不一致。层激活态经 VirtualMouseController 统一接口驱动。
+            controlMode = com.core.engine.EngineControlMode.load(this, "web_virtual_mouse", "web_virtual_mouse", false)
+            controlMode?.applyTo(layer, null)
         }
         setContentView(root)
         // 沉浸式全屏：状态栏 + 底部导航栏自动隐藏（用户要求游戏画面全屏）
@@ -308,7 +316,7 @@ class TyranoActivity : Activity() {
             WebGameType.TYRANO -> browser.addJavascriptInterface(TyranoJsBridge(saves), JS_BRIDGE_NAME)
             WebGameType.VN, WebGameType.WEB_OTHER -> Unit
         }
-        // TyranorNext 提取面板（剧情文本/查词/制卡/翻译/TTS + 存档管理）：全类型通用
+        // VNLingo 提取面板（剧情文本/查词/制卡/翻译/TTS + 存档管理）：全类型通用
         browser.addJavascriptInterface(WebExtractBridge.JsBridge(), EXTRACT_BRIDGE_NAME)
         WebExtractBridge.get().attach(gameRootFile, localServer?.port ?: 0)
         val extractFacadeLocal = WebExtractFacade(this, saveDirectory, gameRootFile?.name ?: "web")
@@ -688,6 +696,9 @@ class TyranoActivity : Activity() {
     }
 
     override fun dispatchGenericMotionEvent(event: android.view.MotionEvent): Boolean {
+        // 扳机轴边沿 → 合成 R2/L2 键事件（Xbox 等手柄扳机只报轴量、没有键事件，
+        // 见 com.core.engine.TriggerAxisKeys）；合成键走完整按键链路。
+        com.core.engine.TriggerAxisKeys.apply(event)?.let { return dispatchKeyEvent(it) }
         // 统一路由：面板展开时轴事件全吞；否则交给虚拟鼠标（摇杆移动光标）
         if (com.core.engine.EngineOverlayRouting.routeMotion(
                 extractPanel, virtualMouseLayer, true, event)) return true

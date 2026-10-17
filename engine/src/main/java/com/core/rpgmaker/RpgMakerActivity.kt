@@ -369,7 +369,7 @@ class RpgMakerActivity : Activity() {
                 RPG_MAKER_MOD_BRIDGE_NAME,
             )
         }
-        // TyranorNext 提取面板（剧情文本/查词/制卡/翻译/TTS + 存档管理）
+        // VNLingo 提取面板（剧情文本/查词/制卡/翻译/TTS + 存档管理）
         browser.addJavascriptInterface(WebExtractBridge.JsBridge(), EXTRACT_BRIDGE_NAME)
         val gameName = gameDir?.let { File(it).name } ?: "web"
         WebExtractBridge.get().attach(gameDir?.let { File(it) }, localServer?.port ?: 0)
@@ -680,6 +680,9 @@ class RpgMakerActivity : Activity() {
     }
 
     override fun dispatchGenericMotionEvent(event: android.view.MotionEvent): Boolean {
+        // 扳机轴边沿 → 合成 R2/L2 键事件（Xbox 等手柄扳机只报轴量、没有键事件，
+        // 见 com.core.engine.TriggerAxisKeys）；合成键走完整按键链路。
+        com.core.engine.TriggerAxisKeys.apply(event)?.let { return dispatchKeyEvent(it) }
         // 统一路由：面板展开时轴事件全吞；否则交给虚拟鼠标（摇杆/十字键移动光标）
         if (com.core.engine.EngineOverlayRouting.routeMotion(
                 extractPanel, virtualMouseLayer, true, event)) return true

@@ -1,8 +1,129 @@
 # VNLingo 会话进度记录
 
 > 本文件由 AI 会话维护，记录本仓库功能线的实施进度。配合 `MEMORY.md`（环境/踩坑/决策，同目录）与
-> `docs/说明/游戏内提取制卡功能方案.md`（提取功能线方案）阅读。
-> 更新时间：2026-10-09
+> `docs/guide/游戏内提取制卡功能方案.md`（提取功能线方案）阅读。
+> 更新时间：2026-10-18
+
+## 2026-10-18 会话（七十四）：ONS 默认全局编码改为 Shift-JIS
+
+用户要求 ONS 默认全局编码改为 Shift-JIS（多数日文原版游戏）。
+
+- `engine/.../OnsSettings.kt`：默认 `encoding = "sjis"`；`normalizeEncoding` 的
+  null / 非法值回退改为 `sjis`；移除旧的「首次启动把 sjis 改回 gbk」一次性迁移
+  （否则升级会把新默认又改掉）。
+- `app/.../EngineSettingsStore.kt`：`Ons.encoding` 默认 `sjis`；
+  `normalizeEncoding` 兜底改 `sjis`。
+- `app/.../PerGameSettingsScreen.kt`：每游戏 ONS 编码默认与 decode 兜底改 `sjis`。
+- `EngineSettingsText.kt`：编码选项顺序改为 `Shift-JIS / GBK / UTF-8`。
+- 已保存的全局 encoding 不做强制迁移；老用户仍是原值，需要时在设置里手选。
+- 构建 `:app:assembleDebug` 通过；安装到 alioth 后确认默认设置为 Shift-JIS。
+
+## 2026-10-17 会话（七十三）：ONS input 命令输入框（跨平台接口 + Android 落地）
+
+**根因**：ONS 内核 `ONScripter::inputCommand()` 只把变量设为脚本默认值并继续，没有任何 UI；
+VNLingo 侧也没有输入通道。游戏命名场景因此被空串/空格跳过。
+
+- **内核接口**（OnscripterYuri-test/dev，commit `6370bd5`）：新增 `ONSInput.h` 的
+  `ons_host_request_input(prompt, initial, maxlen, widechar, out, out_size)`，同步、UTF-8；
+  `inputCommand()` 只负责编码转换 + 调接口 + 写回变量。
+- **平台实现**：`ONSInput.cpp` weak 默认（桌面/无 UI 返回 0）；`onscripter_main.cpp`
+  Android JNI 对话框（条件变量等待、60s 超时、`nativeOnInputResult`）；
+  `ons_input_web.cpp` Web `window.prompt`（未编译验证）。
+- **VNLingo**：`ONScripter.java` 增加 `showInputDialog` + `nativeOnInputResult`；
+  `AlertDialog + EditText`，`IME_FLAG_NO_EXTRACT_UI`，硬件 Enter / IME Done 确认；
+  弹框前收起提取面板、结束后恢复；`pluginVersion 4→7`。
+- **验证**（真机 alioth，最小脚本 `input $0,"Name","",10,1`）：对话框出现；中文粘贴 +
+  Enter 确认；日志 `confirmed=1 len=7`（UTF-8 14 字节 → GBK 7 字节）；变量写回后剧情继续。
+- **ESG-13556 提示文本**：根因是 `inputCommand()` 把 `readStr()` 返回的
+  `desc`/`buf` 指针保存后继续调用 `readStr()/readInt()`，而这些调用复用
+  `ScriptHandler::string_buffer`，prompt/default 被覆盖成空串；另外 prompt 放在
+  `AlertDialog` window title 上会被贴顶裁切。修复：每个参数读到时立即转 UTF-8
+  存 `std::string`，并把 prompt 放进内容区 `TextView`。该游戏脚本为 **SJIS**；
+  per-game ONS 编码需 `sjis`，否则提示/正文乱码。
+  **实测**：临时在 `*start` 后插 `goto *namae_matihenkou` 直达输入场景，对话框
+  显示 `「エルフの町の名前を入力してください」（全角で５文字以内」）`，
+  native `prompt_len=90` / Java `promptLen=30`；测试后已还原 `nscript.dat`（md5 一致）。
+- **已知 UX**：MIUI 横屏输入法仍会自动弹出并可能盖住按钮；可用键盘 Done/Enter 或先
+  返回收起键盘再点“确定”。后续可改全屏自定义输入页。
+- **Web**：接口/实现已就位，但本机无 emsdk，未编译验证。
+
+## 2026-10-17 会话（七十二）：包名与品牌全量统一为 VNLingo
+
+用户决定与上游包名脱钩并做全量品牌化；接受换包名后旧数据不迁移。
+
+- **包名**：applicationId / namespace / app 源码包 `com.tyranor.next` →
+  `com.vnlingo.app`；175 个主源码 + 60 个单测文件迁移到
+  `app/src/{main,test}/java/com/vnlingo/app`，代码/清单/混淆/脚本引用同步替换。
+  `app/build.gradle.kts` 的覆盖键改为 `VNLINGO_APPLICATION_ID`（保留
+  `TYRANOR_APPLICATION_ID` 作为旧键回退）。
+- **可见品牌**：`TyranorNextApplication` → `VnLingoApplication`；
+  `TyranorNextTheme` → `VnLingoTheme`；`Theme.TyranorNext*` → `Theme.VnLingo*`；
+  OAuth scheme `tyranornext://` → `vnlingo://`；User-Agent → `VNLingo`；
+  更新弹窗文案 `TyranorNext：` → `VNLingo：`（三语言）。
+- **保留的 Tyranor 标识**（引擎内部兼容，勿改）：`tyranor_prefs` /
+  `tyranor_game_overrides` / `__tyranor__` 资源路径 / `TyranorMod*` JS 桥 /
+  MV/MZ「Tyranor 存档格式」/ 云端旧目录 `TyranorNext/saves`（legacy 回退读取）。
+- **云存档**：默认目录本就是 `VNLingo/saves`，旧 `TyranorNext/saves` 继续由
+  `fallbackRemoteZipPaths` 兼容读取；引擎设置里的提示文案同步为 `VNLingo/saves`。
+- **数据**：换 applicationId = 新应用，旧 `com.tyranor.next` 的游戏库/词典/prefs/
+  私有存档不自动迁移（用户确认接受）；共享存储里的游戏本体不受影响。
+- **冲突提醒**：模拟器上另有一个 `com.vnlingo.app`（悬浮字幕应用），新包与其同包名，
+  安装会互覆/签名冲突；回归前需先卸载或换测试设备。
+- **验证**：`:app:assembleDebug` 通过；`aapt dump badging` 显示
+  `package: com.vnlingo.app`、`launchable-activity: com.vnlingo.app.MainActivity`、
+  label `VNLingo`。`:app:testDebugUnitTest` 仍有**既有**失败（与本次改名无关）：
+  完整跑因 `YurisLaunchFilesTest` / `EngineScannerPspSwitchTest` 引用已裁剪符号
+  `YurisLaunchFiles` / `romEngineOf` / `romGamesForFile` 而编译失败；临时排除这两个
+  文件后 349 个用例中 27 个失败，全部是 Cs2 / Framebuffer / FVP / Siglus / Yuris
+  等已裁剪引擎的扫描器用例（`EngineScanner` 已明确不支持这些引擎）。
+
+## 2026-10-17 会话（七十一）：文档漂移修正
+
+按复查发现的文档漂移逐项修正；本次只改文档与构建/发版标识，未改业务代码：
+
+- README 文档链接：`docs/说明/` → `docs/guide/`、`docs/开发/` → `docs/dev/`；
+  `待办.txt` 补全为 `docs/dev/待办.txt`（该文件已被 Git 跟踪，原「未跟踪」描述过时）。
+- `docs/guide/游戏内提取制卡功能方案.md` 术语表与架构图：虚拟鼠标改为
+  `EngineVirtualMouse` 三宿主统一抽象（原「仅 ONS 宿主提供 / `OnsVirtualMouse`」过时）；
+  制卡改为「牌组/模型必须从 AnkiDroid 现有内容选择，不预设、不自动创建」
+  （原「`TyranorNext` 自动创建」过时）。
+- `docs/dev/待办.txt` 五处方案路径补 `dev/` 前缀；`PROGRESS.md` 头部方案链接同步。
+- 应用户要求一并统一品牌标识：`settings.gradle.kts` 的 `rootProject.name` 改为 `VNLingo`，
+  release workflow 的 release 标题改为 `VNLingo ${VERSION_NAME}`（仅标识，不改包名与构建产物）。
+
+## 2026-10-12 会话（七十）：手柄扳机键（R2/L2）失灵——轴→键合成两层根因（G-010）
+
+用户反馈：手柄切换触摸/虚拟鼠标的键（默认 R2）没作用，且"很早之前可以"。查 git
+（`be3aed2`）确认非代码回归，是**手柄本次连接模式下扳机只报模拟轴、系统不产生键码**。
+
+- **取证**：`adb shell getevent -l` 按 R2 只有 `EV_ABS ABS_GAS`（无 BTN 事件）；
+  键位布局 `Vendor_045e_Product_02fd.kl` 把扳机只映射为 `axis RTRIGGER/LTRIGGER`。
+- **修复 1（公共层）**：新建 `engine/.../com/core/engine/TriggerAxisKeys.java`——
+  `GAS/RTRIGGER→R2`、`BRAKE/LTRIGGER→L2`，0.5 阈值按下/松开**边沿**合成标准 KeyEvent
+  （按 deviceId 记状态，按住不重复）。
+- **修复 2（Artemis 关键补漏）**：Artemis 按键焦点在独立悬浮窗 `mouseKeyCatcher`/
+  `panelKeyCatcher`，**轴事件进 View 树被默认丢弃、到不了 Activity**——首轮只在
+  Activity 层接入故无效。二轮给两个 catcher View 各加 `dispatchGenericMotionEvent`
+  override，与 Activity 共用 `routeMotionFromCatcher`（合成 → 面板吞轴 → 摇杆驱动光标，
+  顺带修掉 Artemis 左摇杆此前被丢弃的隐患）。
+- **修复 3**：五宿主（Artemis/Kirikiroid/ONS/Tyrano/RPGM）`dispatchGenericMotionEvent`
+  前置统一接入；手柄设置页捕获绑定同样接入（否则绑不上 R2/L2）。
+- **验证**：真机按 R2 → `trigger axis → synthetic key code=105` →
+  `panel action mouse_toggle → virtual mouse ON/OFF` 连续切换正常。
+- 登记：`游戏问题记录.md` G-010；细节条目见 `MEMORY.md` 2026-10-12 段。
+
+## 2026-10-12 会话（六十九）：Ren'Py 模块安装入口进设置独立页（G-009 收尾）
+
+用户反馈"独立页又不见了"——撤销"行点击开下载弹窗"的试验，**行点击恢复直达设置独立页**，
+模块下载/安装入口固化为独立页内的 `RenPyModuleManageCard`（模块管理卡片）。
+登记 `游戏问题记录.md` G-009；教训：依赖外置模块的引擎，安装入口必须做进该引擎设置独立页。
+
+## 2026-10-11 会话（六十八）：登记册建立 + 内核/App 十项修复（索引）
+
+内核松散优先（G-001）、分辨率自适应（G-002）、公共设置项恒显（G-003）、
+字号/行距对齐官方（G-004，内核 K-002/K-006）、名字标签字形图集（G-005，内核 K-003）、
+缓存/省电设置（G-006，内核）、触摸模式手柄链路 + 控制模式统一抽象
+`EngineControlMode`（G-008）、登记册建立（G-001~G-009）。详见 `MEMORY.md` 2026-10-11 段与登记册。
 
 ## 2026-10-09 会话（六十七）：多行文本的手柄上下行选词（同列）
 
@@ -101,7 +222,7 @@
 **验收手段突破**：脚本点击驱动游戏极不稳（通知栏/SAF 抢焦点），改用**导出的快捷方式蹦床**
 直接起游戏：
 ```
-adb shell am start -n com.tyranor.next/com.tyranor.next.ui.game.GameShortcutActivity \
+adb shell am start -n com.vnlingo.app/com.vnlingo.app.ui.game.GameShortcutActivity \
   --es extra_shortcut_id game_<sha256(游戏 uri)>
 ```
 （`shortcut_id` = `"game_" + sha256(uri)`，见 `GameShortcutManager.shortcutId`；uri 从
@@ -969,7 +1090,7 @@ term / reading（つづく→続く）/ 规则还原（食べちゃった→食�
 ## 2026-10-06 会话（二十七）：云同步完整重实现（参考 RinneMobile 架构）
 
 - **需求**（用户）：云同步完全参考 `RinneMobile-main` 重新实现。
-- **新同步栈**（app 模块 `com.tyranor.next.core.sync`，1543 行）：
+- **新同步栈**（app 模块 `com.vnlingo.app.core.sync`，1543 行）：
   - `WebDavClient`：参考客户端的 HttpURLConnection 移植（零新增依赖）——
     坚果云 `/dav/` 自动补全、明文 HTTP 拒绝（回环放行）、PROPFIND/MKCOL/
     HEAD/GET/PUT/DELETE/listFiles/getLastModified、读取声明长度+流式累计
@@ -1287,7 +1408,7 @@ term / reading（つづく→続く）/ 规则还原（食べちゃった→食�
   （:kirikiri2）都覆盖，引擎崩溃同样有迹可查。
 - **设置页「崩溃日志」入口**：列出记录（文件名+大小），点击经 FileProvider +
   ACTION_SEND 系统分享面板发出——现场设备（无 adb）用户可直接把日志发回来。
-- **端到端实测**：`am crash com.tyranor.next` 触发真实崩溃 → 日志落盘（840B，
+- **端到端实测**：`am crash com.vnlingo.app` 触发真实崩溃 → 日志落盘（840B，
   上下文完整）→ 设置页显示「1 份记录」→ 弹窗列出文件 → 分享面板带 URI 弹出。
 - 审查结论（无需改动）：KrkrOnlinePatchService（超时 12s/20s、12s/60s + 临时文件
   finally 清理 + 崩溃残留 .tmp 处理）、EngineScanner（runCatching 全覆盖 + IO
@@ -1393,9 +1514,9 @@ term / reading（つづく→続く）/ 规则还原（食べちゃった→食�
   Card browser（Edit note 全字段）双重确认。
 - **测试环境搭建（可复用）**：AnkiDroid 本地无 → GitHub release 直连下载
   AnkiDroid-2.25.0-full-universal.apk（111MB）安装；首启过 intro + All files
-  access；制卡权限 `pm grant com.tyranor.next com.ichi2.anki.permission.READ_WRITE_DATABASE`
+  access；制卡权限 `pm grant com.vnlingo.app com.ichi2.anki.permission.READ_WRITE_DATABASE`
   （prot=dangerous，requestPermissions 系统弹窗在模拟器上未出现，pm grant 最稳）；
-  测试词典 17 词条经 `run-as com.tyranor.next sqlite3` 直插 ons_dict.db
+  测试词典 17 词条经 `run-as com.vnlingo.app sqlite3` 直插 ons_dict.db
   （种子 SQL 在 .tmp-test/dict_seed.sql，覆盖实测句词汇）。
 - 遗留：正式词典需用户经词典页导入（Yomichan zip / jsonl）；AnkiDroid 未装/未授权
   时当前仅 toast 提示，无引导跳转。
@@ -1471,7 +1592,7 @@ term / reading（つづく→続く）/ 规则还原（食べちゃった→食�
 
 - 应用名全部改为 **VNLingo**（values / values-en / values-ja 的 app_name，
  以及更新渠道说明、自动补丁说明等用户可见文案；applicationId 仍为
- com.tyranor.next，与上游包名兼容不变）。
+ com.tyranor.next，与上游包名兼容不变（2026-10-17 会话七十二改为 `com.vnlingo.app`）。
 - 图标重绘为程序生成的简易图：深靛蓝渐变底 + 白色粗体 V + 青色横条
  （#2DD4BF，词典/语言意象）——PIL 生成，替换自适应图标背景
  ic_launcher_art.png、单色层 ic_launcher_monochrome.png 及五档 mipmap
@@ -1552,7 +1673,7 @@ term / reading（つづく→続く）/ 规则还原（食べちゃった→食�
  对白/语音的实际调用点（可用 krkr 式全符号 GOT 表或内核源码）。
 - 模拟器干扰记录：宿主侧 root 脚本会周期拉起 com.vnlingo.app（用户自己的 VNLingo 悬浮字幕
  应用，与本项目同名相关）与 ScummVM，且会 `pm disable` 本应用——测试前
- `pm default-state com.tyranor.next` + force-stop 干扰应用。
+ `pm default-state com.vnlingo.app` + force-stop 干扰应用。
 
 ## 2026-10-05 会话（二）：产品调整四项 + Artemis 两修复（分支 feat/extract-suite）
 
@@ -1692,7 +1813,8 @@ term / reading（つづく→続く）/ 规则还原（食べちゃった→食�
 ### 六、验证状态
 
 - `:app:assembleDebug` 全程构建通过（含 ML Kit 首次拉取）。
-- ⏸ 运行时行为未在模拟器回归（VNLingo 与 Tyranor-Next 同包名 `com.tyranor.next`，安装互覆）；
+- ⏸ 运行时行为未在模拟器回归（当时 VNLingo 与 Tyranor-Next 同包名 `com.tyranor.next`，
+  安装互覆；2026-10-17 起改为 `com.vnlingo.app`）；
  功能行为以来源仓库的实测为准（ONS 面板/查词/制卡/翻译/TTS/截图/点击模式均已实测）。
 
 ## 进行中 ⏸

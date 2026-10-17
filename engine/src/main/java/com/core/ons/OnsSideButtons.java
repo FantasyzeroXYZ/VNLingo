@@ -213,7 +213,14 @@ public class OnsSideButtons {
         // 音量已并入「游戏设置」悬浮框里的进度条（用户要求：只调软件内游戏音量、
         // 且以进度条微调），右缘不再单独放系统音量键。
         if (onMouseModeToggle != null && mouseMode != null) {
-            column.addView(clickModeButton(activity, onMouseModeToggle, mouseMode));
+            ImageView clickMode = clickModeButton(activity, onMouseModeToggle, mouseMode);
+            column.addView(clickMode);
+            // 手柄快捷键（PANEL_MOUSE_TOGGLE，默认 R2）切换模式时**不经过本按钮的 onClick**，
+            // 图标不会自己更新 → 出现"模式已经变了、右缘图标还是旧的样子"（用户反馈的
+            // 「与右侧控制模式的状态不一致」）。把刷新器挂在根视图上，由 OnsExtractPanel
+            // 在按键路径切换后调用 refreshClickMode()。（无 key 的 tag 在本容器上未被占用）
+            container.setTag((Runnable) () -> clickMode.setImageResource(
+                    Boolean.TRUE.equals(mouseMode.get()) ? R.drawable.ic_cursor : R.drawable.ic_touch));
         }
         column.addView(button(activity, R.drawable.ic_home,
                 R.string.engine_ons_side_home, () -> confirmHome(activity)));
@@ -247,6 +254,17 @@ public class OnsSideButtons {
                 });
         holder[0] = iv;
         return iv;
+    }
+
+    /**
+     * 刷新右缘「点击模式」键的图标（宿主/面板在**非点击**路径切换虚拟鼠标模式后调用，
+     * 例如手柄快捷键 PANEL_MOUSE_TOGGLE）。刷新器由 {@link #buildContainer} 挂在根视图的
+     * 无 key tag 上；根视图为 null（未安装侧键）时静默返回。
+     */
+    public static void refreshClickMode(android.view.View sideButtonsRoot) {
+        if (sideButtonsRoot == null) return;
+        Object tag = sideButtonsRoot.getTag();
+        if (tag instanceof Runnable) ((Runnable) tag).run();
     }
 
     private static android.content.SharedPreferences prefs(Activity activity) {
