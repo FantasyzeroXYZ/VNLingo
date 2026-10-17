@@ -165,7 +165,7 @@
 - [ ] WEB_RPGMV_V1（Web 注入资源包）仍无 UI 入口、状态恒「已集成」：
       GameRuntimeHost/WebRuntimeAssets 是 engine 内部 API，先定入口（引擎页
       Web 行？）再接线，并把「已集成」改成真实状态查询
-- [ ] main 落后 feat/extract-suite 118 提交：功能分支已推远端（2026-10-08 已推到
+- [ ] main 落后 dev（原 feat/extract-suite）118 提交：功能分支已推远端（2026-10-08 已推到
       fe35c92，GitHub 直连可用），稳定后合并回 main（merge 或 PR），保持 main
       可发布
 - [ ] KRKR 对白完整还原（说话人行带重绘链）——多行页「只出末段」已由连续页

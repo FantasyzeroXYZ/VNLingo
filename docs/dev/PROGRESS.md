@@ -4,6 +4,14 @@
 > `docs/guide/游戏内提取制卡功能方案.md`（提取功能线方案）阅读。
 > 更新时间：2026-10-18
 
+## 2026-10-18 会话（七十五）：VNLingo 开发分支更名为 dev
+
+- 本地分支 `feat/extract-suite` → `dev`（提交 `3cc59cb` 不变）。
+- 远端仍为 `origin/feat/extract-suite`，本次未 push；需要发布时显式
+  `git push origin dev`（或先建远端 dev）。
+- 文档中的当前分支引用同步为 `dev`；历史会话标题保留当时的
+  `feat/extract-suite` 记录。
+
 ## 2026-10-18 会话（七十四）：ONS 默认全局编码改为 Shift-JIS
 
 用户要求 ONS 默认全局编码改为 Shift-JIS（多数日文原版游戏）。
