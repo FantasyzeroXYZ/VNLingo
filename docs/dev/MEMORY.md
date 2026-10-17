@@ -390,10 +390,10 @@
 
 ## 续作指南（下次会话从这里开始）
 
-1. **推送**：本地开发分支已由 `feat/extract-suite` 更名为 `dev`（提交 `3cc59cb`
-   不变；远端仍是 `origin/feat/extract-suite`，尚未 push 新分支名）。旧远端最近
-   推送 `b884e97`（2026-10-07 经 GitHub 浏览器 OAuth 授权完成认证；origin 已改回
-   github.com 真实地址——gh-proxy 镜像不支持 push）。main 落后 100+ 提交待合并。
+1. **推送**：开发分支为 `dev`，已推远端 `origin/dev` 并设置 upstream；原远端
+   `feat/extract-suite` 已删除（历史提交仍留在旧记录/reflog 中）。最近推送走
+   `https://github.com/FantasyzeroXYZ/VNLingo.git`（GitHub 浏览器 OAuth 凭据；
+   gh-proxy 镜像不支持 push）。main 落后 100+ 提交待合并。
 2. **运行时回归**（模拟器装 VNLingo debug——注意会覆盖 Tyranor-Next，且必须
    `adb install -r --abi arm64-v8a`）：
    - ONS（ym/esg）：右缘按键组、提取面板暗色圆钮、查词/翻译/制卡、点击模式切换
