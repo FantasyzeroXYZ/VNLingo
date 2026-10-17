@@ -525,6 +525,9 @@
     <string name="engine_settings_sharpness">Image sharpening</string>
     <string name="engine_settings_sharpness_strength">Sharpness strength</string>
     <string name="engine_settings_text_encoding">Text encoding</string>
+    <string name="engine_settings_input_mode">Input box</string>
+    <string name="engine_settings_input_mode_host">System dialog</string>
+    <string name="engine_settings_input_mode_overlay">In-game input (kernel)</string>
     <string name="engine_settings_rotate_screen">Rotate screen</string>
     <string name="engine_settings_auto_patch">Automatic patch</string>
     <string name="engine_settings_artemis_resolution">Stage resolution</string>

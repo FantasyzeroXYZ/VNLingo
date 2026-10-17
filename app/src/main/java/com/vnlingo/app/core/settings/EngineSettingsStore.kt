@@ -666,6 +666,7 @@ object EngineSettingsStore {
         var sharpness: Boolean = false,
         var sharpnessValue: String = "2",
         var encoding: String = "sjis",
+        var inputMode: String = "host",
     ) {
         fun toJson(): String =
             JSONObject()
@@ -676,6 +677,7 @@ object EngineSettingsStore {
                 .put("sharpness", sharpness)
                 .put("sharpness_value", sharpnessValue)
                 .put("encoding", normalizeEncoding(encoding))
+                .put("inputmode", normalizeInputMode(inputMode))
                 .toString()
     }
 
@@ -691,6 +693,7 @@ object EngineSettingsStore {
             o.sharpness = j.optBoolean("sharpness", o.sharpness)
             o.sharpnessValue = j.optString("sharpness_value", o.sharpnessValue)
             o.encoding = normalizeEncoding(j.optString("encoding", o.encoding))
+            o.inputMode = normalizeInputMode(j.optString("inputmode", o.inputMode))
         } catch (t: Throwable) {
             // 解析失败用默认值
         }
@@ -703,6 +706,11 @@ object EngineSettingsStore {
         "utf8", "utf-8" -> "utf8"
         "sjis", "shift-jis", "shift_jis" -> "sjis"
         else -> "sjis"
+    }
+
+    fun normalizeInputMode(v: String?): String = when (v?.trim()?.lowercase()) {
+        "overlay", "kernel", "in-game" -> "overlay"
+        else -> "host"
     }
 
     // ---------- Artemis ----------

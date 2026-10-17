@@ -525,6 +525,9 @@
     <string name="engine_settings_sharpness">画面シャープ化</string>
     <string name="engine_settings_sharpness_strength">シャープ化強度</string>
     <string name="engine_settings_text_encoding">テキストエンコード</string>
+    <string name="engine_settings_input_mode">入力欄</string>
+    <string name="engine_settings_input_mode_host">システムダイアログ</string>
+    <string name="engine_settings_input_mode_overlay">ゲーム内入力（カーネル）</string>
     <string name="engine_settings_rotate_screen">画面を反転</string>
     <string name="engine_settings_auto_patch">自動パッチ</string>
     <string name="engine_settings_artemis_resolution">ステージ解像度</string>

@@ -170,6 +170,9 @@
 - 存档管理：条目管理页（应用层）承担导入导出；游戏内不再放存档 UI；
   facade 的存档数据通道（SaveZipUtil/WebSaveArchive）保留作数据能力。
 - ONS 编码：保持 gbk/sjis/utf8 手选（默认 sjis），不做 auto 探测。
+- ONS 输入框：默认 `host`（Android 系统对话框 / Web prompt）；可选 `overlay`
+  （内核 SDL 自绘，实验性）。统一接口 `ons_set_input_mode()` + 启动参数
+  `--input-mode:host|overlay`，overlay 不可用时回退 host。
 - AnkiDroid API 走 vendored 源码（Apache-2.0 头保留）而非 JitPack；ML Kit 是唯一新增依赖。
 - 截图走 PixelCopy 游戏 SurfaceView（纯画面），Surface 不可用再回退整窗。
 - **引擎支持裁剪（2026-10-05，用户决定）**：只保留 krkr/ons/rpgmaker 系列/tyrano/renpy/web/

@@ -4,6 +4,29 @@
 > `docs/guide/游戏内提取制卡功能方案.md`（提取功能线方案）阅读。
 > 更新时间：2026-10-18
 
+## 2026-10-18 会话（七十六）：ONS 内核自绘输入框 + 输入模式设置
+
+用户要求增加内核自绘输入框，并提供软件设置选择「内核自绘 / 非内核自绘」。
+
+- **ONS 接口**：`ONSInput.h` 增加 `ons_set_input_mode()` / `ons_get_input_mode()`，
+  模式为 `ONS_INPUT_MODE_HOST` / `ONS_INPUT_MODE_OVERLAY`；核心统一入口
+  `ons_host_request_input()` 按模式分发。overlay 返回 `-1` 表示不可用，
+  自动回退 host 对话框，避免冻结。
+- **内核 overlay**：新增 `ONSInputOverlay.cpp`。SDL2 自绘半透明输入框、
+  prompt、输入文本与光标；支持 `SDL_TEXTINPUT`（含 Android IME 提交）、
+  Backspace、Enter、Esc、maxlen；直接绘制到 `accumulation_surface`，通过
+  引擎现有 SDL/GLES 呈现路径显示，退出后 `flush()` 恢复游戏画面。
+- **启动参数**：`--input-mode:host` / `--input-mode:overlay`。
+- **平台实现**：Android 原 JNI 对话框与 Web `window.prompt` 重命名为
+  `ons_input_host_request()`；默认仍为 host。
+- **VNLingo 设置**：ONS 全局设置新增「输入框」下拉：
+  `系统对话框 / 游戏内输入框（内核）`，默认 `host`；JSON 键 `inputmode`，
+  启动时追加 `--input-mode:`。三语言文案已补。
+- **构建**：libonsyuri.so 与 `:app:assembleDebug` 均通过，`pluginVersion 15`。
+- **设备验证状态**：overlay 分支已能进入（日志 `ONS-INPUT: overlay start`），
+  但测试设备上 ONS 随后在 `init → resetSub → stopBGM` 处 SIGSEGV，发生在输入
+  代码之前，暂未完成可视确认；该启动崩溃需单独排查。默认 host 路径不受影响。
+
 ## 2026-10-18 会话（七十五）：VNLingo 开发分支更名为 dev
 
 - 本地分支 `feat/extract-suite` → `dev`（提交 `3cc59cb` 不变）。
