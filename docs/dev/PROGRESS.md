@@ -8,14 +8,16 @@
 
 汉化 ONS 游戏（夜明前的琉璃色，脚本实测 XOR 0x84 + GBK）设置 GBK 后仍乱码。
 
-- **根因**：每游戏设置页 `onsEnc` 默认硬编码 `"sjis"`，且 `decode()` 把 `"gbk"`
-  也归一成 `"sjis"`；只要进过设置页并保存，就会把 `"encoding":"sjis"` 钉进
-  单游戏 override，之后改全局 GBK 也被 override 覆盖。
-- **修复** `PerGameSettingsScreen.kt`：
-  - 每游戏编码默认值改为读取全局 ONS 编码；
-  - 仅当编码与全局不同才写入 override，相同则删除该键（跟随全局）；
-  - `decode()` 保留 `gbk`，不再回退成 `sjis`。
-- **验证**：夜明前的琉璃色 override 改为 `{"ons":{"encoding":"gbk"}}` 后，
+- **根因**：`EngineSettingsStore.normalizeEncoding()` 漏了 `"gbk" -> "gbk"`，
+  `gbk` 落入 `else -> "sjis"`；所以选 GBK 后实际启动仍传 `--enc:sjis`，
+  且保存时又被判成与全局 SJIS 相同而删掉 override。`decode()` 也把 `gbk`
+  显示成 `sjis`。
+- **修复**：
+  - `EngineSettingsStore.normalizeEncoding` 补 `"gbk" -> "gbk"`；
+  - `PerGameSettingsScreen.kt` 每游戏编码默认读取全局，仅在不同于全局时写
+    override；`decode()` 保留 `gbk`；选择编码时立即双写持久化，避免只依赖
+    顶部保存按钮。
+- **验证**：夜明前的琉璃色 override 现为 `{"ons":{"encoding":"gbk"}}`，
   标题/菜单中文正常；脚本本身为 GBK，游戏字体 SimHei 覆盖中文与假名。
 
 ## 2026-10-18 会话（七十六）：ONS 输入框方案回退

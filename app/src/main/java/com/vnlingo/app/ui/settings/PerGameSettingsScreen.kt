@@ -322,6 +322,17 @@ fun PerGameSettingsScreen(game: ScanGame) {
     val globalMenuOpa = EngineSettingsStore.getKrMenuHandlerOpa(ctx)
     val effRenderer = krRender[PerGameSettingsStore.F_RENDERER]!!.value ?: globalRenderer
 
+    fun persistOnsEncoding(value: String?) {
+        val o = PerGameSettingsStore.loadOnsOverride(ctx, gid) ?: JSONObject()
+        val effective = value ?: globalOns.encoding
+        if (EngineSettingsStore.normalizeEncoding(effective) != globalOns.encoding) {
+            o.put("encoding", effective)
+        } else {
+            o.remove("encoding")
+        }
+        PerGameSettingsStore.setOnsOverride(ctx, gid, o)
+    }
+
     fun save() {
         PerGameSettingsStore.setStr(ctx, gid, PerGameSettingsStore.F_ENGINE_VERSION, krVersion)
         PerGameSettingsStore.setStr(ctx, gid, PerGameSettingsStore.F_ENGINE_KERNEL, krKernel)
@@ -594,7 +605,10 @@ fun PerGameSettingsScreen(game: ScanGame) {
                             OverrideSwitch(stringResource(R.string.engine_settings_ignore_cutout), globalOns.ignoreCutout, onsCutout) { onsCutout = it }
                             OverrideSwitch(stringResource(R.string.engine_settings_disable_video), globalOns.disableVideo, onsNoVideo) { onsNoVideo = it }
                             OverrideSwitch(stringResource(R.string.engine_settings_sharpness), globalOns.sharpness, onsSharp) { onsSharp = it }
-                            OverrideChoice(stringResource(R.string.engine_settings_text_encoding), onsEncodingMap, globalOns.encoding.decode(), onsEnc) { onsEnc = it }
+                            OverrideChoice(stringResource(R.string.engine_settings_text_encoding), onsEncodingMap, globalOns.encoding.decode(), onsEnc) {
+                                onsEnc = it
+                                persistOnsEncoding(it)
+                            }
                         }
                     }
                     EngineType.ARTEMIS -> {

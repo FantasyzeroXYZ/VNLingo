@@ -702,6 +702,7 @@ object EngineSettingsStore {
     fun normalizeEncoding(v: String): String = when (v.trim().lowercase()) {
         "utf8", "utf-8" -> "utf8"
         "sjis", "shift-jis", "shift_jis" -> "sjis"
+        "gbk" -> "gbk"
         else -> "sjis"
     }
 
