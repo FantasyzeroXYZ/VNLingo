@@ -77,8 +77,15 @@ KAG 逐字对白捕获、面板正文显示均已验证。**
 4. 官方 gradle 路径的 cocos2dx config 幂等（需 overlay port 或安装后补丁步骤）。
 5. 对白/语音端到端 + 制卡验证：面板正文已验证；语音、♪ 配对、重播、菜单噪音
    仍待继续。
-6. **本次内核已构建并部署**：llvm-strip 后 `libkrkr2.so` 约 68 MB，
-   `pluginVersion 13`；VNLingo 侧仅追加该内核，三原版内核未动。
+6. **本次内核已构建并部署**：llvm-strip 后 `libkrkr2.so` 约 69 MB，
+   `pluginVersion 14`；VNLingo 侧仅追加该内核，三原版内核未动。
+7. **另外两个游戏（2026-10-18 续）**：
+   - 《Tsukikage no Simulacre》：根因是 `psbfile.dll` 未进链接，
+     且 psbfile 的 `psbMedia` 为独立空指针；已 whole-archive `psbfile` 并改用
+     `registerRootResources()`，SIGSEGV 消失，但当前仍是白屏，待查 PSB 资源加载。
+   - 《Yosuga no Sora》：当前黑屏；启动/插件阶段无 SIGSEGV，待查视频/PSB/字体
+     资源加载。
+   - 两作都还需要按游戏日志继续定位，暂不能宣称全部正常。
 
 ## 2026-10-18 会话（七十七）：ONS 每游戏编码跟随全局修复
 
