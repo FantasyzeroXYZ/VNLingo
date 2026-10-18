@@ -24,10 +24,14 @@
 - **VNLingo 设置**：ONS 全局设置新增「输入框」下拉：
   `系统对话框 / 游戏内输入框（内核）`，默认 `host`；JSON 键 `inputmode`，
   启动时追加 `--input-mode:`。三语言文案已补。
-- **构建**：libonsyuri.so 与 `:app:assembleDebug` 均通过，`pluginVersion 16`。
-- **设备验证状态**：overlay 分支已能进入（日志 `ONS-INPUT: overlay start`），
-  但测试设备上 ONS 随后在 `init → resetSub → stopBGM` 处 SIGSEGV，发生在输入
-  代码之前，暂未完成可视确认；该启动崩溃需单独排查。默认 host 路径不受影响。
+- **启动闪退修复**：overlay 入口原先放在 `ONSInputOverlay.cpp`，该对象单独
+  `extern ONScripter ons` 时会导致 Android 启动阶段 SIGSEGV（画面一闪退回主页）。
+  已将入口移到 `onscripter_main.cpp`（全局 `ons` 所在 TU），overlay 对象只保留
+  绘制方法；`pluginVersion 17` 重新构建安装后，host 模式启动验证通过。
+- **构建**：libonsyuri.so 与 `:app:assembleDebug` 均通过，`pluginVersion 17`。
+- **设备验证状态**：overlay 分支可进入并已改用 SDL_ttf 绘制文字；设备上仍偶发
+  `init → resetSub` 音频/启动阶段 SIGSEGV（与输入代码无直接关系，需单独排查）。
+  默认 host 路径可正常启动。
 
 ## 2026-10-18 会话（七十五）：VNLingo 开发分支更名为 dev
 
