@@ -196,22 +196,14 @@ public abstract class KirikiroidLauncherBaseActivity extends KR2Activity {
         String path = getIntent().getStringExtra(LaunchContract.PATH);
         playTimeKey = path;
         // [KRKR-EXTRACT] krkr2-main 内核提取桥（libkrkr2.so 导出）：
-        // 对话/语音事件 → OnsExtractBridge 既有管线。旧 libgame.so 无
+        // dialogue/voice 事件 → KrkrExtractBridge（对话进 OnsExtractBridge 既有
+        // 管线带 src=krkr 缝合；语音走配对状态机读缓存副本）。旧 libgame.so 无
         // nativeSetExtractSink 导出时静默降级为无提取。
         try {
             java.io.File voiceCache = new java.io.File(getFilesDir(), "krkr_voice_cache");
             if (!voiceCache.isDirectory() && !voiceCache.mkdirs()) voiceCache = null;
-            org.tvp.kirikiri2.KR2Activity.setExtractListener((type, payload) ->
-                    com.core.ons.OnsExtractBridge.get().onEvent(
-                            ("dialogue".equals(type)
-                                    ? "{\"type\":\"dialogue\",\"payload\":{\"b64\":\""
-                                    + android.util.Base64.encodeToString(
-                                            payload.getBytes(java.nio.charset.StandardCharsets.UTF_8),
-                                            android.util.Base64.NO_WRAP)
-                                    + "\"}}"
-                                    : "{\"type\":\"voice\",\"payload\":{\"name\":\""
-                                    + org.json.JSONObject.quote(payload)
-                                    + "\"}}").getBytes(java.nio.charset.StandardCharsets.UTF_8)),
+            org.tvp.kirikiri2.KR2Activity.setExtractListener(
+                    (type, payload) -> com.core.ons.KrkrExtractBridge.dispatch(type, payload),
                     voiceCache == null ? "" : voiceCache.getAbsolutePath());
             Log.i(TAG, "krkr2 extract sink armed");
         } catch (Throwable t) {
@@ -221,7 +213,8 @@ public abstract class KirikiroidLauncherBaseActivity extends KR2Activity {
             java.io.File gameRoot = new java.io.File(path).getParentFile();
             java.io.File saveDir = gameRoot == null ? null : new java.io.File(gameRoot, "savedata");
             com.core.ons.KrkrExtractFacade facade =
-                    new com.core.ons.KrkrExtractFacade(this, path, saveDir);
+                    new com.core.ons.KrkrExtractFacade(this,
+                            gameRoot == null ? null : gameRoot.getAbsolutePath(), saveDir);
             krkrFacade = facade;
         }
         if (path != null && path.length() != 0) {
@@ -534,10 +527,22 @@ public abstract class KirikiroidLauncherBaseActivity extends KR2Activity {
     public void onLoadNativeLibraries() {
         String gameLibrary = gameLibraryForBridge();
         // 提取钩子开关（LaunchContract.EXTRACT_HOOK，缺省开）：关闭时通知 native
-        // 跳过提取钩子武装（纯游戏模式）
-        boolean extractHook = getIntent() == null ||
-                getIntent().getBooleanExtra(LaunchContract.EXTRACT_HOOK, true);
+        // 跳过提取钩子武装（纯游戏模式）。
+        // krkr2-main 带钩内核：对白/语音经 KR2Activity.setExtractListener 专属通道上行，
+        // 运行时 FT/Label 钩子的 dlsym 目标按旧 ABI（cocos 3.11.1 GNU COW string）
+        // 编译、在 libc++ ABI 新内核上不匹配（Label::setString 符号已不存在），
+        // 强制关闭防误装与双通道重发射（NativeBridge 侧另有 kernelBridgeActive 兜底）。
+        boolean extractHook = (getIntent() == null ||
+                getIntent().getBooleanExtra(LaunchContract.EXTRACT_HOOK, true))
+                && !org.tvp.kirikiri2.KR2Activity.isHookedKernel();
         NativeBridge.setExtractHookEnabled(extractHook);
+        // [KRKR-EXTRACT] 带钩内核直启：cocos 场景初始化前下发游戏路径，
+        // 内核 TVPCheckStartupArg 据此跳过内置文件选择器（不进内核管理列表）。
+        String krkrLaunchPath = getIntent() == null ? null
+                : getIntent().getStringExtra(LaunchContract.PATH);
+        if (krkrLaunchPath != null && !krkrLaunchPath.isEmpty()) {
+            org.tvp.kirikiri2.KR2Activity.setGameLaunchPath(krkrLaunchPath);
+        }
         // 提取链路诊断埋点（B1）：跟随调试日志开关，默认开（DiagLog 默认 enabled=true）；
         // 关闭调试日志即零埋点开销（ARM 转译下高频日志会拖慢渲染线程）。
         NativeBridge.setExtractDiagEnabled(com.core.diag.DiagLog.isEnabled());

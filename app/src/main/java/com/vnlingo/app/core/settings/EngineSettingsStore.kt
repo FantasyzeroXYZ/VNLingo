@@ -125,6 +125,8 @@ object EngineSettingsStore {
     const val KR_139 = "1.3.9"
     const val KR_134 = "1.3.4"
     const val KR_126 = "1.2.6"
+    /** krkr2-main 带钩内核（追加内核，支持文本/语音提取）。 */
+    const val KR_KRKR2 = "krkr2main"
     const val KERNEL_KIRIKIRI2 = "kirikiri2"
     const val KERNEL_KRKRSDL3 = "krkrsdl3"
     const val KR_PATCH_OVERLAY_AUTO = "auto"
@@ -648,6 +650,7 @@ object EngineSettingsStore {
         KR_139 -> KR_139
         KR_134 -> KR_134
         KR_126 -> KR_126
+        KR_KRKR2 -> KR_KRKR2
         else -> KR_AUTO
     }
 

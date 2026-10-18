@@ -23,6 +23,11 @@ namespace {
 constexpr const char* kTag = "KrkrBridge";
 constexpr const char* kGetSceneSymbol = "_ZN12TVPMainScene11GetInstanceEv";
 constexpr const char* kStartupSymbol = "_ZN12TVPMainScene11startupFromERKSs";
+// krkr2-main 带钩内核（libc++/__ndk1 ABI）的 startupFrom：
+// TVPMainScene::startupFrom(const std::__ndk1::string&)
+constexpr const char* kStartupSymbolNdk1 =
+        "_ZN12TVPMainScene11startupFromERKNSt6__ndk112basic_stringIcNS0_11char_"
+        "traitsIcEENS0_9allocatorIcEEEE";
 constexpr const char* kUpdateSymbol = "_ZN12TVPMainScene6updateEf";
 constexpr size_t kUiFormContainerOffset = 0x348;
 constexpr size_t kUiFormCountVtableOffset = 0x238;
@@ -77,6 +82,9 @@ struct LegacyCowString {
 };
 
 using StartupFrom = void (*)(void*, const LegacyCowString&);
+// krkr2-main 带钩内核（libc++ ABI）：桥自身以 NDK libc++ 编译，std::string 与
+// 内核同 ABI，可直接传引用。
+using StartupFromNdk1 = void (*)(void*, const std::string&);
 using Update = void (*)(void*, float);
 using UiFormCount = int (*)(void*);
 using OpenFn = int (*)(const char*, int, ...);
@@ -94,6 +102,9 @@ struct GameApi {
     void* handle = nullptr;
     GetScene getScene = nullptr;
     StartupFrom startupFrom = nullptr;
+    // libkrkr2.so（libc++ ABI）专用；ndkAbi=true 时 startupFrom 为空。
+    StartupFromNdk1 startupFromNdk1 = nullptr;
+    bool ndkAbi = false;
     Update update = nullptr;
     bool languageCheckPatched = false;
 };
@@ -135,7 +146,8 @@ bool supportedGameLibrary(const char* library) {
     baseName = baseName == nullptr ? library : baseName + 1;
     return std::strcmp(baseName, "libgame.so") == 0
             || std::strcmp(baseName, "libgame134.so") == 0
-            || std::strcmp(baseName, "libgame126.so") == 0;
+            || std::strcmp(baseName, "libgame126.so") == 0
+            || std::strcmp(baseName, "libkrkr2.so") == 0;
 }
 
 std::string takeString(JNIEnv* env, jstring value) {
@@ -264,12 +276,23 @@ bool resolveGameLocked(const char* library) {
         return false;
     }
     auto getScene = reinterpret_cast<GetScene>(dlsym(handle, kGetSceneSymbol));
-    auto startupFrom = reinterpret_cast<StartupFrom>(dlsym(handle, kStartupSymbol));
     auto update = reinterpret_cast<Update>(dlsym(handle, kUpdateSymbol));
-    if (getScene == nullptr || startupFrom == nullptr || update == nullptr) {
+    const bool ndkAbi = std::strcmp(baseName(library), "libkrkr2.so") == 0;
+    StartupFrom startupFrom = nullptr;
+    StartupFromNdk1 startupFromNdk1 = nullptr;
+    if (ndkAbi) {
+        // libc++ ABI 内核：startupFrom 直接吃 std::string 引用。
+        startupFromNdk1 = reinterpret_cast<StartupFromNdk1>(dlsym(handle, kStartupSymbolNdk1));
+    } else {
+        startupFrom = reinterpret_cast<StartupFrom>(dlsym(handle, kStartupSymbol));
+    }
+    const bool startupOk = ndkAbi ? startupFromNdk1 != nullptr : startupFrom != nullptr;
+    if (getScene == nullptr || !startupOk || update == nullptr) {
         __android_log_print(ANDROID_LOG_ERROR, kTag,
-                            "required KRKR symbols missing in %s scene=%p startup=%p update=%p error=%s", library,
+                            "required KRKR symbols missing in %s scene=%p startup=%p startupNdk1=%p update=%p error=%s",
+                            library,
                             reinterpret_cast<void*>(getScene), reinterpret_cast<void*>(startupFrom),
+                            reinterpret_cast<void*>(startupFromNdk1),
                             reinterpret_cast<void*>(update), dlerror());
         dlclose(handle);
         return false;
@@ -278,6 +301,8 @@ bool resolveGameLocked(const char* library) {
     gGame.handle = handle;
     gGame.getScene = getScene;
     gGame.startupFrom = startupFrom;
+    gGame.startupFromNdk1 = startupFromNdk1;
+    gGame.ndkAbi = ndkAbi;
     gGame.update = update;
     installLanguageCheckBypass(gGame);
     __android_log_print(ANDROID_LOG_INFO, kTag, "initialized %s scene=%p startup=%p update=%p", library,
@@ -374,6 +399,10 @@ bool installGameReadySignal(void* scene) {
 
 bool isLaunchSceneReady(void* scene) {
     if (scene == nullptr) return false;
+    // krkr2-main 带钩内核：UIForm 容器偏移是旧 cocos 3.11 内核布局专属，
+    // 对新内核读取是未定义行为。场景已建（GetInstance 非空）即可启动——
+    // krkr2-main 的 startupFrom 本就是场景就绪后的公开入口。
+    if (gGame.ndkAbi) return true;
     auto* uiForms = *reinterpret_cast<void**>(reinterpret_cast<uintptr_t>(scene) + kUiFormContainerOffset);
     if (uiForms == nullptr) return false;
     auto** vtable = *reinterpret_cast<void***>(uiForms);
@@ -837,11 +866,15 @@ Java_bridge_NativeBridge_launch(JNIEnv* env, jclass, jstring gameLibrary, jstrin
 
     GetScene getScene = nullptr;
     StartupFrom startupFrom = nullptr;
+    StartupFromNdk1 startupFromNdk1 = nullptr;
+    bool ndkAbi = false;
     {
         std::lock_guard<std::mutex> lock(gMutex);
         if (!resolveGameLocked(library.c_str())) return JNI_FALSE;
         getScene = gGame.getScene;
         startupFrom = gGame.startupFrom;
+        startupFromNdk1 = gGame.startupFromNdk1;
+        ndkAbi = gGame.ndkAbi;
     }
     void* scene = getScene();
     if (scene == nullptr) {
@@ -851,12 +884,18 @@ Java_bridge_NativeBridge_launch(JNIEnv* env, jclass, jstring gameLibrary, jstrin
     // The original bridge accepted this argument but did not read it before
     // dispatching startupFrom. Preserve the ABI while making that explicit.
     (void) useMaps;
-    LegacyCowString legacyPath(gamePath);
-    if (legacyPath.data == nullptr) {
-        __android_log_print(ANDROID_LOG_ERROR, kTag, "launch rejected: allocate path failed");
-        return JNI_FALSE;
+    if (ndkAbi) {
+        // krkr2-main 带钩内核：libc++ ABI，直接传 std::string。
+        std::string path(gamePath);
+        startupFromNdk1(scene, path);
+    } else {
+        LegacyCowString legacyPath(gamePath);
+        if (legacyPath.data == nullptr) {
+            __android_log_print(ANDROID_LOG_ERROR, kTag, "launch rejected: allocate path failed");
+            return JNI_FALSE;
+        }
+        startupFrom(scene, legacyPath);
     }
-    startupFrom(scene, legacyPath);
     const bool readySignal = installGameReadySignal(scene);
     __android_log_print(ANDROID_LOG_INFO, kTag, "started %s from %s readySignal=%d", library.c_str(), gamePath.c_str(), readySignal);
     return JNI_TRUE;

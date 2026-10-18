@@ -87,6 +87,9 @@ val sharedEngineAssetNames = listOf(
     "__hook_rmmz_managers.js",
     "__tyrano__.js",
     "__rpg__.js",
+    // krkr2-main 带钩内核的内部字体（FontImpl.cpp 经 cocos FileUtils 读取；
+    // 缺失时内核 critical 退出 "can't found internal font file!"）
+    "NotoSansCJK-Regular.ttc",
 )
 val hikarinagiClientId = configValue("HIKARINAGI_CLIENT_ID")
 val vnlingoApplicationId = configValue("VNLINGO_APPLICATION_ID")

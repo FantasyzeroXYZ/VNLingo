@@ -848,6 +848,7 @@ object EngineLauncher {
         val activity = when (version) {
             EngineSettingsStore.KR_134 -> Kirikiroid134::class.java
             EngineSettingsStore.KR_126 -> Kirikiroid126::class.java
+            EngineSettingsStore.KR_KRKR2 -> com.akira.tyranoemu.remote.KirikiroidKrkr2::class.java
             else -> Kirikiroid139::class.java
         }
         val launchEntry = pickedLaunchEntry
@@ -900,6 +901,10 @@ object EngineLauncher {
             putExtra(LaunchContract.KR_ENGINE_VERSION, when (version) {
                 EngineSettingsStore.KR_134 -> "1.3.4"
                 EngineSettingsStore.KR_126 -> "1.2.6"
+                // krkr2-main 带钩内核（cocos 3.17）：触摸走 Cocos 管线
+                // （KrGLSurfaceView.queueEvent → cocos EventDispatcher），
+                // 1.3.9 的 nativeTouches 直发管线对其无效（选择器/标题不响应）。
+                EngineSettingsStore.KR_KRKR2 -> "1.3.4"
                 else -> "1.3.9"
             })
             // 字体偏好：两个 extra 必须无条件注入。引擎侧 applyFontPreferences 仅在

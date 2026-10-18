@@ -46,6 +46,16 @@
             android:screenOrientation="sensorLandscape"
             android:windowSoftInputMode="adjustPan"
             android:configChanges="keyboardHidden|orientation|screenSize|screenLayout|smallestScreenSize|uiMode|density|fontScale|locale|layoutDirection" />
+        <!-- krkr2-main 带钩内核（追加，供 KRKR 文本/语音提取），三原版内核不受影响 -->
+        <activity
+            android:name="com.akira.tyranoemu.remote.KirikiroidKrkr2"
+            android:exported="false"
+            android:process=":kirikiri2"
+            android:launchMode="singleInstance"
+            android:taskAffinity="com.core.Kirikiroid2"
+            android:screenOrientation="sensorLandscape"
+            android:windowSoftInputMode="adjustPan"
+            android:configChanges="keyboardHidden|orientation|screenSize|screenLayout|smallestScreenSize|uiMode|density|fontScale|locale|layoutDirection" />
 
         <!-- krkrsdl3 引擎（SDL3 内核，独立入口/独立进程，与 :kirikiri2 隔离） -->
         <activity

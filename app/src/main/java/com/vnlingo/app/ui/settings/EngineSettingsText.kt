@@ -15,6 +15,7 @@ internal fun krSelectOptions(): List<Pair<String, String>> = listOf(
     EngineSettingsStore.KR_139 to "1.3.9",
     EngineSettingsStore.KR_134 to "1.3.4",
     EngineSettingsStore.KR_126 to "1.2.6",
+    EngineSettingsStore.KR_KRKR2 to "krkr2-main（提取内核）",
 )
 
 @Composable

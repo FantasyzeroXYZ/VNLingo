@@ -325,6 +325,10 @@ public class KR2Activity extends Cocos2dxActivity {
     /** 内核提取桥上行入口（引擎线程，勿阻塞）；仅 libkrkr2.so 内核会调用。 */
     @SuppressWarnings("unused")
     static void onKrkr2Extract(String type, String payload) {
+        if (com.core.diag.DiagLog.isEnabled()) {
+            android.util.Log.i("KR2Activity", "krkr2 extract uplink: type=" + type
+                    + " len=" + (payload == null ? -1 : payload.length()));
+        }
         ExtractListener listener = sExtractListener;
         if (listener != null) listener.onExtract(type, payload);
     }
@@ -337,12 +341,45 @@ public class KR2Activity extends Cocos2dxActivity {
         sExtractListener = listener;
         try {
             nativeSetExtractSink(KR2Activity.class, voiceCacheDir);
+            // nativeSetExtractSink 未抛 UnsatisfiedLinkError = libgame.so 为 krkr2-main
+            // 带钩内核：置位武装标志，NativeBridge 据此关闭旧 FT 钩子转发防双通道
+            com.core.ons.KrkrExtractBridge.markKernelBridgeActive();
         } catch (Throwable t) {
             android.util.Log.w("KR2Activity", "extract sink unavailable (stock kernel): " + t);
         }
     }
 
     private static native void nativeSetExtractSink(Class<?> callback, String cacheDir);
+
+    /**
+     * 内核类型探针：krkr2-main 带钩内核导出（返回 true）；旧 Kirikiroid2 1.3.9
+     * （cocos 3.11.1，旧 GNU COW string ABI）无此导出抛 UnsatisfiedLinkError。
+     * 供宿主跳过 libkrkr_bridge_v2 的运行时 FT/Label 钩子（dlsym 目标按旧 ABI
+     * 编译，在 libc++ ABI 新内核上不匹配）。
+     */
+    public static native boolean nativeIsHookedKernel();
+
+    public static boolean isHookedKernel() {
+        try {
+            return nativeIsHookedKernel();
+        } catch (UnsatisfiedLinkError e) {
+            return false;
+        }
+    }
+
+    /**
+     * 宿主直启路径下发（仅带钩内核导出）：cocos 场景初始化前调用，内核
+     * TVPCheckStartupArg 据此跳过内置文件选择器（不进入内核管理列表）。
+     */
+    public static native void nativeSetGameLaunchPath(String path);
+
+    public static void setGameLaunchPath(String path) {
+        try {
+            nativeSetGameLaunchPath(path);
+        } catch (UnsatisfiedLinkError e) {
+            // 旧内核无此导出：选择器行为保持原版
+        }
+    }
     // ---------------------------------------------------------------------------------
     private static native boolean nativeGetHideSystemButton();
     public static native void nativeCharInput(int ch);

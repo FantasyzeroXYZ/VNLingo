@@ -71,6 +71,10 @@ object NativeBridge {
         if (com.core.diag.DiagLog.isEnabled()) {
             Log.d("NativeBridge", "krkr text raw: len=${text.length} head=${text.take(24)}")
         }
+        // 内核桥武装（krkr2-main 带钩内核）：对白/语音经 KR2Activity.setExtractListener
+        // 专属通道上行；Label 虚表补丁与 FT GOT 钩子在新内核上仍会命中，此处关闭
+        // [TNEXT]/[FTLN]/[FTRAW] 转发，防双通道双份文本。
+        if (com.core.ons.KrkrExtractBridge.kernelBridgeActive) return
         // 严格 [TNEXT] 通道：仅 TJS 发射器 v8（或未来带钩内核经此路径）发出的标记行
         // 进入提取；其余 Label 文本（引擎控制台的脚本加载/调试行）一律丢弃，
         // 避免原版内核下面板被噪音刷屏。KR2Activity.setExtractListener 通道仅在

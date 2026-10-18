@@ -26,6 +26,12 @@ object NativePluginConstants {
     const val LIB_GAME_139 = "libgame.so"
     const val LIB_GAME_134 = "libgame134.so"
     const val LIB_GAME_126 = "libgame126.so"
+    /** krkr2-main 带钩内核（libgame.so）的 OpenMP 依赖（NDK libomp.so）。 */
+    const val LIB_OMP = "libomp.so"
+    /** krkr2-main 带钩内核的 NDK C++ 运行时（-DANDROID_STL=c++_shared）。 */
+    const val LIB_CPP_SHARED = "libc++_shared.so"
+    /** krkr2-main 带钩内核（独立追加，不替换 1.3.9/1.3.4/1.2.6 三原版内核）。 */
+    const val LIB_KRKR2 = "libkrkr2.so"
 
     const val LIB_ARTEMIS = "libartemis.so"
     const val LIB_ARTEMIS_COMPATIBLE = "libartemis-compatible.so"
@@ -53,6 +59,9 @@ object NativePluginConstants {
         LIB_GAME_139,
         LIB_GAME_134,
         LIB_GAME_126,
+        LIB_KRKR2,
+        LIB_OMP,
+        LIB_CPP_SHARED,
     )
 
     /** ONS(Yuri runtime) 外置插件必备 so，加载顺序即此处顺序（依赖先于依赖方）。 */

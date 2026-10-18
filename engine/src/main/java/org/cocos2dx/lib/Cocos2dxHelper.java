@@ -68,7 +68,15 @@ public class Cocos2dxHelper {
         ApplicationInfo applicationInfo = activity.getApplicationInfo();
         sPackageName = applicationInfo.packageName;
         sFileDirectory = activity.getFilesDir().getAbsolutePath();
-        nativeSetApkPath(applicationInfo.sourceDir);
+        // cocos >= 3.17 内核（krkr2-main 带钩内核，libc++ ABI）不再导出该 JNI
+        // （apk 路径改由 native 侧经 Activity 自行获取，见 _Z10getApkPathv）：
+        // 缺失时静默跳过，旧 Kirikiroid2 1.3.9（cocos 3.11.1）内核行为不变。
+        try {
+            nativeSetApkPath(applicationInfo.sourceDir);
+        } catch (UnsatisfiedLinkError e) {
+            android.util.Log.w("Cocos2dxHelper",
+                    "nativeSetApkPath unavailable (cocos>=3.17 kernel?): " + e);
+        }
         sCocos2dMusic = new Cocos2dxMusic(activity);
         sCocos2dSound = new Cocos2dxSound(activity);
         sAssetManager = activity.getAssets();
