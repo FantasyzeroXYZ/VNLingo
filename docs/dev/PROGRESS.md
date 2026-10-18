@@ -24,14 +24,17 @@
 - **VNLingo 设置**：ONS 全局设置新增「输入框」下拉：
   `系统对话框 / 游戏内输入框（内核）`，默认 `host`；JSON 键 `inputmode`，
   启动时追加 `--input-mode:`。三语言文案已补。
-- **启动闪退修复**：overlay 入口原先放在 `ONSInputOverlay.cpp`，该对象单独
-  `extern ONScripter ons` 时会导致 Android 启动阶段 SIGSEGV（画面一闪退回主页）。
-  已将入口移到 `onscripter_main.cpp`（全局 `ons` 所在 TU），overlay 对象只保留
-  绘制方法；`pluginVersion 17` 重新构建安装后，host 模式启动验证通过。
+- **启动闪退真因**：`libONSPatch.so` 的 `OnsYuri::initialize()` 硬编码了
+  `libonsyuri` 的 `runEventLoop + 0x4d8`（旧地址 `0x88454`）。重编译后
+  `runEventLoop` 移到 `0x8867c`，目标应为 `0x88b54`；旧 hook 改写到错误指令，
+  启动即 SIGSEGV（画面一闪退回主页）。
+- **修复**：把 `libONSPatch.so` 中 `add x20,x8,#0x454` 改为 `#0xb54`
+  （指令 `0x912d5114`），与 `pluginVersion 17` 的 libonsyuri 对齐；重新安装后
+  ONSPatch + 新 libonsyuri 可正常启动。后续重编 libonsyuri 必须同步该偏移。
+- **调试信息**：`build_android_onsyuri.sh` 支持 `ONS_DEBUG=1`，使用
+  `-O0 -g -fno-omit-frame-pointer`、禁用 LTO，便于抓完整堆栈。
 - **构建**：libonsyuri.so 与 `:app:assembleDebug` 均通过，`pluginVersion 17`。
-- **设备验证状态**：overlay 分支可进入并已改用 SDL_ttf 绘制文字；设备上仍偶发
-  `init → resetSub` 音频/启动阶段 SIGSEGV（与输入代码无直接关系，需单独排查）。
-  默认 host 路径可正常启动。
+- **设备验证状态**：host 模式启动已稳定；overlay 文字改用 SDL_ttf。
 
 ## 2026-10-18 会话（七十五）：VNLingo 开发分支更名为 dev
 

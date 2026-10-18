@@ -25,6 +25,9 @@ object OnsLibLoader {
             throw IllegalStateException("ONS plugin missing")
         }
         try {
+            // libONSPatch hooks a fixed code offset inside
+            // ONScripter::runEventLoop (+0x4d8).  The offset is synchronized
+            // with the shipped libonsyuri.so; rebuild/patch both together.
             System.loadLibrary("ONSPatch")
         } catch (t: Throwable) {
             Log.w(TAG, "load ONSPatch failed, continue", t)

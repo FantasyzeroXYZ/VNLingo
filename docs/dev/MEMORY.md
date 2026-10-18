@@ -170,6 +170,10 @@
 - 存档管理：条目管理页（应用层）承担导入导出；游戏内不再放存档 UI；
   facade 的存档数据通道（SaveZipUtil/WebSaveArchive）保留作数据能力。
 - ONS 编码：保持 gbk/sjis/utf8 手选（默认 sjis），不做 auto 探测。
+- **ONSPatch 偏移约束**：`libONSPatch.so` 的 `OnsYuri::initialize()` 硬编码
+  `libonsyuri` 的 `runEventLoop + 0x4d8` 地址（当前 old→new 从 `0x88454`
+  改为 `0x88b54`）。每次重编 libonsyuri 后必须重新核对并用
+  `ONS_DEBUG=1` 构建查符号，否则启动会 SIGSEGV。
 - ONS 输入框：默认 `host`（Android 系统对话框 / Web prompt）；可选 `overlay`
   （内核 SDL 自绘，实验性）。统一接口 `ons_set_input_mode()` + 启动参数
   `--input-mode:host|overlay`，overlay 不可用时回退 host。
