@@ -1281,7 +1281,6 @@ private fun LazyListPlaceholder(
     val krFpsMap = krFpsOptions()
     val onsSharpnessMap = onsSharpnessOptions()
     val onsEncodingMap = onsEncodingOptions()
-    val onsInputModeMap = onsInputModeOptions()
     val artKernelSelect = artKernelOptions()
     val artVersionMap = artVersionOptions()
     val renpyVersionMap = renpyVersionOptions()
@@ -1439,9 +1438,6 @@ private fun LazyListPlaceholder(
                 }
                 DropdownRow(stringResource(R.string.engine_settings_text_encoding), onsEncodingMap, EngineSettingsStore.normalizeEncoding(ons.encoding)) {
                     onOns(ons.copy(encoding = it))
-                }
-                DropdownRow(stringResource(R.string.engine_settings_input_mode), onsInputModeMap, EngineSettingsStore.normalizeInputMode(ons.inputMode)) {
-                    onOns(ons.copy(inputMode = it))
                 }
             }
         }

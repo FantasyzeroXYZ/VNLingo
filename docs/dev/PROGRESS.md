@@ -4,37 +4,19 @@
 > `docs/guide/游戏内提取制卡功能方案.md`（提取功能线方案）阅读。
 > 更新时间：2026-10-18
 
-## 2026-10-18 会话（七十六）：ONS 内核自绘输入框 + 输入模式设置
+## 2026-10-18 会话（七十六）：ONS 输入框方案回退
 
-用户要求增加内核自绘输入框，并提供软件设置选择「内核自绘 / 非内核自绘」。
+按要求移除内核自绘输入框，并去掉软件里的输入框模式切换。
 
-- **ONS 接口**：`ONSInput.h` 增加 `ons_set_input_mode()` / `ons_get_input_mode()`，
-  模式为 `ONS_INPUT_MODE_HOST` / `ONS_INPUT_MODE_OVERLAY`；核心统一入口
-  `ons_host_request_input()` 按模式分发。overlay 返回 `-1` 表示不可用，
-  自动回退 host 对话框，避免冻结。
-- **内核 overlay**：新增 `ONSInputOverlay.cpp`。SDL2 自绘输入框、
-  prompt、输入文本与光标；文字改用 **SDL_ttf 直接渲染 UTF-8**（不再依赖
-  ONS `drawString` 的字体/编码状态，修复“输入框整个变黑、无文字”）；支持
-  `SDL_TEXTINPUT`（含 Android IME 提交）、Backspace、Enter、Esc、maxlen；
-  直接绘制到 `accumulation_surface`，通过引擎现有 SDL/GLES 呈现路径显示，
-  退出后 `flush()` 恢复游戏画面。
-- **启动参数**：`--input-mode:host` / `--input-mode:overlay`。
-- **平台实现**：Android 原 JNI 对话框与 Web `window.prompt` 重命名为
-  `ons_input_host_request()`；默认仍为 host。
-- **VNLingo 设置**：ONS 全局设置新增「输入框」下拉：
-  `系统对话框 / 游戏内输入框（内核）`，默认 `host`；JSON 键 `inputmode`，
-  启动时追加 `--input-mode:`。三语言文案已补。
-- **启动闪退真因**：`libONSPatch.so` 的 `OnsYuri::initialize()` 硬编码了
-  `libonsyuri` 的 `runEventLoop + 0x4d8`（旧地址 `0x88454`）。重编译后
-  `runEventLoop` 移到 `0x8867c`，目标应为 `0x88b54`；旧 hook 改写到错误指令，
-  启动即 SIGSEGV（画面一闪退回主页）。
-- **修复**：把 `libONSPatch.so` 中 `add x20,x8,#0x454` 改为 `#0xb54`
-  （指令 `0x912d5114`），与 `pluginVersion 17` 的 libonsyuri 对齐；重新安装后
-  ONSPatch + 新 libonsyuri 可正常启动。后续重编 libonsyuri 必须同步该偏移。
-- **调试信息**：`build_android_onsyuri.sh` 支持 `ONS_DEBUG=1`，使用
-  `-O0 -g -fno-omit-frame-pointer`、禁用 LTO，便于抓完整堆栈。
-- **构建**：libonsyuri.so 与 `:app:assembleDebug` 均通过，`pluginVersion 17`。
-- **设备验证状态**：host 模式启动已稳定；overlay 文字改用 SDL_ttf。
+- 删除 `ONSInputOverlay.cpp` / 头文件输入模式 API / `--input-mode:` 参数；
+  `ons_host_request_input()` 恢复为单一平台实现（Android JNI 对话框 /
+  Web prompt）。
+- VNLingo 删除 ONS 设置的「输入框」下拉、JSON `inputmode`、启动参数与
+  三语言文案；输入统一走系统对话框。
+- 保留上一轮的 ONSPatch 偏移修复：`runEventLoop = 0x87f7c`，
+  `ONSPatch` 钩子目标恢复为 `runEventLoop + 0x4d8 = 0x88454`。
+- 保留 `ONS_DEBUG=1` 符号构建选项。
+- `pluginVersion 18`；构建/安装完成，host 输入路径启动验证正常。
 
 ## 2026-10-18 会话（七十五）：VNLingo 开发分支更名为 dev
 

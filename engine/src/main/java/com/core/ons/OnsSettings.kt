@@ -13,8 +13,6 @@ class OnsSettings {
     @JvmField var sharpnessValue = "2"
     @JvmField var disableVideo = false
     @JvmField var encoding = "sjis"
-    /** host=系统对话框；overlay=内核自绘输入框。 */
-    @JvmField var inputMode = "host"
     @JvmField var scopedSaveDir = true
     @JvmField var allowEditArgs = true
 
@@ -63,12 +61,6 @@ class OnsSettings {
         }
 
         @JvmStatic
-        fun normalizeInputMode(value: String?): String {
-            val v = value?.trim()?.lowercase(Locale.ROOT).orEmpty()
-            return if ("overlay" == v || "kernel" == v || "in-game" == v) "overlay" else "host"
-        }
-
-        @JvmStatic
         fun normalizeEncoding(value: String?): String {
             val v = if (value == null) "sjis" else value.trim().lowercase(Locale.ROOT)
             if ("gbk" == v || "utf8" == v || "sjis" == v) return v
@@ -92,7 +84,6 @@ class OnsSettings {
         sharpnessValue = o.optString("sharpness_value", sharpnessValue)
         disableVideo = o.optBoolean("disablevideo", disableVideo)
         encoding = normalizeEncoding(o.optString("encoding", encoding))
-        inputMode = normalizeInputMode(o.optString("inputmode", inputMode))
         scopedSaveDir = o.optBoolean("scopedsavedir", scopedSaveDir)
         allowEditArgs = o.optBoolean("alloweditargs", allowEditArgs)
     }
@@ -105,7 +96,6 @@ class OnsSettings {
         o.put("sharpness_value", safeSharpness())
         o.put("disablevideo", disableVideo)
         o.put("encoding", normalizeEncoding(encoding))
-        o.put("inputmode", normalizeInputMode(inputMode))
         o.put("scopedsavedir", scopedSaveDir)
         o.put("alloweditargs", allowEditArgs)
         return o
@@ -135,7 +125,6 @@ class OnsSettings {
         args.add(if (stretchFull) "--fullscreen2" else "--fullscreen")
         if (disableVideo) args.add("--no-video")
         args.add("--enc:" + normalizeEncoding(encoding))
-        args.add("--input-mode:" + normalizeInputMode(inputMode))
         if (saveDir != null) {
             val ready = saveDir.isDirectory || saveDir.mkdirs()
             if (!ready) {

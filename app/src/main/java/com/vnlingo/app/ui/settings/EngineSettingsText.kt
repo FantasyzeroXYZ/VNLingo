@@ -105,12 +105,6 @@ internal fun onsEncodingOptions(): List<Pair<String, String>> =
     listOf("sjis" to "Shift-JIS", "gbk" to "GBK", "utf8" to "UTF-8")
 
 @Composable
-internal fun onsInputModeOptions(): List<Pair<String, String>> = listOf(
-    "host" to stringResource(R.string.engine_settings_input_mode_host),
-    "overlay" to stringResource(R.string.engine_settings_input_mode_overlay),
-)
-
-@Composable
 internal fun artVersionOptions(): List<Pair<String, String>> = listOf(
     EngineSettingsStore.ART_ENGINE_AUTO to stringResource(R.string.common_auto),
     EngineSettingsStore.ART_ENGINE_V2 to "v1（Tyranor/Rev.2762）",

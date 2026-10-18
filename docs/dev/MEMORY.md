@@ -171,12 +171,11 @@
   facade 的存档数据通道（SaveZipUtil/WebSaveArchive）保留作数据能力。
 - ONS 编码：保持 gbk/sjis/utf8 手选（默认 sjis），不做 auto 探测。
 - **ONSPatch 偏移约束**：`libONSPatch.so` 的 `OnsYuri::initialize()` 硬编码
-  `libonsyuri` 的 `runEventLoop + 0x4d8` 地址（当前 old→new 从 `0x88454`
-  改为 `0x88b54`）。每次重编 libonsyuri 后必须重新核对并用
+  `libonsyuri` 的 `runEventLoop + 0x4d8` 地址（当前 `runEventLoop=0x87f7c`，
+  目标 `0x88454`）。每次重编 libonsyuri 后必须重新核对并用
   `ONS_DEBUG=1` 构建查符号，否则启动会 SIGSEGV。
-- ONS 输入框：默认 `host`（Android 系统对话框 / Web prompt）；可选 `overlay`
-  （内核 SDL 自绘，实验性）。统一接口 `ons_set_input_mode()` + 启动参数
-  `--input-mode:host|overlay`，overlay 不可用时回退 host。
+- ONS 输入框：统一走系统对话框（Android JNI AlertDialog / Web prompt），
+  不再提供内核自绘/输入模式切换。
 - AnkiDroid API 走 vendored 源码（Apache-2.0 头保留）而非 JitPack；ML Kit 是唯一新增依赖。
 - 截图走 PixelCopy 游戏 SurfaceView（纯画面），Surface 不可用再回退整窗。
 - **引擎支持裁剪（2026-10-05，用户决定）**：只保留 krkr/ons/rpgmaker 系列/tyrano/renpy/web/

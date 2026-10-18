@@ -722,7 +722,6 @@ object EngineLauncher {
                 args.add(if (ons.stretchFull) "--fullscreen2" else "--fullscreen")
                 if (ons.disableVideo) args.add("--no-video")
                 args.add("--enc:" + EngineSettingsStore.normalizeEncoding(ons.encoding))
-                args.add("--input-mode:" + EngineSettingsStore.normalizeInputMode(ons.inputMode))
                 val saveDir = if (ons.scopedSaveDir) {
                     val external = context.getExternalFilesDir(null) ?: context.filesDir
                     File(File(external, "save"), File(path).name)

@@ -1,4 +1,4 @@
-<resources>
+﻿<resources>
     <string name="app_name">VNLingo</string>
     <string name="common_confirm">确定</string>
     <string name="common_done">完成</string>
@@ -524,9 +524,6 @@
     <string name="engine_settings_sharpness">画面锐化</string>
     <string name="engine_settings_sharpness_strength">锐化强度</string>
     <string name="engine_settings_text_encoding">文本编码</string>
-    <string name="engine_settings_input_mode">输入框</string>
-    <string name="engine_settings_input_mode_host">系统对话框</string>
-    <string name="engine_settings_input_mode_overlay">游戏内输入框（内核）</string>
     <string name="engine_settings_rotate_screen">画面反转</string>
     <string name="engine_settings_auto_patch">自动补丁</string>
     <string name="engine_settings_artemis_resolution">舞台分辨率</string>
