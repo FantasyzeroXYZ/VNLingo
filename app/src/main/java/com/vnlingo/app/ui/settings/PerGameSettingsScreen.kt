@@ -138,7 +138,15 @@ fun PerGameSettingsScreen(game: ScanGame) {
     var onsNoVideo by remember { mutableStateOf(onsBool(onsOverride.value, "disablevideo")) }
     var onsSharp by remember { mutableStateOf(onsBool(onsOverride.value, "sharpness")) }
     var onsSharpVal by remember { mutableStateOf(onsStr(onsOverride.value, "sharpness_value", "2")) }
-    var onsEnc by remember { mutableStateOf(onsStr(onsOverride.value, "encoding", "sjis")) }
+    var onsEnc by remember {
+        mutableStateOf(
+            onsStr(
+                onsOverride.value,
+                "encoding",
+                EngineSettingsStore.loadOns(ctx).encoding.decode(),
+            ),
+        )
+    }
 
     var tyExternal by remember { mutableStateOf(PerGameSettingsStore.getBool(ctx, gid, "ty_external")) }
     var tyScoped by remember { mutableStateOf(PerGameSettingsStore.getBool(ctx, gid, "ty_scoped")) }
@@ -372,7 +380,11 @@ fun PerGameSettingsScreen(game: ScanGame) {
         putIfNotNull(onsObj, "disablevideo", onsNoVideo)
         putIfNotNull(onsObj, "sharpness", onsSharp)
         putIfNotNull(onsObj, "sharpness_value", onsSharpVal)
-        putIfNotNull(onsObj, "encoding", onsEnc)
+        // 只有和全局不同才落 override；否则跟随全局，避免把默认 sjis 钉死。
+        val enc = onsEnc ?: globalOns.encoding
+        if (EngineSettingsStore.normalizeEncoding(enc) != globalOns.encoding) {
+            onsObj.put("encoding", enc)
+        }
         PerGameSettingsStore.setOnsOverride(ctx, gid, onsObj)
         PerGameSettingsStore.setBool(ctx, gid, "ty_external", tyExternal)
         PerGameSettingsStore.setBool(ctx, gid, "ty_scoped", tyScoped)
@@ -1257,4 +1269,9 @@ private fun onsBool(o: JSONObject, key: String): Boolean? = if (o.has(key)) o.op
 private fun onsStr(o: JSONObject, key: String, def: String): String? = if (o.has(key)) o.optString(key, def) else null
 private fun putIfNotNull(o: JSONObject, key: String, v: Boolean?) { if (v != null) o.put(key, v) else o.remove(key) }
 private fun putIfNotNull(o: JSONObject, key: String, v: String?) { if (v != null) o.put(key, v) else o.remove(key) }
-private fun String.decode(): String = if (this == "sjis") "sjis" else if (this == "utf8") "utf8" else "sjis"
+private fun String.decode(): String = when (this) {
+    "gbk" -> "gbk"
+    "utf8" -> "utf8"
+    "sjis" -> "sjis"
+    else -> "sjis"
+}
