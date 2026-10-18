@@ -4,6 +4,82 @@
 > `docs/guide/游戏内提取制卡功能方案.md`（提取功能线方案）阅读。
 > 更新时间：2026-10-18
 
+## 2026-10-18 会话（七十八）：krkr2-main 带钩内核构建 + 真机部署（分支 dev，未提交）
+
+目标：krkr2-main 带提取钩内核（TyranorNext ExtractBridge）构建 arm64-android 产物，
+追加进 VNLingo（三原版内核不动），真机实测提取链路。**真机已跑通：cp932 编码、
+KAG 逐字对白捕获、面板正文显示均已验证。**
+
+### 已落地
+
+**krkr2-main（分支 emscripten-port-fork，全部未提交）**
+- `ExtractBridge.cpp` NotifyDialogue 增加 CJK 启发过滤（兑现 LayerIntf.cpp 注释）
+- 新 JNI：`nativeIsHookedKernel()`（内核类型探针，供宿主跳过旧 ABI FT 钩子）、
+  `nativeSetGameLaunchPath(path)`（宿主直启：`TVPCheckStartupArg()` 据此返回 true，
+  AppDelegate 不再 push 内置文件选择器 → 不进内核管理列表）
+- **whole-archive 链接内置插件**（顶层 CMakeLists）：`ncbAutoRegister` 靠静态初始化
+  自注册，静态库成员无引用不参与链接 → windowEx/win32dialog 等全部 Failed；
+  `-Wl,--whole-archive krkr2plugin -Wl,--no-whole-archive` 修复
+- 官方 gradle 路径同因 cocos2dx-config.cmake 的 `add_library(ext_ssl ALIAS ...)` 
+  非幂等 + 子目录作用域不可见而配置失败（vcpkg 重装会覆盖手补丁，需 overlay port 方案）
+- 诊断埋点（定位后删）：`KrKr2Extract` tag —— NotifyDialogue 限频日志、DrawGlyph 计数、
+  FreeType.cpp `LoadGlyphSlotFromCharcode` 的 backtrace 栈采样（**当前编译失败：
+  backtrace 未声明，`<execinfo.h>` include 已加但需复核**）
+
+**VNLingo（分支 dev，全部未提交）**
+- 追加内核部署：`nativeplugins/kirikiroid2/arm64-v8a/libkrkr2.so`（三原版不动）+
+  manifest `pluginVersion 11`（EnginePluginBootstrap 按版本比对自动重装）
+- 引擎设置新增「krkr2main」内核项 → `KirikiroidKrkr2` 宿主（Kirikiroid139 子类）
+- `KR2Activity.java`：`markKernelBridgeActive()` / `isHookedKernel()` /
+  `setGameLaunchPath()`；`onKrkr2Extract` 带 DiagLog 上行日志
+- `KirikiroidLauncherBaseActivity.onLoadNativeLibraries`：直启路径下发 +
+  `extractHook && !isHookedKernel()`（新内核跳过旧 ABI FT/Label 运行时钩子）
+- 新 `KrkrExtractBridge.kt`：dialogue→hasCjk→OnsExtractBridge JSON（src=krkr）+
+  voice→三参监听（text 空=纯语音，对齐 ArtemisExtractBridge 契约）
+- `KrkrExtractFacade`：语音配对状态机 + 三方法完整实现（前次会话已写，本会话对齐桥）
+- `NativeBridge.kt:77`：kernelBridgeActive 时跳过 [TNEXT]/[FTLN]/[FTRAW] 转发防双通道
+- **cocos Java 3.11↔3.17 兼容**：`Cocos2dxHelper.nativeSetApkPath` try-catch（3.17 内核
+  不导出，缺失曾致 CheckJNI abort）；`Cocos2dxBitmap` 合并 3.17 全量实现
+  （`createTextBitmapShadowStroke` 等——新内核 Label 文本经 Java 位图路径渲染，
+  缺失时反复 "Failed to find static method id"）
+- `EngineLauncher`：krkr2main 内核 `KR_ENGINE_VERSION="1.3.4"`（走 Cocos 触摸管线，
+  1.3.9 的 nativeTouches 直发管线对新内核选择器无效）
+
+### 真机里程碑（Xiaomi alioth 5db53c00，1080x2400）
+
+- 模拟器（emulator-5554，ndk_translation）内核 dlopen SIGABRT 为**转译层特有**，
+  真机无此问题（真机内核加载/运行全部正常）→ 后续测试一律真机
+- 内核完整跑通：dlopen ✓ → 内置插件注册 ✓（whole-archive）→ startup.tjs/first.ks/
+  WindowResizable.ks/KAG 引导 ✓ → 标题画面（wall_title 渲染、titlemenu 等待）✓ →
+  游戏"续玩"浏览器（内核选择器 UI）✓
+- **提取链路验证通过**：内核 NotifyDialogue（セーブしました，游戏 TJS drawText 系统消息）
+  → JNI 上行 → KrkrExtractBridge（hasCjk 过滤）→ OnsExtractBridge → 提取面板显示 ✓
+- 构建部署流水线（脚本在 `D:/krkr2-manifest/`）：`build-kernel-debug.ps1`（Debug -O0，
+  NDK 28 直连 cmake + 自定义 vcpkg manifest 含 oboe）→ llvm-strip --strip-debug →
+  copy 至 nativeplugins → bump pluginVersion → `build-apk.ps1` → 
+  `adb install -r --abi arm64-v8a` → 库页 tap(193,502) 卡片 → tap(265,1090) 启动游戏
+- 符号化：`llvm-symbolizer -e libkrkr2-symN.so 0x<offset>`（offset = 运行时 PC −
+  dladdr dli_fbase；未 strip 副本存 D:/krkr2-manifest/libkrkr2-sym*.so）
+
+### 已解决 / 剩余
+
+1. **正文对白咽喉（已解决）**：KAG 正文实际走 `tTVPNativeBaseBitmap::DrawText`
+   的单字分派（`DrawTextSingle`），不经过 `LayerIntf::DrawText`。在
+   `LayerBitmapImpl.h` 的 `DrawText` 内联分派处统一挂 `NotifyDialogue`，并在
+   `ExtractBridge` 内做**逐字累积 + 正常/阴影两次绘制去重**（5ms 窗口），
+   面板已能显示完整正文；开/闭引号等标点也纳入字符白名单。
+2. **cp932 / ISO-8859-2 编码崩溃（已解决）**：Boost.Locale 的 Android 构建没有
+   iconv 后端，`Invalid or unsupported charset: cp932/ISO-8859-2`；
+   `TextStream.cpp` 用内置 `sjis_mbtowc` 直接转 UTF-16，并在 uchardet 误判
+   ISO-8859-x 时回退 CP932，游戏不再在 `LoadScript` 处崩溃。
+3. **Release -O3 TJS VM 崩溃**：模拟器 0x3c 空指针；Debug -O0 真机正常；
+   真机 Release 未测。
+4. 官方 gradle 路径的 cocos2dx config 幂等（需 overlay port 或安装后补丁步骤）。
+5. 对白/语音端到端 + 制卡验证：面板正文已验证；语音、♪ 配对、重播、菜单噪音
+   仍待继续。
+6. **本次内核已构建并部署**：llvm-strip 后 `libkrkr2.so` 约 68 MB，
+   `pluginVersion 13`；VNLingo 侧仅追加该内核，三原版内核未动。
+
 ## 2026-10-18 会话（七十七）：ONS 每游戏编码跟随全局修复
 
 汉化 ONS 游戏（夜明前的琉璃色，脚本实测 XOR 0x84 + GBK）设置 GBK 后仍乱码。
